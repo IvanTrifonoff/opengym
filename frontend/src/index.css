@@ -153,6 +153,10 @@ button,.chip,.tile,.item,.wday,.cal-d,.swatch,.hm-c,.lrow,.seg button,.stp butto
 .small{font-size:13px;line-height:1.38}
 .accent{color:var(--acc)}
 .capitalize{text-transform:capitalize}
+/* Russian words are not title-cased: only the first word of a translated
+   exercise name gets a capital letter (source: names pack in src/names/). */
+.capitalize:lang(ru),.tt:lang(ru),h3:lang(ru){text-transform:none}
+.tt:lang(ru):first-letter,h3:lang(ru):first-letter{text-transform:uppercase}
 /* exercise names and body-part/equipment terms arrive lowercase from the dataset,
    so tags and chips capitalise by default. Anything that is a unit or a sentence opts
    back out — blanket-capitalising turned "60 kg" into "60 Kg" and a whole hint into

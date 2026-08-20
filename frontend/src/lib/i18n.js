@@ -12,6 +12,8 @@ export const LANGS = {
   ko: '한국어', hi: 'हिन्दी'
 }
 export const INSTR_LANGS = ['en', 'es', 'fr', 'it', 'tr', 'ru', 'zh', 'hi', 'pl', 'ko']
+// Languages with an exercise-name pack (translated exercise titles).
+export const NAMES_LANGS = ['ru']
 const DATE_LOCALES = {
   en: 'en-GB', de: 'de-DE', es: 'es-ES', fr: 'fr-FR', it: 'it-IT', pt: 'pt-PT',
   pl: 'pl-PL', tr: 'tr-TR', ru: 'ru-RU', zh: 'zh-CN', ko: 'ko-KR', hi: 'hi-IN'
@@ -19,10 +21,12 @@ const DATE_LOCALES = {
 
 const localePacks = import.meta.glob('../locales/*.js')
 const instrPacks = import.meta.glob('../instr/*.js')
+const namePacks = import.meta.glob('../names/*.js')
 
 let lang = 'en'
 let dict = {}
 let instr = null            // { exId: [steps] } for the current language, null = English
+let names = null            // { exId: translated title } for the current language, null = English
 let version = 0
 const subs = new Set()
 const notify = () => { version++; subs.forEach(f => f()) }
@@ -38,6 +42,8 @@ export function t(s, ...args) {
 }
 // Instructions for an exercise in the current language (English steps as fallback).
 export const instrFor = ex => (instr && instr[ex.id]) || ex.st || []
+// Translated title for an exercise in the current language (English name as fallback).
+export const exName = ex => (names && names[ex.id]) || ex.n || ''
 
 export async function setLang(l) {
   if (!LANGS[l]) l = 'en'
@@ -46,7 +52,8 @@ export async function setLang(l) {
   try {
     dict = l === 'en' ? {} : (await localePacks['../locales/' + l + '.js']()).default
     instr = l === 'en' || !INSTR_LANGS.includes(l) ? null : (await instrPacks['../instr/' + l + '.js']()).default
-  } catch (e) { dict = {}; instr = null }
+    names = l === 'en' || !NAMES_LANGS.includes(l) ? null : (await namePacks['../names/' + l + '.js']()).default
+  } catch (e) { dict = {}; instr = null; names = null }
   notify()
 }
 
