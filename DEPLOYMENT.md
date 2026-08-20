@@ -176,3 +176,26 @@ Restore = untar and docker compose up -d.
     sudo grep ACCESS_WEBHOOK_SECRET /opt/opengym/.env
     # quick API check:
     curl -s https://gym.trfnv.ru/api/config
+
+## 12. Notification dispatcher (loyalty_outbox → web-push)
+
+Rules with a `notification` action do NOT send push directly — they append a row to
+`loyalty_outbox` (kind `loyalty`, payload `{ message, rule_id, event_id }`).
+
+A dispatcher (`dispatchOutbox` in api/admin-db.js) claims undelivered rows
+(`FOR UPDATE SKIP LOCKED`, so concurrent runs never double-send), hands each to
+`sendPush` (api/server.js, web-push/VAPID, existing `db.subs` subscriptions), and
+sets `delivered_at` only on success.
+
+When it runs:
+
+1. immediately after the loyalty/access webhooks apply rules (response includes
+   `notified: <n>`);
+2. every 30 s as a safety net for rows that failed or were queued while the API
+   was down.
+
+Subscription management is unchanged: the athlete enables push in Settings
+(`/api/push/subscribe` with the browser PushSubscription); sw.js renders
+`title`/`body`/`tag`. If a user has no subscriptions the row is still marked
+delivered (sendPush no-ops) — best-effort delivery by design.
+

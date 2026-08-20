@@ -14,7 +14,7 @@ import {
 } from './access-db.js';
 import {
   acceptLoyaltyEvent, adminDbReady, applyLoyaltyRules, createAdminInvite, getAdmin, getAdminCredential, getAdminInvite,
-  listAdmins, listLoyaltyRules, registerAdmin, roleAllowed, saveLoyaltyRule, deleteLoyaltyRule,
+  listAdmins, listLoyaltyRules, registerAdmin, roleAllowed, saveLoyaltyRule, deleteLoyaltyRule, dispatchOutbox,
   syncAdminOwners, updateAdmin, updateAdminCounter, getWallet, listRewards, saveReward, deleteReward, redeemReward, listRedemptions, updateRedemption
 } from './admin-db.js';
 
@@ -568,7 +568,8 @@ const routes = {
     await adminDbReady;
     try {
       const result = await acceptLoyaltyEvent({ eventId, userId, eventType, branchKey, occurredAt: occurredAt.toISOString(), payload: body });
-      json(res, 200, { ok: true, ...result });
+      const notified = await dispatchOutbox({ send: sendPush }).catch(e => { console.error('outbox dispatch failed:', e.message); return 0; });
+      json(res, 200, { ok: true, ...result, notified });
     } catch (error) {
       console.error('loyalty event failed:', error.message);
       json(res, 503, { error: 'loyalty database unavailable' });
@@ -588,7 +589,8 @@ const routes = {
       const loyalty = result.matched && result.userId
         ? await applyLoyaltyRules({ userId: result.userId, eventId: event.eventId, eventType: 'visit', branchKey: event.branchKey, occurredAt: event.occurredAt })
         : null;
-      json(res, 200, { ok: true, ...result, loyalty });
+      const notified = await dispatchOutbox({ send: sendPush }).catch(e => { console.error('outbox dispatch failed:', e.message); return 0; });
+      json(res, 200, { ok: true, ...result, loyalty, notified });
     } catch (error) {
       console.error('access webhook failed:', error.message);
       json(res, 503, { error: 'integration database unavailable' });
@@ -873,4 +875,9 @@ http.createServer(async (req, res) => {
     console.error(key, e);
     if (!res.headersSent) json(res, 500, { error: 'server error' });
   }
-}).listen(PORT, () => console.log(`gym-api on :${PORT} (rpID=${RP_ID}, origin=${ORIGIN})`));
+}).listen(PORT, () => {
+  console.log(`gym-api on :${PORT} (rpID=${RP_ID}, origin=${ORIGIN})`);
+  // Loyalty outbox dispatcher: safety net for notifications that failed on the
+  // first attempt (or were queued while the API was down). Runs every 30s.
+  setInterval(() => dispatchOutbox({ send: sendPush }).catch(e => console.error('outbox tick failed:', e.message)), 30000);
+});

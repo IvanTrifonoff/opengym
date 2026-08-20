@@ -521,3 +521,50 @@ export async function applyLoyaltyRules({ userId, eventId, eventType, branchKey,
   }
   return { points, rulesApplied: applied };
 }
+
+/**
+ * Push dispatcher: claim undelivered loyalty_outbox rows and hand each to
+ * `send` (a callback the caller wires to web-push). Rows are claimed with
+ * FOR UPDATE SKIP LOCKED so concurrent dispatches never double-send. Only
+ * successfully sent rows are marked delivered; failures stay pending for the
+ * next tick.
+ */
+export async function dispatchOutbox({ send, batch = 25 } = {}) {
+  await ready();
+  if (!pool || typeof send !== 'function') return 0;
+  const client = await pool.connect();
+  let sent = 0;
+  try {
+    await client.query('BEGIN');
+    const claimed = await client.query(
+      `SELECT id, user_id, kind, payload FROM loyalty_outbox
+       WHERE delivered_at IS NULL
+       ORDER BY id LIMIT $1 FOR UPDATE SKIP LOCKED`, [batch]
+    );
+    const rows = claimed.rows;
+    if (!rows.length) { await client.query('COMMIT'); return 0; }
+    await client.query('COMMIT'); // release the claim; we deliver outside the txn
+    for (const row of rows) {
+      try {
+        const payload = row.payload || {};
+        await send(row.user_id, {
+          title: 'openGym',
+          body: String(payload.message || payload.body || '').slice(0, 300),
+          tag: payload.tag || ('loyalty-' + row.id),
+          data: { outbox_id: row.id, rule_id: payload.rule_id, event_id: payload.event_id }
+        });
+        await pool.query('UPDATE loyalty_outbox SET delivered_at = now() WHERE id = $1', [row.id]);
+        sent++;
+      } catch (error) {
+        console.error('outbox dispatch failed', row.id, error.message);
+        // leave undelivered for the next tick
+      }
+    }
+  } catch (error) {
+    console.error('outbox dispatch error:', error.message);
+  } finally {
+    client.release();
+  }
+  return sent;
+}
+
