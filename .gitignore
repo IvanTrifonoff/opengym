@@ -1,0 +1,15 @@
+# Local secrets / runtime data (never commit)
+.env
+data/secret
+data/db.json
+data/vapid.json
+data/state-*.json
+data-published-quarantine/
+
+# Dependencies
+node_modules/
+api/node_modules/
+
+# Backups & editor artifacts
+backup.sh
+*.bak-*

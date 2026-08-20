@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { bindUI } from './components/ui.jsx'
@@ -24,6 +24,7 @@ import History from './views/History.jsx'
 import Library from './views/Library.jsx'
 import Settings from './views/Settings.jsx'
 import Admin from './views/Admin.jsx'
+import AdminApp, { AdminBoundary } from './views/AdminApp.jsx'
 
 bindUI(useUI)   // lets the shared controls open sheets without importing the store at module scope
 
@@ -75,7 +76,6 @@ function Shell() {
               <Route path="/history" element={<History />} />
               <Route path="/library" element={<Library />} />
               <Route path="/settings" element={<Settings />} />
-              <Route path="/admin" element={user?.admin ? <Admin /> : <Navigate to="/home" replace />} />
               <Route path="*" element={<Navigate to="/home" replace />} />
             </Routes>
           )}
@@ -90,7 +90,8 @@ function Shell() {
 }
 
 export default function App() {
+  const adminPath = window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/')
   const boot = useStore(s => s.boot)
-  useEffect(() => { boot() }, [boot])
-  return <HashRouter><Shell /></HashRouter>
+  useEffect(() => { if (!adminPath) boot() }, [boot, adminPath])
+  return <BrowserRouter>{adminPath ? <AdminBoundary><AdminApp /></AdminBoundary> : <Shell />}</BrowserRouter>
 }

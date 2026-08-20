@@ -9,6 +9,14 @@ import {
   generateAuthenticationOptions, verifyAuthenticationResponse
 } from '@simplewebauthn/server';
 import webpush from 'web-push';
+import {
+  acceptAccessEvent, bindExternalMember, integrationDbReady, integrationDbStatus, listExternalMembers
+} from './access-db.js';
+import {
+  acceptLoyaltyEvent, adminDbReady, applyLoyaltyRules, createAdminInvite, getAdmin, getAdminCredential, getAdminInvite,
+  listAdmins, listLoyaltyRules, registerAdmin, roleAllowed, saveLoyaltyRule, deleteLoyaltyRule,
+  syncAdminOwners, updateAdmin, updateAdminCounter, getWallet, listRewards, saveReward, deleteReward, redeemReward, listRedemptions, updateRedemption
+} from './admin-db.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -27,6 +35,8 @@ const SESSION_DAYS = Math.max(1, +(process.env.SESSION_DAYS || 90) || 90);
 const MAX_BODY = 5 * 1024 * 1024;
 // Secure cookies require HTTPS; over plain http://localhost the flag would drop the cookie
 const SECURE = /^https:/i.test(ORIGIN) ? ' Secure;' : '';
+const ACCESS_WEBHOOK_SECRET = process.env.ACCESS_WEBHOOK_SECRET || '';
+const LOYALTY_EVENT_TYPES = new Set(['visit', 'workout_completed', 'streak', 'referral', 'manual']);
 
 fs.mkdirSync(DATA, { recursive: true });
 
@@ -40,6 +50,7 @@ let db = { users: [], creds: [], subs: [], invites: [] };
 try { db = JSON.parse(fs.readFileSync(dbFile, 'utf8')); } catch {}
 db.subs = db.subs || [];
 db.invites = db.invites || [];
+const adminBootstrap = syncAdminOwners(db.users, db.creds, ADMIN_UIDS);
 const isAdmin = user => !!user && (user.admin === true || ADMIN_UIDS.includes(user.id));
 function saveDb() { atomicWrite(dbFile, JSON.stringify(db, null, 2)); }
 function atomicWrite(file, content) {
@@ -195,6 +206,38 @@ function requireAdmin(req, res) {
   if (!isAdmin(user)) { json(res, 403, { error: 'forbidden' }); return null; }
   return user;
 }
+function adminSessionCookie(admin) {
+  const exp = Date.now() + SESSION_DAYS * 86400000;
+  const token = sign('admin:' + admin.id + ':' + exp);
+  return `adminsid=${token}; Path=/; Max-Age=${SESSION_DAYS * 86400}; HttpOnly;${SECURE} SameSite=Lax`;
+}
+const clearAdminCookie = `adminsid=; Path=/; Max-Age=0; HttpOnly;${SECURE} SameSite=Lax`;
+function adminSessionId(req) {
+  const cookies = Object.fromEntries((req.headers.cookie || '').split(';').map(c => {
+    const i = c.indexOf('='); return i < 0 ? ['', ''] : [c.slice(0, i).trim(), c.slice(i + 1).trim()];
+  }));
+  const raw = cookies.adminsid;
+  const payload = raw && verifySig(raw);
+  if (!payload) return null;
+  const [kind, id, exp] = payload.split(':');
+  return kind === 'admin' && id && Number(exp) > Date.now() ? id : null;
+}
+async function requireAdminAccount(req, res, roles = ['owner', 'manager', 'trainer', 'operator']) {
+  const id = adminSessionId(req);
+  if (!id) { json(res, 401, { error: 'admin sign-in required' }); return null; }
+  try {
+    await adminBootstrap;
+    const admin = await getAdmin(id);
+    if (!admin || admin.disabled) { json(res, 403, { error: 'admin account disabled' }); return null; }
+    if (!roleAllowed(admin.role, roles)) { json(res, 403, { error: 'insufficient admin role' }); return null; }
+    return admin;
+  } catch (error) {
+    console.error('admin auth failed:', error.message);
+    json(res, 503, { error: 'admin database unavailable' });
+    return null;
+  }
+}
+
 function sessionCookie(user) {
   return `gymsid=${makeSession(user)}; Path=/; Max-Age=${SESSION_DAYS * 86400}; HttpOnly;${SECURE} SameSite=Lax`;
 }
@@ -251,12 +294,68 @@ function livePresence(uid) {
 }
 setInterval(() => { for (const [k, v] of presence) if (Date.now() - v.updatedAt > PRESENCE_TTL) presence.delete(k); }, 30000).unref();
 
+
+function webhookSecretMatches(req) {
+  const supplied = String(req.headers['x-opengym-webhook-secret'] || '');
+  if (!ACCESS_WEBHOOK_SECRET || !supplied) return false;
+  const expected = Buffer.from(ACCESS_WEBHOOK_SECRET);
+  const actual = Buffer.from(supplied);
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+function normaliseAccessEvent(body) {
+  const eventId = String(body.event_id || body.id || '').trim().slice(0, 200);
+  const memberKey = String(
+    body.member_key || body.external_member_id || body.card_id || body.athlete_id || ''
+  ).trim().slice(0, 200);
+  const branchKey = String(body.branch_key || body.branch_id || body.club_id || '').trim().slice(0, 100) || null;
+  const directionValue = String(body.direction || body.type || 'in').trim().toLowerCase();
+  const direction = ['out', 'exit', 'leave', 'checkout'].includes(directionValue) ? 'out'
+    : ['unknown', 'test'].includes(directionValue) ? 'unknown' : 'in';
+  const rawDate = body.occurred_at || body.timestamp || body.time || Date.now();
+  const occurredAt = new Date(rawDate);
+  if (!eventId) throw new Error('event_id is required');
+  if (!memberKey) throw new Error('member_key is required');
+  if (Number.isNaN(occurredAt.getTime())) throw new Error('occurred_at is invalid');
+  return { eventId, memberKey, branchKey, direction, occurredAt: occurredAt.toISOString(), payload: body };
+}
+
+
+async function adminAuthOptions(req, res) {
+  await adminDbReady;
+  const options = await generateAuthenticationOptions({ rpID: RP_ID, userVerification: 'preferred', allowCredentials: [] });
+  const cid = putChallenge({ challenge: options.challenge, adminAuth: true });
+  json(res, 200, { cid, options });
+}
+
 /* ---------- routes ---------- */
 const routes = {
   'GET /api/health': async (req, res) => json(res, 200, { ok: true, users: db.users.length }),
 
   // Public config the login screen needs before anyone is signed in.
   'GET /api/config': async (req, res) => json(res, 200, { invite_only: INVITE_ONLY }),
+
+  'GET /api/loyalty/wallet': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    try { json(res, 200, await getWallet(user.id)); }
+    catch (error) { console.error('wallet failed:', error.message); json(res, 503, { error: 'loyalty database unavailable' }); }
+  },
+
+  'GET /api/loyalty/rewards': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    try { json(res, 200, { rewards: await listRewards(true) }); }
+    catch (error) { console.error('rewards failed:', error.message); json(res, 503, { error: 'loyalty database unavailable' }); }
+  },
+
+  'POST /api/loyalty/redeem': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    try { json(res, 200, { ok: true, redemption: await redeemReward({ userId: user.id, rewardId: String(body.reward_id || '') }) }); }
+    catch (error) { json(res, 400, { error: error.message }); }
+  },
 
   'GET /api/me': async (req, res) => {
     const user = readSession(req);
@@ -455,10 +554,202 @@ const routes = {
     json(res, 200, { ok: true });
   },
 
+
+  'POST /api/integrations/loyalty/events': async (req, res) => {
+    if (!webhookSecretMatches(req)) return json(res, 401, { error: 'invalid webhook secret' });
+    const body = await readBody(req);
+    const eventId = String(body.event_id || body.id || '').trim().slice(0, 200);
+    const userId = String(body.user_id || '').trim();
+    const eventType = String(body.event_type || '').trim();
+    const branchKey = String(body.branch_key || body.branch_id || '').trim().slice(0, 100) || null;
+    const occurredAt = new Date(body.occurred_at || body.timestamp || Date.now());
+    if (!eventId || !userId || !LOYALTY_EVENT_TYPES.has(eventType) || Number.isNaN(occurredAt.getTime()))
+      return json(res, 400, { error: 'event_id, user_id, valid event_type and occurred_at are required' });
+    await adminDbReady;
+    try {
+      const result = await acceptLoyaltyEvent({ eventId, userId, eventType, branchKey, occurredAt: occurredAt.toISOString(), payload: body });
+      json(res, 200, { ok: true, ...result });
+    } catch (error) {
+      console.error('loyalty event failed:', error.message);
+      json(res, 503, { error: 'loyalty database unavailable' });
+    }
+  },
+
+  'POST /api/integrations/access/events': async (req, res) => {
+    if (!webhookSecretMatches(req)) return json(res, 401, { error: 'invalid webhook secret' });
+    const body = await readBody(req);
+    let event;
+    try { event = normaliseAccessEvent(body); }
+    catch (error) { return json(res, 400, { error: error.message }); }
+    await integrationDbReady;
+    if (integrationDbStatus() !== 'configured') return json(res, 503, { error: 'integration database unavailable' });
+    try {
+      const result = await acceptAccessEvent(event);
+      const loyalty = result.matched && result.userId
+        ? await applyLoyaltyRules({ userId: result.userId, eventId: event.eventId, eventType: 'visit', branchKey: event.branchKey, occurredAt: event.occurredAt })
+        : null;
+      json(res, 200, { ok: true, ...result, loyalty });
+    } catch (error) {
+      console.error('access webhook failed:', error.message);
+      json(res, 503, { error: 'integration database unavailable' });
+    }
+  },
+
+
+  'POST /api/admin/auth/options': async (req, res) => adminAuthOptions(req, res),
+
+  'POST /api/admin/auth/verify': async (req, res) => {
+    const body = await readBody(req);
+    const challenge = takeChallenge(body.cid);
+    if (!challenge?.adminAuth) return json(res, 400, { error: 'challenge expired — try again' });
+    await adminDbReady;
+    const credential = await getAdminCredential(body.credential?.id);
+    if (!credential) return json(res, 404, { error: 'unknown admin passkey' });
+    let verification;
+    try {
+      verification = await verifyAuthenticationResponse({
+        response: body.credential, expectedChallenge: challenge.challenge,
+        expectedOrigin: ORIGIN, expectedRPID: RP_ID, requireUserVerification: false,
+        credential: {
+          id: credential.id, publicKey: b64uToBuf(credential.public_key), counter: credential.counter,
+          transports: credential.transports || []
+        }
+      });
+    } catch (error) { return json(res, 400, { error: 'verification failed: ' + error.message }); }
+    if (!verification.verified) return json(res, 400, { error: 'not verified' });
+    await updateAdminCounter(credential.id, verification.authenticationInfo.newCounter);
+    if (credential.disabled) return json(res, 403, { error: 'admin account disabled' });
+    json(res, 200, { admin: { id: credential.admin_id, name: credential.name, role: credential.role } }, { 'Set-Cookie': adminSessionCookie({ id: credential.admin_id }) });
+  },
+
+  'GET /api/admin/auth/me': async (req, res) => {
+    const admin = await requireAdminAccount(req, res);
+    if (admin) json(res, 200, { admin });
+  },
+
+  'POST /api/admin/auth/logout': async (req, res) => json(res, 200, { ok: true }, { 'Set-Cookie': clearAdminCookie }),
+
+  'POST /api/admin/staff/invite': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
+    const body = await readBody(req);
+    try {
+      const invite = await createAdminInvite({ name: body.name, role: body.role, createdBy: admin.id });
+      json(res, 200, { ok: true, invite });
+    } catch (error) { json(res, 400, { error: error.message }); }
+  },
+
+  'GET /api/admin/staff': async (req, res) => {
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
+    json(res, 200, { admins: await listAdmins() });
+  },
+
+  'POST /api/admin/staff/update': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner']); if (!admin) return;
+    const body = await readBody(req);
+    if (body.id === admin.id && body.disabled) return json(res, 400, { error: 'cannot disable yourself' });
+    try {
+      const updated = await updateAdmin({ id: String(body.id || ''), role: body.role, disabled: body.disabled });
+      if (!updated) return json(res, 404, { error: 'admin not found' });
+      json(res, 200, { ok: true, admin: updated });
+    } catch (error) { json(res, 400, { error: error.message }); }
+  },
+
+  'POST /api/admin/staff/register/options': async (req, res) => {
+    const body = await readBody(req);
+    const invite = await getAdminInvite(String(body.code || '').trim().toUpperCase());
+    if (!invite) return json(res, 400, { error: 'invalid or used staff invite' });
+    const id = crypto.randomBytes(12).toString('base64url');
+    const options = await generateRegistrationOptions({
+      rpName: RP_NAME + ' Admin', rpID: RP_ID, userID: Buffer.from(id),
+      userName: invite.name, userDisplayName: invite.name, attestationType: 'none',
+      authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' }, excludeCredentials: []
+    });
+    const cid = putChallenge({ challenge: options.challenge, adminRegister: true, adminId: id, inviteCode: invite.code, name: invite.name, role: invite.role });
+    json(res, 200, { cid, options });
+  },
+
+  'POST /api/admin/staff/register/verify': async (req, res) => {
+    const body = await readBody(req);
+    const challenge = takeChallenge(body.cid);
+    if (!challenge?.adminRegister) return json(res, 400, { error: 'challenge expired — try again' });
+    let verification;
+    try {
+      verification = await verifyRegistrationResponse({
+        response: body.credential, expectedChallenge: challenge.challenge,
+        expectedOrigin: ORIGIN, expectedRPID: RP_ID, requireUserVerification: false
+      });
+    } catch (error) { return json(res, 400, { error: 'verification failed: ' + error.message }); }
+    if (!verification.verified) return json(res, 400, { error: 'not verified' });
+    const { credential } = verification.registrationInfo;
+    try {
+      const admin = await registerAdmin({
+        id: challenge.adminId, name: challenge.name, role: challenge.role, inviteCode: challenge.inviteCode,
+        credentialId: credential.id, publicKey: Buffer.from(credential.publicKey).toString('base64url'),
+        counter: credential.counter, transports: body.credential?.response?.transports || []
+      });
+      json(res, 200, { admin }, { 'Set-Cookie': adminSessionCookie(admin) });
+    } catch (error) { json(res, 400, { error: error.message }); }
+  },
+
+  'GET /api/admin/loyalty/rewards': async (req, res) => {
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
+    json(res, 200, { rewards: await listRewards(false) });
+  },
+
+  'POST /api/admin/loyalty/rewards/save': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
+    const body = await readBody(req);
+    try {
+      const reward = await saveReward({ id: body.id, name: body.name, description: body.description, kind: body.kind,
+        cost: body.cost, deliveryMode: body.delivery_mode, active: body.active, stock: body.stock, createdBy: admin.id });
+      json(res, 200, { ok: true, reward });
+    } catch (error) { json(res, 400, { error: error.message }); }
+  },
+
+  'POST /api/admin/loyalty/rewards/delete': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
+    try { await deleteReward(String((await readBody(req)).id || '')); json(res, 200, { ok: true }); }
+    catch (error) { json(res, 400, { error: error.message }); }
+  },
+
+  'GET /api/admin/loyalty/redemptions': async (req, res) => {
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
+    try { json(res, 200, { redemptions: await listRedemptions() }); }
+    catch (error) { json(res, 503, { error: 'loyalty database unavailable' }); }
+  },
+
+  'POST /api/admin/loyalty/redemptions/update': async (req, res) => {
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
+    const body = await readBody(req);
+    try { json(res, 200, { ok: true, redemption: await updateRedemption({ id: body.id, status: body.status, adminId: admin.id, note: body.note }) }); }
+    catch (error) { json(res, 400, { error: error.message }); }
+  },
+
+  'GET /api/admin/loyalty/rules': async (req, res) => {
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
+    json(res, 200, { rules: await listLoyaltyRules() });
+  },
+
+  'POST /api/admin/loyalty/rules/save': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
+    const body = await readBody(req);
+    try {
+      const rule = await saveLoyaltyRule({ id: body.id, name: body.name, eventType: body.event_type, enabled: body.enabled, conditions: body.conditions, actions: body.actions, limits: body.limits, createdBy: admin.id });
+      json(res, 200, { ok: true, rule });
+    } catch (error) { json(res, 400, { error: error.message }); }
+  },
+
+  'POST /api/admin/loyalty/rules/delete': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
+    const body = await readBody(req);
+    try { await deleteLoyaltyRule(String(body.id || '')); json(res, 200, { ok: true }); }
+    catch (error) { json(res, 400, { error: error.message }); }
+  },
+
   /* ---------- admin dashboard ---------- */
   // One row per user, cheap enough for a personal instance (reads each state file once).
   'GET /api/admin/users': async (req, res) => {
-    if (!requireAdmin(req, res)) return;
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
     const users = db.users.map(u => {
       const S = readState(u.id) || {};
       const workouts = S.workouts || [];
@@ -478,7 +769,7 @@ const routes = {
 
   // Drill-down: full workout history + body-weight log for one user.
   'GET /api/admin/user': async (req, res) => {
-    if (!requireAdmin(req, res)) return;
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
     const id = new URL(req.url, 'http://x').searchParams.get('id');
     const u = db.users.find(x => x.id === id);
     if (!u) return json(res, 404, { error: 'no such user' });
@@ -494,7 +785,7 @@ const routes = {
   },
 
   'POST /api/admin/user/disable': async (req, res) => {
-    if (!requireAdmin(req, res)) return;
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
     const body = await readBody(req);
     const u = db.users.find(x => x.id === body.id);
     if (!u) return json(res, 404, { error: 'no such user' });
@@ -505,8 +796,39 @@ const routes = {
     json(res, 200, { ok: true, id: u.id, disabled: u.disabled });
   },
 
+
+  'GET /api/admin/integrations/access/bindings': async (req, res) => {
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
+    try {
+      await integrationDbReady;
+      const bindings = await listExternalMembers();
+      json(res, 200, { bindings });
+    } catch (error) {
+      console.error('access bindings list failed:', error.message);
+      json(res, 503, { error: 'integration database unavailable' });
+    }
+  },
+
+  'POST /api/admin/integrations/access/bind': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
+    const body = await readBody(req);
+    const memberKey = String(body.member_key || '').trim().slice(0, 200);
+    const userId = String(body.user_id || '').trim();
+    const branchKey = String(body.branch_key || '').trim().slice(0, 100) || null;
+    if (!memberKey || !userId) return json(res, 400, { error: 'member_key and user_id are required' });
+    if (!db.users.some(user => user.id === userId)) return json(res, 404, { error: 'user not found' });
+    try {
+      await integrationDbReady;
+      const binding = await bindExternalMember({ memberKey, userId, branchKey });
+      json(res, 200, { ok: true, binding });
+    } catch (error) {
+      console.error('access binding failed:', error.message);
+      json(res, 503, { error: 'integration database unavailable' });
+    }
+  },
+
   'GET /api/admin/invites': async (req, res) => {
-    if (!requireAdmin(req, res)) return;
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
     // resolve usedBy uid → name for display
     const invites = db.invites.map(i => ({
       ...i, usedByName: i.usedBy ? (db.users.find(u => u.id === i.usedBy) || {}).name || null : null
@@ -515,7 +837,7 @@ const routes = {
   },
 
   'POST /api/admin/invites/new': async (req, res) => {
-    const admin = requireAdmin(req, res); if (!admin) return;
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
     const body = await readBody(req);
     let code;
     // 16 hex chars = 64 bits, up from 8 chars / 32 bits. The app has no rate limiting by design
@@ -530,7 +852,7 @@ const routes = {
   },
 
   'POST /api/admin/invites/revoke': async (req, res) => {
-    if (!requireAdmin(req, res)) return;
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
     const body = await readBody(req);
     const inv = db.invites.find(i => i.code === String(body.code || '').toUpperCase());
     if (!inv) return json(res, 404, { error: 'no such code' });

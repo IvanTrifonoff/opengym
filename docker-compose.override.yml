@@ -1,0 +1,15 @@
+services:
+  api:
+    networks:
+      - default
+      - retail-db
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+networks:
+  retail-db:
+    external: true
+    name: retail-execution_default

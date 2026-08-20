@@ -97,6 +97,7 @@ export default function Settings() {
       )}
     </Section>
     {!user && !DEMO && !MOBILE && <p className="sect-f" style={{ marginTop: -18, marginBottom: 22 }}>{t('Guest mode — data lives only in this browser.')}</p>}
+    {user && <LoyaltyCard toast={toast} />}
 
     {/* ---------- general ---------- */}
     <Section title={t('General')} footer={t('Note: switching units only changes the label — logged numbers are not converted.')}>
@@ -199,6 +200,43 @@ export default function Settings() {
       <a href="https://github.com/DuarteSantos8/openGym" target="_blank" rel="noopener">source code</a> · exercise data: hasaneyldrm/exercises-dataset (CC)
     </div>
   </div>
+}
+
+function LoyaltyCard({ toast }) {
+  const [wallet, setWallet] = useState(null)
+  const [rewards, setRewards] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const load = () => Promise.all([api('/api/loyalty/wallet'), api('/api/loyalty/rewards')])
+    .then(([w, r]) => { setWallet(w); setRewards(r.rewards || []); setError('') })
+    .catch(e => setError(e.message))
+  useEffect(() => { load(); }, [])
+  const redeem = reward => confirmSheet({
+    title: t('Exchange points?'),
+    message: t('Spend {0} points on {1}?', reward.cost, reward.name),
+    confirmText: t('Exchange'),
+    onConfirm: async () => {
+      setBusy(true)
+      try {
+        const result = await api('/api/loyalty/redeem', { method: 'POST', body: JSON.stringify({ reward_id: reward.id }) })
+        toast(result.redemption.code ? t('Reward code: {0}', result.redemption.code) : t('Reward requested — show it to staff'))
+        await load()
+      } catch (e) { toast(e.message) }
+      setBusy(false)
+    }
+  })
+  return <Section title={t('Loyalty')} footer={t('Points come from your club activity and can be exchanged for rewards.')}>
+    <div className="card" style={{ marginBottom: 10, background: 'var(--acc-soft)', borderColor: 'color-mix(in srgb,var(--acc) 35%,var(--sep))' }}>
+      <div className="small dim">{t('Available points')}</div>
+      <div className="big" style={{ color: 'var(--acc)', marginTop: 2 }}>{wallet ? wallet.balance : '—'}</div>
+    </div>
+    {error && <div className="small" style={{ color: 'var(--red)', marginBottom: 8 }}>{error}</div>}
+    {rewards.map(reward => <div key={reward.id} className="card" style={{ marginBottom: 8 }}>
+      <div className="row between" style={{ alignItems: 'flex-start' }}><div><h3 style={{ margin: 0 }}>{reward.name}</h3><div className="small dim" style={{ marginTop: 4 }}>{reward.description || t('Club reward')}</div></div><span className="tag acc">{reward.cost} pts</span></div>
+      <Button size="sm" variant="primary" style={{ marginTop: 10 }} disabled={busy || !wallet || wallet.balance < reward.cost} onClick={() => redeem(reward)}>{wallet && wallet.balance >= reward.cost ? t('Exchange') : t('Not enough points')}</Button>
+    </div>)}
+    {!!wallet?.redemptions?.length && <div className="list" style={{ marginTop: 10 }}><div className="small dim" style={{ padding: '4px 2px' }}>{t('Reward history')}</div>{wallet.redemptions.slice(0, 10).map(item => <div key={item.id} className="item"><div className="grow"><div className="tt">{item.reward_name}</div><div className="ss">{item.status === 'pending' ? t('Waiting for staff') : item.status === 'fulfilled' ? (item.code ? t('Code: {0}', item.code) : t('Completed')) : t('Rejected and refunded')}</div></div><span className="tag">-{item.cost}</span></div>)}</div>}
+  </Section>
 }
 
 // The whole point is that the two scales are one judgement counted from opposite ends, and a
