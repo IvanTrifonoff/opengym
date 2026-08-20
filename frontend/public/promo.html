@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GymOS — приложение для сети фитнес-клубов | Удержание, лояльность, рост выручки</title>
+<meta name="description" content="Готовое приложение для вашего фитнес-клуба: тренировочные программы, программа лояльности, баллы, награды, контроль посещений и аналитика. Без разработки. Развёрнуто за неделю.">
+<style>
+  :root{
+    --bg:#0c0e12; --bg2:#12151c; --card:#171b24; --card2:#1c212d;
+    --txt:#eef1f6; --dim:#9aa4b5; --acc:#4f8cff; --acc2:#7c5cff;
+    --green:#34d399; --amber:#fbbf24; --red:#f87171; --line:#252b38;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;line-height:1.6;overflow-x:hidden}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+  a{color:var(--acc);text-decoration:none}
+  a:hover{text-decoration:underline}
+  /* ---------- nav ---------- */
+  nav{position:sticky;top:0;z-index:50;background:rgba(12,14,18,.82);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;gap:24px;height:64px}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;letter-spacing:.3px}
+  .logo .dot{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:flex;align-items:center;justify-content:center;font-size:15px}
+  nav .links{margin-left:auto;display:flex;gap:22px;font-size:14px;color:var(--dim)}
+  nav .links a{color:var(--dim)}
+  nav .links a:hover{color:var(--txt)}
+  .btn{display:inline-block;padding:13px 28px;border-radius:12px;font-weight:700;font-size:15px;cursor:pointer;border:none;transition:transform .15s,box-shadow .15s}
+  .btn:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(79,140,255,.35);text-decoration:none}
+  .btn-p{background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff}
+  .btn-o{background:transparent;color:var(--txt);border:1px solid var(--line)}
+  .btn-lg{padding:16px 38px;font-size:17px}
+  /* ---------- hero ---------- */
+  header{position:relative;padding:96px 0 70px;text-align:center;background:
+    radial-gradient(900px 500px at 20% 0%,rgba(79,140,255,.16),transparent 60%),
+    radial-gradient(800px 500px at 85% 10%,rgba(124,92,255,.14),transparent 60%)}
+  .badge{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:13px;color:var(--dim);margin-bottom:26px}
+  .badge .pulse{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(52,211,153,.5);animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.5)}70%{box-shadow:0 0 0 12px rgba(52,211,153,0)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}}
+  h1{font-size:clamp(34px,5.4vw,58px);line-height:1.12;font-weight:850;letter-spacing:-.5px;margin:0 auto 22px;max-width:900px}
+  h1 .g{background:linear-gradient(120deg,var(--acc),var(--acc2),var(--green));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{font-size:clamp(16px,2vw,20px);color:var(--dim);max-width:760px;margin:0 auto 38px}
+  .cta-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+  .cta-note{color:var(--dim);font-size:13px;margin-top:16px}
+  /* ---------- metrics ---------- */
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px;margin:60px 0 0}
+  .metric{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px 20px;text-align:center}
+  .metric .v{font-size:34px;font-weight:850;background:linear-gradient(120deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .metric .l{color:var(--dim);font-size:13px;margin-top:6px}
+  /* ---------- sections ---------- */
+  section{padding:84px 0}
+  .kicker{color:var(--acc);font-weight:700;font-size:13px;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px}
+  h2{font-size:clamp(28px,3.6vw,40px);font-weight:800;letter-spacing:-.3px;margin-bottom:14px}
+  .lead{color:var(--dim);font-size:17px;max-width:720px;margin-bottom:44px}
+  .center{text-align:center}
+  .center .lead{margin-left:auto;margin-right:auto}
+  /* problem */
+  .problem{background:var(--bg2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .pain-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+  .pain{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px}
+  .pain .ic{font-size:26px;margin-bottom:12px}
+  .pain h3{font-size:17px;margin-bottom:8px}
+  .pain p{color:var(--dim);font-size:14.5px}
+  .pain .x{color:var(--red);font-weight:700}
+  /* features */
+  .feat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:18px}
+  .feat{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:30px;transition:border-color .2s,transform .2s}
+  .feat:hover{border-color:rgba(79,140,255,.5);transform:translateY(-3px)}
+  .feat .ic{width:46px;height:46px;border-radius:12px;background:linear-gradient(135deg,rgba(79,140,255,.2),rgba(124,92,255,.2));display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:16px}
+  .feat h3{font-size:18px;margin-bottom:8px}
+  .feat p{color:var(--dim);font-size:14.5px}
+  .feat .tag{display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;margin-left:8px;vertical-align:2px}
+  .tag-new{background:rgba(52,211,153,.15);color:var(--green);border:1px solid rgba(52,211,153,.3)}
+  .tag-soon{background:rgba(251,191,36,.12);color:var(--amber);border:1px solid rgba(251,191,36,.3)}
+  /* how it works */
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;counter-reset:step}
+  .step{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:30px;position:relative}
+  .step .n{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--acc),var(--acc2));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;margin-bottom:16px}
+  .step h3{font-size:17px;margin-bottom:8px}
+  .step p{color:var(--dim);font-size:14.5px}
+  /* quote */
+  .quote{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--acc);border-radius:14px;padding:28px 30px;max-width:820px;margin:0 auto}
+  .quote p{font-size:19px;line-height:1.55}
+  .quote .who{color:var(--dim);font-size:14px;margin-top:14px}
+  /* roi */
+  .roi{background:linear-gradient(135deg,rgba(79,140,255,.1),rgba(124,92,255,.08));border:1px solid var(--line);border-radius:20px;padding:44px}
+  .roi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-top:26px}
+  .roi-item .v{font-size:30px;font-weight:850;color:var(--green)}
+  .roi-item .l{color:var(--dim);font-size:14px;margin-top:4px}
+  /* pricing */
+  .price-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:20px;align-items:stretch}
+  .price{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:34px;display:flex;flex-direction:column}
+  .price.hot{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc),0 20px 60px rgba(79,140,255,.15);position:relative}
+  .price .pname{font-weight:700;font-size:15px;color:var(--dim);letter-spacing:1px;text-transform:uppercase}
+  .price .pval{font-size:40px;font-weight:850;margin:12px 0 4px}
+  .price .pval small{font-size:16px;font-weight:600;color:var(--dim)}
+  .price .pdesc{color:var(--dim);font-size:14px;margin-bottom:20px}
+  .price ul{list-style:none;margin-bottom:28px;flex:1}
+  .price li{padding:7px 0;font-size:14.5px;color:#cdd4e0;display:flex;gap:10px}
+  .price li::before{content:'✓';color:var(--green);font-weight:800}
+  .hot-badge{position:absolute;top:-14px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--acc),var(--acc2));padding:6px 16px;border-radius:999px;font-size:12px;font-weight:800}
+  /* faq */
+  .faq{max-width:820px;margin:0 auto}
+  details{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 24px;margin-bottom:12px}
+  summary{cursor:pointer;font-weight:700;font-size:16px;list-style:none;display:flex;justify-content:space-between;align-items:center}
+  summary::after{content:'+';font-size:22px;color:var(--dim);transition:transform .2s}
+  details[open] summary::after{transform:rotate(45deg)}
+  details p{color:var(--dim);font-size:14.5px;margin-top:12px}
+  /* cta final */
+  .final{text-align:center;background:
+    radial-gradient(700px 400px at 50% 100%,rgba(79,140,255,.18),transparent 60%);padding:90px 0}
+  .final h2{font-size:clamp(30px,4vw,46px)}
+  /* footer */
+  footer{border-top:1px solid var(--line);padding:34px 0;color:var(--dim);font-size:13.5px}
+  footer .wrap{display:flex;flex-wrap:wrap;gap:16px;align-items:center}
+  footer .r{margin-left:auto;display:flex;gap:18px}
+  @media(max-width:640px){
+    nav .links{display:none}
+    section{padding:64px 0}
+    .roi{padding:30px}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="logo"><span class="dot">💪</span>GymOS</div>
+    <div class="links">
+      <a href="#problem">Проблема</a>
+      <a href="#features">Возможности</a>
+      <a href="#how">Как это работает</a>
+      <a href="#roi">Окупаемость</a>
+      <a href="#pricing">Тарифы</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <a class="btn btn-p" href="#pricing" style="padding:10px 20px;font-size:14px">Обсудить внедрение</a>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <div class="badge"><span class="pulse"></span>Уже работает на реальном клубе — развёрнуто за 7 дней</div>
+    <h1>Собственное приложение для вашего фитнес-клуба, которое <span class="g">удерживает клиентов и повышает выручку</span></h1>
+    <p class="sub">Программы тренировок, программа лояльности с баллами и наградами, контроль посещений, аналитика и push-уведомления — всё в одном приложении. Без разработчиков, без очередей в App Store, без ежемесячных платежей за SaaS.</p>
+    <div class="cta-row">
+      <a class="btn btn-p btn-lg" href="#pricing">Получить коммерческое предложение</a>
+      <a class="btn btn-o btn-lg" href="#features">Смотреть возможности</a>
+    </div>
+    <div class="cta-note">Вход по Face ID / Touch ID — без паролей и забытых логинов</div>
+    <div class="metrics">
+      <div class="metric"><div class="v">5–10×</div><div class="l">дешевле, чем разработка приложения под заказ</div></div>
+      <div class="metric"><div class="v">~30%</div><div class="l">клиентов в фитнесе уходят в первые месяцы*</div></div>
+      <div class="metric"><div class="v">5×</div><div class="l">дешевле удержать клиента, чем привлечь нового*</div></div>
+      <div class="metric"><div class="v">1 нед</div><div class="l">от договора до работающего приложения</div></div>
+    </div>
+    <div class="cta-note" style="margin-top:22px;max-width:820px;margin-left:auto;margin-right:auto">* Общеотраслевые показатели фитнес-индустрии, регулярно публикуемые в отраслевой аналитике (исследования удержания в health & fitness клубах). Точные цифры зависят от вашего клуба — посчитаем на демо.</div>
+  </div>
+</header>
+
+<section class="problem" id="problem">
+  <div class="wrap">
+    <div class="center">
+      <div class="kicker">Знакомая ситуация</div>
+      <h2>Вы теряете клиентов и деньги — молча</h2>
+      <p class="lead">Вы открыли зал, купили оборудование, наняли тренеров. Но у вашего клуба нет собственного цифрового пространства, где клиент живёт между тренировками — и это дорого обходится каждый месяц.</p>
+    </div>
+    <div class="pain-grid">
+      <div class="pain"><div class="ic">📉</div><h3>«Новогодние» клиенты исчезают</h3><p>Пик продаж в январе — и тихий уход к марту. Клиент не приходит 3 недели, и вы даже не знаете, что он уже потерян.</p></div>
+      <div class="pain"><div class="ic">🔕</div><h3>Нет связи с клиентом</h3><p>Вы не можете напомнить о тренировке, поздравить с серией посещений или вернуть ушедшего. СМС-спам в мессенджерах — это не лояльность, а раздражение.</p></div>
+      <div class="pain"><div class="ic">💸</div><h3>Скидки «на глаз»</h3><p>Администратор даёт скидку по настроению, а не по правилам. Лояльность не измерить, акции не окупить, персонал не мотивировать.</p></div>
+      <div class="pain"><div class="ic">🤷</div><h3>Клиенту скучно</h3><p>Тренировка по бумажке или «как в прошлый раз». Нет прогресса, нет цели, нет геймификации — нет причины вернуться.</p></div>
+      <div class="pain"><div class="ic">🧩</div><h3>Разрозненные сервисы</h3><p>Один чат для записи, другой — для оплат, третий — для расписания. Клиент устаёт, вы теряете контроль над данными.</p></div>
+      <div class="pain"><div class="ic">🏢</div><h3>Нет единой картины по сети</h3><p>Несколько филиалов — несколько «зон отчуждения». Вы не видите, какой зал приносит больше и почему.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="center">
+      <div class="kicker">Решение</div>
+      <h2>Всё, что есть у сетевых гигантов, — теперь у вас</h2>
+      <p class="lead">GymOS объединяет в одном приложении тренировочный опыт, программу лояльности и управление клубом. То, что раньше требовало команды разработчиков и бюджета в миллионы, работает у вас через неделю.</p>
+    </div>
+    <div class="feat-grid">
+
+      <div class="feat">
+        <div class="ic">🏋️</div>
+        <h3>Тренировочное приложение спортсмена</h3>
+        <p>Готовые программы и библиотека из 1300+ упражнений с анимацией техники выполнения, история тренировок, прогресс весов и объёмов, планировщик. Клиент видит свой рост — и не хочет уходить.</p>
+      </div>
+
+      <div class="feat">
+        <div class="ic">🎯</div>
+        <h3>Программа лояльности под ваш бизнес</h3>
+        <p>Конструктор правил без программирования: баллы за посещения, завершённые тренировки, серии и рефералов. Лимиты, филиалы, шаблоны — настроил за 10 минут и включил.</p>
+      </div>
+
+      <div class="feat">
+        <div class="ic">🎁</div>
+        <h3>Каталог наград и обмен баллов</h3>
+        <p>Скидка на абонемент, бесплатная тренировка, мерч, гостевой пропуск — клиент копит баллы и сам выбирает награду. Одноразовые коды для цифровых наград и подтверждение выдачи сотрудником.</p>
+      </div>
+
+      <div class="feat">
+        <div class="ic">📟</div>
+        <h3>Интеграция с вашим контролем доступа</h3>
+        <p>Подключите турникеты, СКУД или CRM по универсальному API: посещение фиксируется автоматически, баллы начисляются без участия персонала. Защита от дублей — повторное событие не засчитывается дважды.</p>
+      </div>
+
+      <div class="feat">
+        <div class="ic">🔔</div>
+        <h3>Push-уведомления, которые возвращают в зал</h3>
+        <p>«У вас серия из 4 тренировок — ещё одна, и +100 баллов», «Абонемент заканчивается», «Новая награда доступна». Автоматические триггеры по правилам — без рассылки вручную.</p>
+      </div>
+
+      <div class="feat">
+        <div class="ic">🛡️</div>
+        <h3>Вход по Face ID / Touch ID</h3>
+        <p>Passkey-технология: клиент входит отпечатком или лицом за секунду. Никаких паролей, которые забывают, и никакого SMS-подтверждения, которое платит клуб.</p>
+      </div>
+
+      <div class="feat">
+        <div class="ic">👥</div>
+        <h3>Сотрудники с ролями</h3>
+        <p>Владелец, менеджер, тренер, оператор — у каждого свой уровень доступа. Тренер видит своих клиентов, менеджер управляет правилами, владелец видит всё.</p>
+      </div>
+
+      <div class="feat">
+        <div class="ic">🏷️</div>
+        <h3>Приглашения по коду</h3>
+        <p>Регистрация только по invite-коду: контроль, кто попадает в систему, никаких «ботов» и мусорных профилей. Новый филиал подключается новым кодом.</p>
+      </div>
+
+      <div class="feat">
+        <div class="ic">🧾</div>
+        <h3>Неизменяемый журнал баллов</h3>
+        <p>Каждое начисление и списание — прозрачная запись: что, когда и за что. Никаких споров «куда делись баллы» и двойных начислений. Аудит в один клик.</p>
+      </div>
+
+      <div class="feat">
+        <div class="ic">📊</div>
+        <h3>Аналитика по филиалам <span class="tag tag-soon">в разработке</span></h3>
+        <p>Посещаемость, активность клиентов, эффективность акций, окупаемость программы лояльности — панель владельца по всей сети и в разрезе каждого зала.</p>
+      </div>
+
+      <div class="feat">
+        <div class="ic">👤</div>
+        <h3>Карточка клиента <span class="tag tag-soon">в разработке</span></h3>
+        <p>История посещений, баллы, абонементы, серии тренировок, статус лояльности — полный профиль спортсмена для тренера и администратора.</p>
+      </div>
+
+      <div class="feat">
+        <div class="ic">🤝</div>
+        <h3>Реферальная программа <span class="tag tag-soon">в разработке</span></h3>
+        <p>«Приведи друга — получи 200 баллов». Механика уже в конструкторе правил, добавляем личные реферальные ссылки и автоматические начисления.</p>
+      </div>
+
+      <div class="feat">
+        <div class="ic">⚡</div>
+        <h3>Челленджи и серии <span class="tag tag-soon">в разработке</span></h3>
+        <p>«5 тренировок за неделю», «30 дней без пропусков» — соревновательные механики, которые удерживают клиента в ритме и создают сообщество.</p>
+      </div>
+
+      <div class="feat">
+        <div class="ic">📲</div>
+        <h3>Установка на телефон одним касанием <span class="tag tag-new">новое</span></h3>
+        <p>Приложение устанавливается с вашего сайта за один клик — как нативное, с иконкой на домашнем экране. Никаких очередей в App Store и Google Play.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section id="how" style="background:var(--bg2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="center">
+      <div class="kicker">Путь клиента</div>
+      <h2>Как это работает</h2>
+      <p class="lead">Клиент приходит → сканирует код → тренируется → копит баллы → возвращается снова. Каждый шаг усиливает следующий.</p>
+    </div>
+    <div class="steps">
+      <div class="step"><div class="n">1</div><h3>Подключаем клуб</h3><p>Настраиваем приложение, филиалы, сотрудников и правила лояльности. Интегрируем турникеты или CRM.</p></div>
+      <div class="step"><div class="n">2</div><h3>Клиент входит за секунду</h3><p>Face ID / Touch ID — один касание, и профиль готов. Никаких паролей и анкет.</p></div>
+      <div class="step"><div class="n">3</div><h3>Тренируется и копит</h3><p>Завершил тренировку — баллы начислены. Пришёл на занятие — серия растёт. Привёл друга — бонус.</p></div>
+      <div class="step"><div class="n">4</div><h3>Меняет баллы на награды</h3><p>Скидки, тренировки, мерч — клиент сам выбирает момент, когда вернуться и «потратить» лояльность.</p></div>
+      <div class="step"><div class="n">5</div><h3>Возвращается и приводит друзей</h3><p>Уведомления, челленджи и награды создают привычку. Довольный клиент — ваш лучший канал продаж.</p></div>
+    </div>
+    <div class="quote" style="margin-top:44px">
+      <p>«Приложение не продаёт абонемент. Приложение делает так, что клиент не хочет уходить — и именно поэтому продолжает платить».</p>
+      <div class="who">Принцип, на котором построена программа лояльности GymOS</div>
+    </div>
+  </div>
+</section>
+
+<section id="roi">
+  <div class="wrap">
+    <div class="roi">
+      <div class="kicker">Бизнес-эффект</div>
+      <h2>Что это даёт вашему бизнесу</h2>
+      <p class="lead" style="margin-bottom:10px">Программы лояльности и мобильные приложения — самый изученный инструмент удержания в фитнес-индустрии. Отраслевая аналитика удержания клиентов в health & fitness клубах показывает типичные эффекты:</p>
+      <div class="roi-grid">
+        <div class="roi-item"><div class="v">+20–40%</div><div class="l">рост частоты посещений у участников программ лояльности</div></div>
+        <div class="roi-item"><div class="v">до 2×</div><div class="l">дольше остаются клиенты, вовлечённые в приложение и геймификацию</div></div>
+        <div class="roi-item"><div class="v">до 50%</div><div class="l">выручки сети — от действующих клиентов, удержанных системно, а не «на скидках»</div></div>
+        <div class="roi-item"><div class="v">1 клуб</div><div class="l">достаточно для окупаемости: всего несколько удержанных абонементов покрывают стоимость внедрения</div></div>
+      </div>
+      <p style="color:var(--dim);font-size:12.5px;margin-top:22px">* Типовые отраслевые ориентиры; конкретные цифры зависят от вашего клуба, цен и механик. Расчёт окупаемости для вашего зала — на бесплатной демонстрации.</p>
+    </div>
+  </div>
+</section>
+
+<section id="pricing" style="background:var(--bg2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="center">
+      <div class="kicker">Внедрение</div>
+      <h2>Тарифы</h2>
+      <p class="lead">Никаких скрытых платежей и пожизненных подписок за «воздух». Вы платите за развёртывание — и владеете решением.</p>
+    </div>
+    <div class="price-grid">
+      <div class="price">
+        <div class="pname">Старт</div>
+        <div class="pval">49 000 ₽</div>
+        <div class="pdesc">Один клуб, полный функционал. Идеально для начала.</div>
+        <ul>
+          <li>Приложение спортсмена с библиотекой упражнений</li>
+          <li>Программа лояльности: баллы, награды, лимиты</li>
+          <li>Вход по Face ID / Touch ID</li>
+          <li>Панель управления клубом</li>
+          <li>Развёртывание и настройка «под ключ» за 7 дней</li>
+          <li>Обучение персонала</li>
+        </ul>
+        <a class="btn btn-o" href="#final-cta">Выбрать Старт</a>
+      </div>
+      <div class="price hot">
+        <div class="hot-badge">Популярный выбор</div>
+        <div class="pname">Сеть</div>
+        <div class="pval">от 89 000 ₽</div>
+        <div class="pdesc">Несколько филиалов: единая база, единая лояльность.</div>
+        <ul>
+          <li>Всё из тарифа «Старт»</li>
+          <li>Неограниченные филиалы в одной системе</li>
+          <li>Интеграция с СКУД / турникетами / CRM</li>
+          <li>Роли сотрудников и разграничение доступа</li>
+          <li>Автоматические push-уведомления</li>
+          <li>Отчётность по каждому филиалу</li>
+          <li>Приоритетная поддержка</li>
+        </ul>
+        <a class="btn btn-p" href="#final-cta">Выбрать Сеть</a>
+      </div>
+      <div class="price">
+        <div class="pname">Индивидуально</div>
+        <div class="pval">по запросу</div>
+        <div class="pdesc">Свои механики, интеграции и масштаб.</div>
+        <ul>
+          <li>Любые функции из тарифов выше</li>
+          <li>Дополнительные интеграции под ваше оборудование</li>
+          <li>Уникальные механики лояльности</li>
+          <li>Брендирование под ваш стиль</li>
+          <li>Доработки по техническому заданию</li>
+        </ul>
+        <a class="btn btn-o" href="#final-cta">Обсудить задачу</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <div class="center">
+      <div class="kicker">Вопросы</div>
+      <h2>Частые вопросы</h2>
+    </div>
+    <div class="faq" style="margin-top:40px">
+      <details>
+        <summary>У меня нет программистов. Справлюсь ли я?</summary>
+        <p>Да. Правила лояльности, награды и сотрудники настраиваются в визуальном конструкторе без единой строки кода. Мы разворачиваем систему и обучаем персонал — дальше вы управляете всем сами, как обычной CRM.</p>
+      </details>
+      <details>
+        <summary>Что нужно от моего клуба для запуска?</summary>
+        <p>Сервер (или виртуальная машина) и домен — это всё. Если турникеты или CRM имеют API, подключаем их по универсальному интерфейсу. Если нет — посещения можно отмечать вручную, баллы всё равно будут начисляться.</p>
+      </details>
+      <details>
+        <summary>Как клиент установит приложение?</summary>
+        <p>Одним касанием с вашего сайта — приложение появляется на домашнем экране как нативное, работает офлайн и поддерживает push-уведомления. Никаких App Store и Google Play, никаких комиссий и модераций.</p>
+      </details>
+      <details>
+        <summary>А если клиент забудет пароль?</summary>
+        <p>Паролей нет. Вход по Face ID / Touch ID (технология passkey) — быстрее и безопаснее, чем классические логины. Это не только удобство, но и заметное снижение «трения» при возвращении клиента.</p>
+      </details>
+      <details>
+        <summary>Можно ли поменять правила лояльности после запуска?</summary>
+        <p>Да, в любой момент и без разработчиков: изменили баллы за посещение, добавили новую награду, включили лимит — и правила применились. Все начисления идут через прозрачный журнал, спорные ситуации решаются в один клик.</p>
+      </details>
+      <details>
+        <summary>Кому принадлежат данные?</summary>
+        <p>Вам. Система разворачивается на вашем сервере, данные и резервные копии хранятся у вас. Мы не берём их себе и не передаём третьим лицам.</p>
+      </details>
+      <details>
+        <summary>Что входит в поддержку?</summary>
+        <p>Настройка, обучение, резервное копирование и сопровождение. При необходимости подключаем дополнительных специалистов — интеграции, аналитика, доработки.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section class="final" id="final-cta">
+  <div class="wrap">
+    <div class="kicker">Следующий шаг</div>
+    <h2>Ваши клиенты уже готовы к этому приложению.<br>Осталось — вы</h2>
+    <p class="lead" style="margin:18px auto 34px">Каждый месяц без системы удержания — это абонементы, которые вы не продлили, и клиенты, которых увёл конкурент. Начните с бесплатной демонстрации: покажем систему на реальном клубе и посчитаем окупаемость для вашего зала.</p>
+    <div class="cta-row">
+      <a class="btn btn-p btn-lg" href="mailto:hello@gym.trfnv.ru?subject=Демо%20GymOS%20для%20моего%20клуба">Записаться на демо</a>
+      <a class="btn btn-o btn-lg" href="mailto:hello@gym.trfnv.ru?subject=Коммерческое%20предложение%20GymOS">Получить КП за 24 часа</a>
+    </div>
+    <div class="cta-note">Ответим в течение рабочего дня · Расскажем, как это работает именно в вашем случае</div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>© 2026 GymOS — платформа лояльности и приложение для фитнес-клубов</div>
+    <div class="r">
+      <a href="https://gym.trfnv.ru">Демо-клуб</a>
+      <a href="mailto:hello@gym.trfnv.ru">hello@gym.trfnv.ru</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -199,3 +199,17 @@ Subscription management is unchanged: the athlete enables push in Settings
 `title`/`body`/`tag`. If a user has no subscriptions the row is still marked
 delivered (sendPush no-ops) — best-effort delivery by design.
 
+## 13. Marketing promo page (/promo)
+
+`frontend/public/promo.html` is a standalone Russian-language landing page
+targeting gym owners (sell the product: retention, loyalty, revenue growth).
+Served as a static file:
+
+- nginx vhost has `location = /promo { proxy_pass http://127.0.0.1:8180/promo.html; }`
+  so it bypasses the SPA fallback.
+- Vite copies it from `public/` into the web image at build time
+  (`docker compose build web`).
+- Features marked «в разработке» (analytics, member cards, referral links,
+  challenges) are intentionally positioned as roadmap — they are NOT implemented
+  yet; do not claim otherwise in marketing copy.
+
