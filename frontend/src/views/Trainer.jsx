@@ -51,6 +51,7 @@ export default function Trainer({ admin, onLogout }) {
       .then(() => { setError(''); search(); load() })
       .catch(e => setError(e.message)).finally(() => setBusy(''))
   }
+  const back = () => api('/api/admin/impersonate/back', { method: 'POST', body: '{}' }).then(d => { location.href = d.redirect || '/admin' }).catch(() => {})
 
   if (prog) return <TrainerProgram athlete={prog} onBack={() => setProg(null)} />
   if (sel) return <AthleteCard id={sel} admin={admin} trainers={[]} onBack={() => setSel(null)} onProgram={() => setProg({ id: sel, name: (athletes.find(x => x.id === sel) || {}).name || 'Спортсмен' })} />
@@ -69,6 +70,8 @@ export default function Trainer({ admin, onLogout }) {
       </div>
       <button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button>
     </div>
+
+    {admin.impersonated && <div className="card" style={{ borderColor: 'var(--acc)', marginBottom: 14 }}><div className="row between" style={{ gap: 8 }}><div className="small">Вы смотрите интерфейс от имени <b>{admin.name}</b> · {admin.role}</div><Button size="sm" variant="primary" onClick={back}>Вернуться</Button></div></div>}
 
     <div className="seg" style={{ marginBottom: 16, '--n': 3, '--i': ['athletes', 'add', 'calendar'].indexOf(tab) }}>
       <span className="seg-sel" />

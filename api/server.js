@@ -215,8 +215,17 @@ function adminSessionCookie(admin) {
   const token = sign('admin:' + admin.id + ':' + exp);
   return `adminsid=${token}; Path=/; Max-Age=${SESSION_DAYS * 86400}; HttpOnly;${SECURE} SameSite=Lax`;
 }
+// Impersonation session: the same adminsid cookie, but signed with an `impersonate:` prefix so
+// the server knows the session is a stand-in for the real account. Every admin endpoint works
+// identically; the owner can restore their own session via POST /api/admin/impersonate/back.
+function impersonateSessionCookie(admin) {
+  const exp = Date.now() + SESSION_DAYS * 86400000;
+  const token = sign('impersonate:' + admin.id + ':' + exp);
+  return `adminsid=${token}; Path=/; Max-Age=${SESSION_DAYS * 86400}; HttpOnly;${SECURE} SameSite=Lax`;
+}
 const clearAdminCookie = `adminsid=; Path=/; Max-Age=0; HttpOnly;${SECURE} SameSite=Lax`;
-function adminSessionId(req) {
+const clearOrigCookie = `adminsid_orig=; Path=/; Max-Age=0; HttpOnly;${SECURE} SameSite=Lax`;
+function adminSessionPayload(req) {
   const cookies = Object.fromEntries((req.headers.cookie || '').split(';').map(c => {
     const i = c.indexOf('='); return i < 0 ? ['', ''] : [c.slice(0, i).trim(), c.slice(i + 1).trim()];
   }));
@@ -224,7 +233,11 @@ function adminSessionId(req) {
   const payload = raw && verifySig(raw);
   if (!payload) return null;
   const [kind, id, exp] = payload.split(':');
-  return kind === 'admin' && id && Number(exp) > Date.now() ? id : null;
+  return (kind === 'admin' || kind === 'impersonate') && id && Number(exp) > Date.now() ? { kind, id } : null;
+}
+function adminSessionId(req) {
+  const p = adminSessionPayload(req);
+  return p ? p.id : null;
 }
 async function requireAdminAccount(req, res, roles = ['owner', 'manager', 'trainer', 'operator']) {
   const id = adminSessionId(req);
@@ -774,10 +787,64 @@ const routes = {
 
   'GET /api/admin/auth/me': async (req, res) => {
     const admin = await requireAdminAccount(req, res);
-    if (admin) json(res, 200, { admin });
+    if (admin) {
+      const p = adminSessionPayload(req);
+      json(res, 200, { admin: { ...admin, impersonated: !!(p && p.kind === 'impersonate') } });
+    }
   },
 
-  'POST /api/admin/auth/logout': async (req, res) => json(res, 200, { ok: true }, { 'Set-Cookie': clearAdminCookie }),
+  'POST /api/admin/auth/logout': async (req, res) => json(res, 200, { ok: true }, { 'Set-Cookie': [clearAdminCookie, clearOrigCookie] }),
+
+  // Owner-only: sign in as any athlete (a fresh `gymsid` cookie — the owner's admin session is
+  // untouched) or as any staff account (`adminsid` is replaced by an `impersonate:` session; the
+  // original session is parked in `adminsid_orig` so it can be restored). The impersonated staff
+  // account behaves exactly as if they signed in themselves.
+  'POST /api/admin/impersonate': async (req, res) => {
+    const owner = await requireAdminAccount(req, res, ['owner']); if (!owner) return;
+    const body = await readBody(req);
+    const id = String(body.id || '');
+    if (!id) return json(res, 400, { error: 'missing target id' });
+    const kind = body.kind === 'staff' ? 'staff' : 'athlete';
+    const cookies = Object.fromEntries((req.headers.cookie || '').split(';').map(c => {
+      const i = c.indexOf('='); return i < 0 ? ['', ''] : [c.slice(0, i).trim(), c.slice(i + 1).trim()];
+    }));
+    const cur = cookies.adminsid && verifySig(cookies.adminsid);
+    if (cur && cur.startsWith('impersonate:')) return json(res, 400, { error: 'сначала вернитесь из текущего режима просмотра' });
+    if (kind === 'athlete') {
+      const u = db.users.find(x => x.id === id);
+      if (!u) return json(res, 404, { error: 'no such athlete' });
+      if (u.disabled) return json(res, 400, { error: 'athlete disabled' });
+      return json(res, 200, { ok: true, kind, redirect: '/', target: { name: u.name } }, { 'Set-Cookie': sessionCookie(u) });
+    }
+    try {
+      const target = await getAdmin(id);
+      if (!target) return json(res, 404, { error: 'no such staff account' });
+      if (target.disabled) return json(res, 400, { error: 'staff account disabled' });
+      const headers = { 'Set-Cookie': [impersonateSessionCookie(target)] };
+      if (cookies.adminsid) headers['Set-Cookie'].push(`adminsid_orig=${cookies.adminsid}; Path=/; Max-Age=86400; HttpOnly;${SECURE} SameSite=Lax`);
+      json(res, 200, { ok: true, kind, redirect: target.role === 'trainer' ? '/trainer' : '/admin', target: { name: target.name, role: target.role } }, headers);
+    } catch (error) { json(res, 503, { error: error.message }); }
+  },
+
+  // Restore the owner's own session after impersonating a staff account. Allowed only while an
+  // `impersonate:` session is active — a normal staff session can't "go back" (no privilege gain).
+  'POST /api/admin/impersonate/back': async (req, res) => {
+    const p = adminSessionPayload(req);
+    if (!p) return json(res, 401, { error: 'admin sign-in required' });
+    if (p.kind !== 'impersonate') return json(res, 400, { error: 'нет активного режима просмотра' });
+    const cookies = Object.fromEntries((req.headers.cookie || '').split(';').map(c => {
+      const i = c.indexOf('='); return i < 0 ? ['', ''] : [c.slice(0, i).trim(), c.slice(i + 1).trim()];
+    }));
+    const payload = cookies.adminsid_orig && verifySig(cookies.adminsid_orig);
+    if (!payload) return json(res, 400, { error: 'исходная сессия устарела — войдите заново' });
+    const [kind, id] = payload.split(':');
+    if (kind !== 'admin' || !id) return json(res, 400, { error: 'исходная сессия повреждена' });
+    try {
+      const owner = await getAdmin(id);
+      if (!owner || owner.disabled) return json(res, 403, { error: 'исходный аккаунт недоступен' });
+      json(res, 200, { ok: true, redirect: '/admin' }, { 'Set-Cookie': [adminSessionCookie({ id }), clearOrigCookie] });
+    } catch (error) { json(res, 503, { error: error.message }); }
+  },
 
   'POST /api/admin/staff/invite': async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;

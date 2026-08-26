@@ -181,8 +181,10 @@ export default function Analytics({ admin }) {
   const [prog, setProg] = useState(null)
   const [filter, setFilter] = useState('all')
   const [q, setQ] = useState('')
+  const [impErr, setImpErr] = useState('')
   const canManage = admin.role === 'owner' || admin.role === 'manager'
   const canDrill = admin.role !== 'operator'
+  const impersonate = a => api('/api/admin/impersonate', { method: 'POST', body: JSON.stringify({ kind: 'athlete', id: a.id }) }).then(d => { location.href = d.redirect }).catch(e => setImpErr(e.message))
   const scopeLabel = admin.role === 'owner' ? 'вся сеть'
     : admin.role === 'manager' ? (admin.branch_key ? 'филиал ' + admin.branch_key : 'сеть (все филиалы)')
     : admin.role === 'trainer' ? 'свои спортсмены'
@@ -213,6 +215,8 @@ export default function Analytics({ admin }) {
         <div className="sub">{admin.name} · {admin.role} · {scopeLabel}</div>
       </div>
     </div>
+
+    {impErr && <div className="small" style={{ color: 'var(--red)', marginBottom: 10 }}>{impErr}</div>}
 
     {summary && <div className="tiles">
       <Tile l="Спортсмены" v={summary.total} />
@@ -249,6 +253,7 @@ export default function Analytics({ admin }) {
             <div className="ss">визиты {a.visits} · тренировки {a.workouts} · серия {a.streak} нед · {a.freq ? a.freq + '/нед' : '—'} · активность {daysAgo(a.lastActivity)}</div>
             {canManage && a.branch && <div className="small dim">филиал {a.branch}{a.trainerId ? ' · тренер привязан' : ''}</div>}
           </div>
+          {admin.role === 'owner' && <button className="btn xs plain" onClick={e => { e.stopPropagation(); impersonate(a) }}>Войти как</button>}
           {canDrill && <Icon name="chevronRight" style={{ color: 'var(--label-3)' }} />}
         </div>)}</div>}
     </>}
