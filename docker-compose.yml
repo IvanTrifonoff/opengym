@@ -28,6 +28,9 @@ services:
     build: ./api
     restart: unless-stopped
     env_file: .env
+    dns:
+      - 8.8.4.4
+      - 1.1.1.1
     environment:
       - PORT=3000            # internal port (nginx proxies here) — do not change
       - DATA_DIR=/data

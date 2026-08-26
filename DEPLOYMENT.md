@@ -483,3 +483,28 @@ card on Home with a booking sheet.
 Детекция: `isSafariUA()` / `isIOSUA()` / `isStandaloneMode()` в
 `Settings.jsx` (`matchMedia('(display-mode: standalone)')` +
 `navigator.standalone`). Строки переведены в `locales/ru.js`.
+## Фикс: DNS в api-контейнере (push-уведомления не отправлялись)
+
+**Симптом**: `/api/push/test` возвращал 200, но в логах — `push send failed …
+getaddrinfo EAI_AGAIN fcm.googleapis.com`; все внешние DNS-запросы из
+api-контейнера падали с ESERVFAIL.
+
+**Причина**: хост-резолвер (`/etc/resolv.conf`) перечисляет `8.8.8.8` первым,
+а 8.8.8.8 недоступен с этого VPS (таймаут). Встроенный DNS Docker
+(127.0.0.11) форвардил внешние запросы именно на 8.8.8.8 → SERVFAIL.
+Внутренние имена (`retail_db` и т.п.) резолвились, поэтому БД и сайт работали,
+а внешние push-эндпоинты (FCM/Apple/Mozilla) — нет.
+
+**Фикс**: в `docker-compose.yml` сервису `api` добавлен рабочий внешний DNS:
+```yaml
+    dns:
+      - 8.8.4.4
+      - 1.1.1.1
+```
+Применить: `docker compose up -d --force-recreate api`. Внутренняя сеть
+(127.0.0.11) для резолва `retail_db` сохраняется, внешние запросы идут на
+8.8.4.4/1.1.1.1.
+
+**Проверено** (см. ниже): FCM принял реальную подписку и тестовые пуши;
+расшифровка aes128gcm и VAPID JWT — 14/14 PASS; outbox лояльности —
+`notified:1`, строка outbox `delivered:true`.
