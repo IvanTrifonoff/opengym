@@ -14,7 +14,7 @@ import {
 } from './access-db.js';
 import {
   acceptLoyaltyEvent, adminDbReady, applyLoyaltyRules, countUnreadNotifications, createAdminInvite, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
-  listAdmins, listLoyaltyRules, listNotifications, markBadgeSeen, markNotificationsRead, registerAdmin, roleAllowed, saveLoyaltyRule, deleteLoyaltyRule, dispatchOutbox,
+  listAdmins, listLoyaltyRules, listNotifications, markBadgeSeen, markNotificationsRead, registerAdmin, roleAllowed, saveLoyaltyRule, saveNotification, deleteLoyaltyRule, dispatchOutbox,
   syncAdminOwners, updateAdmin, updateAdminCounter, getWallet, listRewards, saveReward, deleteReward, redeemReward, listRedemptions, updateRedemption,
   setTrainerAssignment, listTrainerAssignments,
   getTrainerAvailability, setTrainerAvailability, listBookings, createBooking,
@@ -1337,6 +1337,31 @@ const routes = {
       if (admin.role === 'trainer' && booking.trainer_id !== admin.id)
         return json(res, 403, { error: 'no access to this booking' });
       const updated = await updateBookingStatus({ id: booking.id, status });
+      // let the athlete know their request was answered (confirmed / rejected / cancelled / done)
+      if (['confirmed', 'rejected', 'cancelled', 'done'].includes(status)) {
+        const lang = langOf(booking.athlete_id);
+        const who = admin.name || '';
+        const d = String(booking.date || '').slice(8, 10) + '.' + String(booking.date || '').slice(5, 7);
+        const when = d + ' · ' + (booking.time || '');
+        const texts = {
+          confirmed: { en: 'Trainer confirmed your session: ' + when, ru: 'Тренер подтвердил запись: ' + when },
+          rejected: { en: 'Trainer declined your request: ' + when, ru: 'Тренер отклонил заявку: ' + when },
+          cancelled: { en: 'Your session was cancelled: ' + when, ru: 'Запись отменена: ' + when },
+          done: { en: 'Session completed: ' + when, ru: 'Тренировка отмечена выполненной: ' + when }
+        }[status] || {};
+        const body = (who ? who + ' · ' : '') + (texts[lang] || texts.en);
+        const title = lang === 'ru' ? 'Запись к тренеру' : 'Trainer booking';
+        // keep it in the in-app notification center too (same idempotent pattern as loyalty)
+        try {
+          await saveNotification({ id: 'bk-' + booking.id, userId: booking.athlete_id, title, body,
+            payload: { booking_id: booking.id, status, date: booking.date, time: booking.time } });
+        } catch (e) { console.error('booking notif persist failed:', e.message); }
+        await sendPush(booking.athlete_id, {
+          title, body,
+          tag: 'booking-' + booking.id,
+          data: { booking_id: booking.id, status }
+        }).catch(e => console.error('athlete booking push failed:', e.message));
+      }
       json(res, 200, { ok: true, booking: updated });
     } catch (error) {
       console.error('trainer booking status failed:', error.message);

@@ -694,6 +694,15 @@ export async function markNotificationsRead(userId, id) {
   }
 }
 
+export async function saveNotification({ id, userId, title, body, payload = {} }) {
+  await ready();
+  await pool.query(
+    `INSERT INTO app_notifications (id, user_id, title, body, payload)
+     VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
+    [id, userId, String(title || 'openGym').slice(0, 200), String(body).slice(0, 300), JSON.stringify(payload)]
+  );
+}
+
 export async function countUnreadNotifications(userId) {
   await ready();
   const r = await pool.query(`SELECT count(*)::int AS n FROM app_notifications WHERE user_id = $1 AND read_at IS NULL`, [userId]);
