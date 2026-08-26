@@ -280,12 +280,14 @@ async function requireProgramAccess(admin, userId) {
 const timeInRange = (t, start, end) => t >= start && t < end;
 function nextHour(t) { const [h, m] = t.split(':').map(Number); return String(h + 1).padStart(2, '0') + ':00'; }
 function daySlots(availability, weekday) {
-  const a = (availability || []).find(x => x.weekday === weekday);
-  if (!a) return [];
+  // Split shifts: merge every interval for this weekday (e.g. 09-12 and 16-21).
   const out = [];
-  let t = a.time_start;
-  while (t < a.time_end) { out.push(t); t = nextHour(t); }
-  return out;
+  for (const a of (availability || [])) {
+    if (a.weekday !== weekday) continue;
+    let t = a.time_start;
+    while (t < a.time_end) { if (!out.includes(t)) out.push(t); t = nextHour(t); }
+  }
+  return out.sort();
 }
 function localToday() {
   const d = new Date();
@@ -443,9 +445,8 @@ const routes = {
       if (date < localToday()) return json(res, 400, { error: 'date is in the past' });
       const availability = await getTrainerAvailability(row.trainer_id);
       const wd = new Date(date + 'T12:00:00').getDay();
-      const slot = availability.find(a => a.weekday === wd);
-      if (!slot || !timeInRange(time, slot.time_start, slot.time_end))
-        return json(res, 400, { error: 'time outside working hours' });
+      const inHours = availability.some(a => a.weekday === wd && timeInRange(time, a.time_start, a.time_end));
+      if (!inHours) return json(res, 400, { error: 'time outside working hours' });
       const conflict = await findBookingConflict(row.trainer_id, date, time);
       if (conflict) return json(res, 409, { error: 'this slot is already booked' });
       const booking = await createBooking({ trainerId: row.trainer_id, athleteId: user.id, date, time, note: body.note, status: 'pending' });

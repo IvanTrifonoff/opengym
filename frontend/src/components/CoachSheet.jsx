@@ -10,12 +10,13 @@ const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0
 const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short' })
 const nextHour = t2 => String(+t2.split(':')[0] + 1).padStart(2, '0') + ':00'
 const daySlots = (avail, wd) => {
-  const a = (avail || []).find(x => x.weekday === wd)
-  if (!a) return []
   const out = []
-  let t = a.time_start
-  while (t < a.time_end) { out.push(t); t = nextHour(t) }
-  return out
+  for (const a of (avail || [])) {
+    if (a.weekday !== wd) continue
+    let t = a.time_start
+    while (t < a.time_end) { if (!out.includes(t)) out.push(t); t = nextHour(t) }
+  }
+  return out.sort()
 }
 const STATUS = {
   pending: { label: 'Pending', color: 'var(--yellow)' },

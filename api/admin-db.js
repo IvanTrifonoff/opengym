@@ -141,9 +141,9 @@ CREATE TABLE IF NOT EXISTS trainer_availability (
   trainer_id TEXT NOT NULL,
   weekday INT NOT NULL,
   time_start TEXT NOT NULL,
-  time_end TEXT NOT NULL,
-  PRIMARY KEY (trainer_id, weekday)
+  time_end TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS trainer_availability_trainer_weekday_idx ON trainer_availability (trainer_id, weekday);
 
 CREATE TABLE IF NOT EXISTS coach_bookings (
   id TEXT PRIMARY KEY,
@@ -170,6 +170,13 @@ const ADMIN_MIGRATION = `
 ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS branch_key TEXT;
 `;
 
+// Split shifts: a trainer may have several intervals per weekday (e.g. 9-12 and 16-21).
+// The original schema had PRIMARY KEY (trainer_id, weekday) which capped it at one row per day.
+const AVAILABILITY_MIGRATION = `
+ALTER TABLE trainer_availability DROP CONSTRAINT IF EXISTS trainer_availability_pkey;
+CREATE INDEX IF NOT EXISTS trainer_availability_trainer_weekday_idx ON trainer_availability (trainer_id, weekday);
+`;
+
 export const adminDbReady = (async () => {
   await integrationDbReady;
   if (!pool) return;
@@ -177,6 +184,7 @@ export const adminDbReady = (async () => {
     await pool.query(SCHEMA);
     await pool.query(LEDGER_MIGRATION);
     await pool.query(ADMIN_MIGRATION);
+    await pool.query(AVAILABILITY_MIGRATION);
   } catch (error) {
     initError = error;
     console.error('admin database init failed:', error.message);
@@ -651,8 +659,7 @@ export async function setTrainerAvailability(trainerId, slots) {
     const te = String(s.time_end || '18:00').slice(0, 5);
     await pool.query(
       `INSERT INTO trainer_availability (trainer_id, weekday, time_start, time_end)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (trainer_id, weekday) DO UPDATE SET time_start = EXCLUDED.time_start, time_end = EXCLUDED.time_end`,
+       VALUES ($1, $2, $3, $4)`,
       [trainerId, weekday, ts, te]);
   }
   return getTrainerAvailability(trainerId);
