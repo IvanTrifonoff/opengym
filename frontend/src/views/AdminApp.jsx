@@ -6,6 +6,7 @@ import { Button, Switch } from '../components/ui.jsx'
 import { loyaltyHelpSheet } from '../components/LoyaltyHelp.jsx'
 import Analytics from './Analytics.jsx'
 import Trainer from './Trainer.jsx'
+import AdminHelp from './AdminHelp.jsx'
 import Modals from '../components/Modals.jsx'
 import Toast from '../components/Toast.jsx'
 
@@ -205,7 +206,7 @@ function AdminDashboard({ admin, onLogout }) {
   const tabs = [['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ['staff', 'Сотрудники'], ...(canEdit ? [['invites', 'Приглашения']] : [])]
   const back = () => api('/api/admin/impersonate/back', { method: 'POST', body: '{}' }).then(d => { location.href = d.redirect || '/admin' }).catch(() => {})
   return <div className="narrow" style={{ paddingBottom: 40 }}>
-    <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">openGym Admin</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {admin.role}</div></div><button className="iconbtn" onClick={() => nav('/admin/analytics')} aria-label="Аналитика"><Icon name="chart" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
+    <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">openGym Admin</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {admin.role}</div></div><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" onClick={() => nav('/admin/analytics')} aria-label="Аналитика"><Icon name="chart" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
     {admin.impersonated && <div className="card" style={{ borderColor: 'var(--acc)', marginBottom: 14 }}><div className="row between" style={{ gap: 8 }}><div className="small">Вы смотрите интерфейс от имени <b>{admin.name}</b> · {admin.role}</div><Button size="sm" variant="primary" onClick={back}>Вернуться</Button></div></div>}
     <div className="seg" style={{ marginBottom: 16, '--n': tabs.length, '--i': tabs.map(([v]) => v).indexOf(tab) }}><span className="seg-sel" />{tabs.map(([v, label]) => <button key={v} className={tab === v ? 'on' : ''} onClick={() => setTab(v)}>{label}</button>)}</div>
     {tab === 'overview' && <><div className="tiles"><div className="tile"><div className="l">Сотрудники</div><div className="v">{staff.length || '—'}</div></div><div className="tile"><div className="l">Правила</div><div className="v">{rules.length || '—'}</div></div><div className="tile"><div className="l">Роль</div><div className="v" style={{ fontSize: '1rem' }}>{admin.role}</div></div><div className="tile"><div className="l">База</div><div className="v" style={{ fontSize: '1rem', color: 'var(--green)' }}>online</div></div></div><div className="card"><h2 style={{ marginTop: 0 }}>Быстрый старт</h2><p className="dim">Создайте правило «Посещение» и выдайте сотруднику invite-код. События СКУД начнут начислять баллы после привязки member_key к профилю спортсмена.</p><Button variant="primary" onClick={() => setTab('loyalty')}>Настроить loyalty</Button></div></>}
@@ -242,6 +243,7 @@ export default function AdminApp() {
   if (admin === undefined) return <div className="narrow" style={{ paddingTop: '42vh', textAlign: 'center' }}><Icon name="dumbbell" style={{ color: 'var(--label-3)', fontSize: 30 }} /></div>
   if (!admin) return <AdminLogin onLogin={setAdmin} />
   if (loc.pathname.startsWith('/admin/analytics')) return <Analytics admin={admin} />
+  if (loc.pathname.startsWith('/admin/help')) return <AdminHelp />
   if (loc.pathname.startsWith('/trainer')) {
     if (admin.role !== 'trainer') return <Navigate to="/admin" replace />
     return <Trainer admin={admin} onLogout={() => api('/api/admin/auth/logout', { method: 'POST', body: '{}' }).then(() => { setAdmin(null); nav('/admin') })} />

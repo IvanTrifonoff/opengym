@@ -68,7 +68,7 @@ export default function Trainer({ admin, onLogout }) {
         <h1 style={{ margin: 0 }}>Мои спортсмены</h1>
         <div className="sub">{admin.name} · тренер</div>
       </div>
-      <button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button>
+      <button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button>
     </div>
 
     {admin.impersonated && <div className="card" style={{ borderColor: 'var(--acc)', marginBottom: 14 }}><div className="row between" style={{ gap: 8 }}><div className="small">Вы смотрите интерфейс от имени <b>{admin.name}</b> · {admin.role}</div><Button size="sm" variant="primary" onClick={back}>Вернуться</Button></div></div>}
