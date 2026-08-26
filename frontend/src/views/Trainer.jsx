@@ -28,9 +28,22 @@ export default function Trainer({ admin, onLogout }) {
   const [results, setResults] = useState([])
   const [searched, setSearched] = useState(false)
   const [busy, setBusy] = useState('')
+  const [pendingCount, setPendingCount] = useState(0)
 
   const load = () => api('/api/admin/analytics/athletes').then(d => setAthletes(d.athletes || [])).catch(e => setError(e.message))
   useEffect(() => { load() }, [tab])
+
+  // how many booking requests are waiting for the trainer (badge in the header + tab)
+  const refreshPending = () => api('/api/admin/trainer/bookings')
+    .then(d => setPendingCount((d.bookings || []).filter(b => b.status === 'pending').length))
+    .catch(() => {})
+  useEffect(() => { refreshPending(); const t = setInterval(refreshPending, 30000); return () => clearInterval(t) }, [])
+  // keep the badge in sync the moment bookings change (confirm/reject/create)
+  useEffect(() => {
+    const h = () => refreshPending()
+    window.addEventListener('trainer-bookings-changed', h)
+    return () => window.removeEventListener('trainer-bookings-changed', h)
+  }, [])
 
   const makeInvite = () => {
     setBusy('invite')
@@ -69,7 +82,7 @@ export default function Trainer({ admin, onLogout }) {
         <h1 style={{ margin: 0 }}>Мои спортсмены</h1>
         <div className="sub">{admin.name} · тренер</div>
       </div>
-      <button className="btn xs tinted" style={{ alignSelf: 'center', flex: 'none' }} onClick={trainerHelpSheet}>Инструкция</button><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button>
+      <button className="btn xs tinted" style={{ alignSelf: 'center', flex: 'none' }} onClick={trainerHelpSheet}>Инструкция</button><button className="iconbtn" style={{ position: 'relative' }} onClick={() => setTab('calendar')} aria-label="Новые заявки"><Icon name="bell" />{pendingCount > 0 && <span className="notif-badge">{pendingCount > 9 ? '9+' : pendingCount}</span>}</button><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button>
     </div>
 
     {admin.impersonated && <div className="card" style={{ borderColor: 'var(--acc)', marginBottom: 14 }}><div className="row between" style={{ gap: 8 }}><div className="small">Вы смотрите интерфейс от имени <b>{admin.name}</b> · {admin.role}</div><Button size="sm" variant="primary" onClick={back}>Вернуться</Button></div></div>}
@@ -77,7 +90,7 @@ export default function Trainer({ admin, onLogout }) {
     <div className="seg" style={{ marginBottom: 16, '--n': 3, '--i': ['athletes', 'add', 'calendar'].indexOf(tab) }}>
       <span className="seg-sel" />
       {[['athletes', 'Спортсмены'], ['add', 'Добавить'], ['calendar', 'Календарь']].map(([v, label]) =>
-        <button key={v} className={tab === v ? 'on' : ''} onClick={() => setTab(v)}>{label}</button>)}
+        <button key={v} className={tab === v ? 'on' : ''} style={v === 'calendar' && pendingCount > 0 ? { position: 'relative' } : undefined} onClick={() => setTab(v)}>{label}{v === 'calendar' && pendingCount > 0 && <span className="tab-badge">{pendingCount > 9 ? '9+' : pendingCount}</span>}</button>)}
     </div>
     {error && <div className="small" style={{ color: 'var(--red)', marginBottom: 10 }}>{error}</div>}
 
