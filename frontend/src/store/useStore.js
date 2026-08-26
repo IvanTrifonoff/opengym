@@ -5,7 +5,16 @@ import { registerCustom } from '../lib/exercises.js'
 import { DEMO, DEMO_SEEDED } from '../lib/demo.js'
 import { MOBILE, nativeLoad, nativeSave, syncReminder } from '../lib/mobile.js'
 
-const KEY = 'gym_state_v1'
+// The state cache is scoped per user: switching accounts on this device must never leak one
+// user's data (custom exercises, programs, history) into another's. Guests share a fixed
+// key; signed-in users get their own `gym_state_<userId>`. `gym_dirty` is scoped the same
+// way, so a failed sync for one account can't make another prefer stale local data.
+const keyFor = id => id ? `gym_state_${id}` : 'gym_state_guest'
+const dirtyKeyFor = id => id ? `gym_dirty_${id}` : 'gym_dirty_guest'
+const cachedUserId = () => {
+  try { const u = JSON.parse(localStorage.getItem('gym_user')); return (u && u.id) ? u.id : null } catch { return null }
+}
+
 export const DEF = {
   unit: 'kg', restSec: 90, sound: true, keepAwake: true, lang: 'en',
   theme: 'dark', accent: 'lime', body: 'male', targetW: null,
@@ -21,7 +30,7 @@ const clone = o => JSON.parse(JSON.stringify(o))
 
 function loadState() {
   try {
-    const raw = localStorage.getItem(KEY)
+    const raw = localStorage.getItem(keyFor(cachedUserId()))
     if (raw) return Object.assign(clone(DEF), JSON.parse(raw))
   } catch (e) { /* ignore */ }
   return clone(DEF)
@@ -43,7 +52,7 @@ export const useStore = create((set, get) => {
   const persist = (S, push = true) => {
     S._ts = Date.now()
     registerCustom(S.customEx)
-    localStorage.setItem(KEY, JSON.stringify(S))
+    localStorage.setItem(keyFor(get().user?.id), JSON.stringify(S))
     set({ S })
     if (MOBILE) nativePersist()
     if (push && get().user) {
@@ -72,10 +81,11 @@ export const useStore = create((set, get) => {
 
   // Everything a sign-out leaves behind on this device, whichever way it was triggered.
   const clearLocalSession = () => {
+    const uid = get().user?.id
     get().setUser(null)
     localStorage.removeItem('gym_guest')
-    localStorage.removeItem('gym_dirty')
-    localStorage.removeItem(KEY)
+    localStorage.removeItem(dirtyKeyFor(uid))
+    localStorage.removeItem(keyFor(uid))
     persist(clone(DEF), false)
   }
 
@@ -95,23 +105,36 @@ export const useStore = create((set, get) => {
     isGuest: () => localStorage.getItem('gym_guest') === '1',
     setGuest(v) { if (v) localStorage.setItem('gym_guest', '1'); else localStorage.removeItem('gym_guest'); set({}) },
 
-    setUser(u) {
+    setUser(u, opts = {}) {
+      const prevId = (get().user || {}).id || null
       if (u) { localStorage.setItem('gym_user', JSON.stringify(u)); localStorage.removeItem('gym_guest') }
       else localStorage.removeItem('gym_user')
-      set({ user: u })
+      // Switching accounts on this device must not carry one user's in-memory state into
+      // another's (custom exercises, programs, …). Reload from the new user's own cache —
+      // or a clean default — whenever the identity changed. The one exception is a guest
+      // registering a brand-new profile: the guest data stays in memory so it can be moved
+      // into the new account (RegisterInline passes keepLocal).
+      const switched = (u?.id ?? null) !== prevId && !opts.keepLocal
+      if (switched) {
+        const S = loadState()
+        registerCustom(S.customEx)
+        set({ S, user: u })
+      } else {
+        set({ user: u })
+      }
     },
 
     async pushState() {
       if (!get().user) return
       clearTimeout(pushTm)
-      try { await api('/api/data', { method: 'PUT', body: JSON.stringify({ state: get().S }) }); localStorage.removeItem('gym_dirty') }
-      catch (e) { localStorage.setItem('gym_dirty', '1') }
+      try { await api('/api/data', { method: 'PUT', body: JSON.stringify({ state: get().S }) }); localStorage.removeItem(dirtyKeyFor(get().user.id)) }
+      catch (e) { localStorage.setItem(dirtyKeyFor(get().user.id), '1') }
     },
     async pullState() {
       try {
         const { state } = await api('/api/data')
         const S = get().S
-        const dirty = localStorage.getItem('gym_dirty') === '1'
+        const dirty = localStorage.getItem(dirtyKeyFor(get().user?.id)) === '1'
         if (state && (!hasData(S) || ((state._ts || 0) >= (S._ts || 0) && !dirty))) {
           const active = S.active
           const next = Object.assign(clone(DEF), state)
@@ -141,7 +164,7 @@ export const useStore = create((set, get) => {
     // Dynamic import so the generator never ships in a self-hosted bundle.
     async resetDemo() {
       const { buildDemoState } = await import('../lib/demoSeed.js')
-      localStorage.removeItem('gym_dirty')
+      localStorage.removeItem(dirtyKeyFor(get().user?.id))
       persist(Object.assign(clone(DEF), buildDemoState()), false)
     },
 

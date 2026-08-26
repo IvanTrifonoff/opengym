@@ -401,7 +401,10 @@ function RegisterInline({ close, setUser, pushState, pullState, toast }) {
     if (!n) { toast(t('Enter a name')); return }
     if (inviteOnly && !code.trim()) { toast(t('An invite code is required')); return }
     try {
-      const u = await passkeyRegister(n, code.trim()); setUser(u); close()
+      // keepLocal: a brand-new profile has no cache yet — keep the guest data in memory so
+      // it can be moved into the new account below (setUser would otherwise reload a clean
+      // default for the new user id and the guest's work would be stranded).
+      const u = await passkeyRegister(n, code.trim()); setUser(u, { keepLocal: true }); close()
       if (hasData(useStore.getState().S)) { await pushState(); toast(t('Profile created — data moved into it')) }
       else { await pullState(); toast(t('Welcome, {0}', u.name)) }
     } catch (e) { if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') toast(e.message || t('Registration failed')) }
