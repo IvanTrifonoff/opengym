@@ -12,6 +12,7 @@ import { DEMO, REPO } from '../lib/demo.js'
 import { MOBILE, shareExport, syncReminder } from '../lib/mobile.js'
 import { loadStarterPlan, confirmSheet, importFromApp } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
+import { loyaltyInfoSheet } from '../components/LoyaltyInfo.jsx'
 import { Section, Row, SelectRow, Switch, Segmented, Button, TextField } from '../components/ui.jsx'
 
 export default function Settings() {
@@ -226,9 +227,12 @@ function LoyaltyCard({ toast }) {
     }
   })
   return <Section title={t('Loyalty')} footer={t('Points come from your club activity and can be exchanged for rewards.')}>
-    <div className="card" style={{ marginBottom: 10, background: 'var(--acc-soft)', borderColor: 'color-mix(in srgb,var(--acc) 35%,var(--sep))' }}>
-      <div className="small dim">{t('Available points')}</div>
-      <div className="big" style={{ color: 'var(--acc)', marginTop: 2 }}>{wallet ? wallet.balance : '—'}</div>
+    <div className="card row between" style={{ marginBottom: 10, background: 'var(--acc-soft)', borderColor: 'color-mix(in srgb,var(--acc) 35%,var(--sep))', alignItems: 'flex-start' }}>
+      <div>
+        <div className="small dim">{t('Available points')}</div>
+        <div className="big" style={{ color: 'var(--acc)', marginTop: 2 }}>{wallet ? wallet.balance : '—'}</div>
+      </div>
+      <button className="iconbtn" style={{ width: 30, height: 30, fontSize: 15 }} onClick={loyaltyInfoSheet} aria-label={t('About points & rewards')}><Icon name="info" /></button>
     </div>
     {error && <div className="small" style={{ color: 'var(--red)', marginBottom: 8 }}>{error}</div>}
     {rewards.map(reward => <div key={reward.id} className="card" style={{ marginBottom: 8 }}>
