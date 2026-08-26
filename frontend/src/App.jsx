@@ -91,6 +91,7 @@ function Shell() {
 
 export default function App() {
   const adminPath = window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/')
+    || window.location.pathname === '/trainer' || window.location.pathname.startsWith('/trainer/')
   const boot = useStore(s => s.boot)
   useEffect(() => { if (!adminPath) boot() }, [boot, adminPath])
   return <BrowserRouter>{adminPath ? <AdminBoundary><AdminApp /></AdminBoundary> : <Shell />}</BrowserRouter>

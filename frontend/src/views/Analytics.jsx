@@ -17,12 +17,12 @@ const STATUS = {
 }
 const STATUS_ORDER = [['all', 'Все'], ['active', 'Активен'], ['at_risk', 'Риск'], ['gone', 'Ушёл'], ['new', 'Новый']]
 
-const StatusTag = ({ status }) => {
+export const StatusTag = ({ status }) => {
   const s = STATUS[status] || { label: status, color: 'var(--label-3)' }
   return <span className="tag" style={{ color: s.color, borderColor: s.color + '55' }}>{s.label}</span>
 }
 
-const daysAgo = t => {
+export const daysAgo = t => {
   if (!t) return '—'
   const d = Math.round((Date.now() - t) / DAY)
   return d <= 0 ? 'сегодня' : d === 1 ? 'вчера' : d + ' дн. назад'
@@ -49,7 +49,7 @@ function Leaderboard({ lb }) {
   </div>
 }
 
-function AthleteCard({ id, admin, trainers, onBack }) {
+export function AthleteCard({ id, admin, trainers, onBack }) {
   const [d, setD] = useState(null)
   const [err, setErr] = useState('')
   const [tr, setTr] = useState('')

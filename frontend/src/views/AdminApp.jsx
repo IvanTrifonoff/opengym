@@ -1,9 +1,10 @@
 import { Component, useEffect, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { api, passkeyAdminLogin, passkeyAdminRegister } from '../lib/api.js'
 import Icon from '../components/Icon.jsx'
 import { Button, Switch } from '../components/ui.jsx'
 import Analytics from './Analytics.jsx'
+import Trainer from './Trainer.jsx'
 
 const roles = ['owner', 'manager', 'trainer', 'operator']
 const eventTypes = [
@@ -235,5 +236,9 @@ export default function AdminApp() {
   if (admin === undefined) return <div className="narrow" style={{ paddingTop: '42vh', textAlign: 'center' }}><Icon name="dumbbell" style={{ color: 'var(--label-3)', fontSize: 30 }} /></div>
   if (!admin) return <AdminLogin onLogin={setAdmin} />
   if (loc.pathname.startsWith('/admin/analytics')) return <Analytics admin={admin} />
+  if (loc.pathname.startsWith('/trainer')) {
+    if (admin.role !== 'trainer') return <Navigate to="/admin" replace />
+    return <Trainer admin={admin} onLogout={() => api('/api/admin/auth/logout', { method: 'POST', body: '{}' }).then(() => { setAdmin(null); nav('/admin') })} />
+  }
   return <AdminDashboard admin={admin} onLogout={() => api('/api/admin/auth/logout', { method: 'POST', body: '{}' }).then(() => { setAdmin(null); nav('/admin') })} />
 }

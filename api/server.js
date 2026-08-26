@@ -427,6 +427,10 @@ const routes = {
       counter: credential.counter || 0,
       transports: body.credential?.response?.transports || []
     });
+    if (invite && invite.trainerId) {
+      try { await setTrainerAssignment({ userId: user.id, trainerId: invite.trainerId }); }
+      catch (e) { console.error('invite auto-assign failed:', e.message); }
+    }
     saveDb();
     json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) } }, { 'Set-Cookie': sessionCookie(user) });
   },
@@ -883,12 +887,14 @@ const routes = {
     }
   },
 
-  // Assign (or unassign) an athlete to a trainer. Owner + manager only.
+  // Assign (or unassign) an athlete to a trainer. Owner/manager pick any trainer;
+  // a trainer can only manage their own roster (trainer_id is forced to self).
   'POST /api/admin/analytics/assign': async (req, res) => {
-    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const body = await readBody(req);
     const userId = String(body.user_id || '').trim();
-    const trainerId = String(body.trainer_id || '').trim() || null;
+    let trainerId = String(body.trainer_id || '').trim() || null;
+    if (admin.role === 'trainer') trainerId = trainerId ? admin.id : null;
     if (!userId) return json(res, 400, { error: 'user_id required' });
     const u = db.users.find(x => x.id === userId);
     if (!u) return json(res, 404, { error: 'no such user' });
@@ -902,6 +908,27 @@ const routes = {
       json(res, 200, { ok: true, assignment });
     } catch (error) {
       console.error('analytics assign failed:', error.message);
+      json(res, 503, { error: 'analytics unavailable' });
+    }
+  },
+
+  // Athlete search for the trainer portal ("add an existing athlete").
+  'GET /api/admin/analytics/users': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
+    const q = String(new URL(req.url, 'http://x').searchParams.get('q') || '').trim().toLowerCase();
+    try {
+      const [assignments, admins] = await Promise.all([listTrainerAssignments(), listAdmins()]);
+      const nameOf = new Map(admins.map(a => [a.id, a.name]));
+      const rows = db.users
+        .filter(u => !u.admin && (!q || (u.name || '').toLowerCase().includes(q)))
+        .slice(0, 25)
+        .map(u => {
+          const ta = assignments.find(x => x.user_id === u.id);
+          return { id: u.id, name: u.name, created: u.created || null, trainerId: ta ? ta.trainer_id : null, trainerName: ta ? (nameOf.get(ta.trainer_id) || null) : null };
+        });
+      json(res, 200, { users: rows });
+    } catch (error) {
+      console.error('analytics users failed:', error.message);
       json(res, 503, { error: 'analytics unavailable' });
     }
   },
@@ -947,7 +974,7 @@ const routes = {
   },
 
   'POST /api/admin/invites/new': async (req, res) => {
-    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const body = await readBody(req);
     let code;
     // Default: 16 hex chars = 64 bits. The app has no rate limiting by design (that's the reverse
@@ -961,7 +988,14 @@ const routes = {
     } else {
       do { code = crypto.randomBytes(8).toString('hex').toUpperCase(); } while (db.invites.some(i => i.code === code));
     }
-    const invite = { code, note: String(body.note || '').slice(0, 60), createdBy: admin.id, created: new Date().toISOString() };
+    // A trainer-created invite binds the registering athlete to that trainer.
+    let trainerId = admin.role === 'trainer' ? admin.id : String(body.trainer_id || '').trim() || null;
+    if (trainerId) {
+      const admins = await listAdmins();
+      if (!admins.some(a => a.id === trainerId && a.role === 'trainer' && !a.disabled))
+        return json(res, 400, { error: 'not a trainer' });
+    }
+    const invite = { code, note: String(body.note || '').slice(0, 60), createdBy: admin.id, created: new Date().toISOString(), trainerId };
     db.invites.push(invite);
     saveDb();
     json(res, 200, { invite });

@@ -281,3 +281,25 @@ from the admin dashboard — tab **«Приглашения»** (owner/manager o
 - The athlete opens the invite link → «Create new profile» → the invite field
   is prefilled from the `?invite=` URL param (`Login.jsx` / `Settings.jsx`),
   then they finish with their passkey as usual.
+### Trainer portal (/trainer)
+
+Separate route for coaches, gated to `role === 'trainer'` (owner/manager are
+redirected to `/admin`). Login uses the same admin passkey.
+
+- **Roster** — `GET /api/admin/analytics/athletes` returns only the caller's
+  athletes (existing `analyticsScope`). Each row is clickable → the analytics
+  drill-down card (trainer sees detail for own athletes).
+- **Add a new athlete** — trainer creates an invite via
+  `POST /api/admin/invites/new` (trainer role now allowed); the invite stores
+  `trainerId`. When the athlete registers through the `/?invite=CODE` link,
+  `/api/register/verify` auto-creates the `trainer_assignments` row, so the
+  athlete lands in the trainer's roster.
+- **Add an existing athlete** — `GET /api/admin/analytics/users?q=` searches
+  registered non-admin athletes (with current trainer); trainer calls
+  `POST /api/admin/analytics/assign` where `trainer_id` is forced to self —
+  a trainer can only (un)assign their own roster. Owner/manager keep the
+  full picker in the analytics drill-down.
+- Athletes can belong to one trainer at a time (`trainer_assignments.user_id` PK).
+
+Frontend: `frontend/src/views/Trainer.jsx` (new); `App.jsx` treats `/trainer`
+as an admin route; `AdminApp.jsx` routes it through the same login gate.
