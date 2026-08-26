@@ -66,6 +66,9 @@ const stateFile = uid => path.join(DATA, 'state-' + uid.replace(/[^a-zA-Z0-9_-]/
 function readState(uid) {
   try { return JSON.parse(fs.readFileSync(stateFile(uid), 'utf8')); } catch { return null; }
 }
+// App language of an athlete (from their state file) — used to localize push messages.
+const langOf = userId => { const S = readState(userId); return (S && S.lang) || 'en' }
+
 
 /* ---------- push notifications (Web Push / VAPID) ---------- */
 const vapidFile = path.join(DATA, 'vapid.json');
@@ -729,7 +732,7 @@ const routes = {
       return json(res, 400, { error: 'event_id, user_id, valid event_type and occurred_at are required' });
     await adminDbReady;
     try {
-      const result = await acceptLoyaltyEvent({ eventId, userId, eventType, branchKey, occurredAt: occurredAt.toISOString(), payload: body });
+      const result = await acceptLoyaltyEvent({ eventId, userId, eventType, branchKey, occurredAt: occurredAt.toISOString(), payload: body, lang: langOf(userId) });
       const notified = await dispatchOutbox({ send: sendPush }).catch(e => { console.error('outbox dispatch failed:', e.message); return 0; });
       json(res, 200, { ok: true, ...result, notified });
     } catch (error) {
@@ -749,7 +752,7 @@ const routes = {
     try {
       const result = await acceptAccessEvent(event);
       const loyalty = result.matched && result.userId
-        ? await applyLoyaltyRules({ userId: result.userId, eventId: event.eventId, eventType: 'visit', branchKey: event.branchKey, occurredAt: event.occurredAt })
+        ? await applyLoyaltyRules({ userId: result.userId, eventId: event.eventId, eventType: 'visit', branchKey: event.branchKey, occurredAt: event.occurredAt, lang: langOf(result.userId) })
         : null;
       const notified = await dispatchOutbox({ send: sendPush }).catch(e => { console.error('outbox dispatch failed:', e.message); return 0; });
       json(res, 200, { ok: true, ...result, loyalty, notified });

@@ -361,7 +361,7 @@ export async function deleteLoyaltyRule(id) {
   await pool.query('DELETE FROM loyalty_rules WHERE id = $1', [id]);
 }
 
-export async function acceptLoyaltyEvent({ eventId, userId, eventType, branchKey, occurredAt, payload }) {
+export async function acceptLoyaltyEvent({ eventId, userId, eventType, branchKey, occurredAt, payload, lang = 'en' }) {
   await ready();
   const inserted = await pool.query(
     `INSERT INTO loyalty_events (event_id, user_id, event_type, branch_key, payload, occurred_at)
@@ -370,7 +370,7 @@ export async function acceptLoyaltyEvent({ eventId, userId, eventType, branchKey
     [eventId, userId, eventType, branchKey, JSON.stringify(payload || {}), occurredAt]
   );
   if (!inserted.rowCount) return { duplicate: true, points: 0, rulesApplied: [] };
-  const loyalty = await applyLoyaltyRules({ userId, eventId, eventType, branchKey, occurredAt });
+  const loyalty = await applyLoyaltyRules({ userId, eventId, eventType, branchKey, occurredAt, lang });
   return { duplicate: false, ...loyalty };
 }
 
@@ -506,7 +506,19 @@ export async function updateRedemption({ id, status, adminId, note }) {
   } finally { client.release(); }
 }
 
-export async function applyLoyaltyRules({ userId, eventId, eventType, branchKey, occurredAt }) {
+// Human-readable points award message, localized by the athlete's app language.
+function pointsMessage(amount, ruleName, lang) {
+  const n = Math.max(0, Math.round(Number(amount) || 0))
+  if (lang === 'ru') {
+    const rem100 = n % 100, rem10 = n % 10
+    const word = (rem100 >= 11 && rem100 <= 14) || rem10 >= 5 || rem10 === 0 ? 'баллов'
+      : rem10 === 1 ? 'балл' : 'балла'
+    return `+${n} ${word} — ${ruleName}`
+  }
+  return `+${n} ${n === 1 ? 'point' : 'points'} — ${ruleName}`
+}
+
+export async function applyLoyaltyRules({ userId, eventId, eventType, branchKey, occurredAt, lang = 'en' }) {
   await ready();
   const rules = await pool.query(
     `SELECT id, name, conditions, actions, limits FROM loyalty_rules
@@ -547,6 +559,13 @@ export async function applyLoyaltyRules({ userId, eventId, eventType, branchKey,
             [userId, amount]
           );
           points += amount;
+          // Auto-notify the athlete about the award — unless the rule sends its own message.
+          if (!(rule.actions || []).some(a => a.type === 'notification' && a.message)) {
+            await pool.query(
+              `INSERT INTO loyalty_outbox (user_id, kind, payload) VALUES ($1, 'loyalty', $2::jsonb)`,
+              [userId, JSON.stringify({ message: pointsMessage(amount, rule.name, lang), rule_id: rule.id, event_id: eventId })]
+            );
+          }
         }
       } else if (action.type === 'achievement' && action.key) {
         await pool.query(

@@ -43,6 +43,7 @@ function LoyaltyInfo({ close }) {
           {t('Points are added automatically when the club registers your activity. The more regularly you train, the more you earn.')}
         </div>
         <div className="card" style={{ marginBottom: 6 }}><b>{t('Visits to the club')}</b><div className="muted small">{t('Every time you check in at the club')}</div></div>
+        <div className="card"><b>{t('Push notification')}</b><div className="muted small">{t('You will get a notification on your phone when points are added.')}</div></div>
         <div className="card" style={{ marginBottom: 6 }}><b>{t('Completed workouts')}</b><div className="muted small">{t('Workouts you finish in the app')}</div></div>
         <div className="card" style={{ marginBottom: 6 }}><b>{t('Training streaks')}</b><div className="muted small">{t('A series of training weeks without a break')}</div></div>
         <div className="card"><b>{t('Referrals')}</b><div className="muted small">{t('Friends who join the club with your link')}</div></div>

@@ -619,4 +619,7 @@ export default {
   'Notifications are not available from the Safari tab.': 'Из вкладки Safari уведомления недоступны.',
   'Push works only from the installed app: on iPhone or iPad tap Share, then Add to Home Screen, and open the app from its icon.': 'Пуши работают только из установленного приложения: на iPhone или iPad нажмите «Поделиться», затем «На главный экран», и открывайте приложение с его иконки.',
   'On a Mac, notifications work in Safari — for the app experience you can also add it to the Dock: File → Add to Dock.': 'На Mac уведомления работают в Safari — для полноценного опыта приложение можно добавить в Dock: Файл → «Добавить в Dock».',
+
+  'Push notification': 'Push-уведомление',
+  'You will get a notification on your phone when points are added.': 'Когда вам начисляют баллы, на телефон приходит уведомление.',
 };

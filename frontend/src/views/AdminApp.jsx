@@ -108,6 +108,7 @@ function RuleEditor({ value, onSave, onCancel, canEdit }) {
     <label className="small dim">Ключ достижения<input className="field" value={form.achievement} onChange={e => set('achievement', e.target.value)} placeholder="weekly-streak" /></label>
     <label className="small dim">Ключ награды<input className="field" value={form.reward} onChange={e => set('reward', e.target.value)} placeholder="free-session" /></label>
     <label className="small dim">Уведомление<input className="field" value={form.notification} onChange={e => set('notification', e.target.value)} placeholder="Вы получили бонус за посещение" /></label>
+    <div className="small dim" style={{ marginBottom: 12 }}>Если уведомление не задано, при начислении баллов спортсмен получит автоматический push (например «+10 баллов — Ежедневное посещение»).</div>
     <div className="row between" style={{ margin: '12px 0' }}><span>Правило включено</span><Switch checked={form.enabled} onChange={v => set('enabled', v)} /></div>
     {canEdit && <div className="row" style={{ gap: 8 }}><Button variant="primary" onClick={save}>Сохранить</Button><Button variant="ghost" onClick={onCancel}>Отмена</Button></div>}
   </div>
