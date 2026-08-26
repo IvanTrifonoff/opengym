@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { api } from '../lib/api.js'
 import { useStore } from '../store/useStore.js'
 import { effectiveRoutine, effectiveRoutineId, streakWeeks, lastBW, setsDoneActive } from '../lib/history.js'
 import { fmtNum, fmtDate, todayISO, isoOf, weekKey, DAYS } from '../lib/format.js'
 import { t, dateLocale } from '../lib/i18n.js'
 import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, loadStarterPlan, bwDeltaColor } from '../sheets.jsx'
+import { openCoachSheet } from '../components/CoachSheet.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
@@ -16,6 +18,8 @@ export default function Home() {
   const S = useStore(s => s.S)
   const user = useStore(s => s.user)
   const [weekOffset, setWeekOffset] = useState(0)
+  const [trainer, setTrainer] = useState(null)
+  useEffect(() => { if (user) api('/api/trainer/me').then(d => setTrainer(d.trainer || null)).catch(() => {}) }, [user])
 
   const today = new Date()
   const routine = effectiveRoutine(S, todayISO())
@@ -73,6 +77,19 @@ export default function Home() {
           : <Icon name="plus" className="chev" />}
       </div>
     </div>
+
+    {trainer && <div className="card tappable" style={{ cursor: 'pointer', marginBottom: 12 }} onClick={() => openCoachSheet(user)}>
+      <div className="row between">
+        <div className="row" style={{ gap: 9, minWidth: 0 }}>
+          <span className="lrow-i" style={{ background: 'var(--surface-3)' }}><Icon name="figureStrength" /></span>
+          <div style={{ minWidth: 0 }}>
+            <div className="lbl2">{t('My trainer')}</div>
+            <div className="ttl">{trainer.name}</div>
+          </div>
+        </div>
+        <Icon name="chevronRight" className="chev" />
+      </div>
+    </div>}
 
     {!S.routines.length && !S.active && (
       <div className="card">

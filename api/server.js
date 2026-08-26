@@ -16,7 +16,9 @@ import {
   acceptLoyaltyEvent, adminDbReady, applyLoyaltyRules, createAdminInvite, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
   listAdmins, listLoyaltyRules, registerAdmin, roleAllowed, saveLoyaltyRule, deleteLoyaltyRule, dispatchOutbox,
   syncAdminOwners, updateAdmin, updateAdminCounter, getWallet, listRewards, saveReward, deleteReward, redeemReward, listRedemptions, updateRedemption,
-  setTrainerAssignment, listTrainerAssignments
+  setTrainerAssignment, listTrainerAssignments,
+  getTrainerAvailability, setTrainerAvailability, listBookings, createBooking,
+  findBookingConflict, getBooking, updateBookingStatus
 } from './admin-db.js';
 import { collectAnalytics, athleteDetail } from './analytics.js';
 
@@ -262,6 +264,21 @@ async function requireProgramAccess(admin, userId) {
   return false;
 }
 
+const timeInRange = (t, start, end) => t >= start && t < end;
+function nextHour(t) { const [h, m] = t.split(':').map(Number); return String(h + 1).padStart(2, '0') + ':00'; }
+function daySlots(availability, weekday) {
+  const a = (availability || []).find(x => x.weekday === weekday);
+  if (!a) return [];
+  const out = [];
+  let t = a.time_start;
+  while (t < a.time_end) { out.push(t); t = nextHour(t); }
+  return out;
+}
+function localToday() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 function sessionCookie(user) {
   return `gymsid=${makeSession(user)}; Path=/; Max-Age=${SESSION_DAYS * 86400}; HttpOnly;${SECURE} SameSite=Lax`;
 }
@@ -355,6 +372,109 @@ async function adminAuthOptions(req, res) {
 /* ---------- routes ---------- */
 const routes = {
   'GET /api/health': async (req, res) => json(res, 200, { ok: true, users: db.users.length }),
+
+  /* ---------- trainer booking (athlete side) ---------- */
+
+  // My assigned trainer.
+  'GET /api/trainer/me': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    try {
+      await adminDbReady;
+      const ta = await listTrainerAssignments();
+      const row = ta.find(x => x.user_id === user.id);
+      if (!row) return json(res, 200, { trainer: null });
+      const admins = await listAdmins();
+      const trainer = admins.find(a => a.id === row.trainer_id);
+      json(res, 200, { trainer: trainer ? { id: trainer.id, name: trainer.name } : null });
+    } catch (error) {
+      console.error('trainer/me failed:', error.message);
+      json(res, 503, { error: 'service unavailable' });
+    }
+  },
+
+  // My trainer's working hours + already-taken upcoming slots.
+  'GET /api/trainer/availability': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    try {
+      await adminDbReady;
+      const ta = await listTrainerAssignments();
+      const row = ta.find(x => x.user_id === user.id);
+      if (!row) return json(res, 200, { availability: [], taken: [] });
+      const availability = await getTrainerAvailability(row.trainer_id);
+      const bookings = await listBookings({ trainerId: row.trainer_id, from: localToday() });
+      const taken = bookings.filter(b => b.status === 'pending' || b.status === 'confirmed')
+        .map(b => ({ date: b.date, time: b.time }));
+      json(res, 200, { availability, taken });
+    } catch (error) {
+      console.error('trainer availability failed:', error.message);
+      json(res, 503, { error: 'service unavailable' });
+    }
+  },
+
+  // Request a session (status = pending until the trainer confirms).
+  'POST /api/trainer/book': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    const date = String(body.date || '');
+    const time = String(body.time || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time))
+      return json(res, 400, { error: 'date and time required' });
+    try {
+      await adminDbReady;
+      const ta = await listTrainerAssignments();
+      const row = ta.find(x => x.user_id === user.id);
+      if (!row) return json(res, 403, { error: 'no trainer assigned' });
+      if (date < localToday()) return json(res, 400, { error: 'date is in the past' });
+      const availability = await getTrainerAvailability(row.trainer_id);
+      const wd = new Date(date + 'T12:00:00').getDay();
+      const slot = availability.find(a => a.weekday === wd);
+      if (!slot || !timeInRange(time, slot.time_start, slot.time_end))
+        return json(res, 400, { error: 'time outside working hours' });
+      const conflict = await findBookingConflict(row.trainer_id, date, time);
+      if (conflict) return json(res, 409, { error: 'this slot is already booked' });
+      const booking = await createBooking({ trainerId: row.trainer_id, athleteId: user.id, date, time, note: body.note, status: 'pending' });
+      json(res, 200, { ok: true, booking });
+    } catch (error) {
+      console.error('trainer book failed:', error.message);
+      json(res, 503, { error: 'service unavailable' });
+    }
+  },
+
+  // My own bookings.
+  'GET /api/trainer/my-bookings': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    try {
+      await adminDbReady;
+      const bookings = await listBookings({ athleteId: user.id });
+      json(res, 200, { bookings });
+    } catch (error) {
+      console.error('trainer my-bookings failed:', error.message);
+      json(res, 503, { error: 'service unavailable' });
+    }
+  },
+
+  // Athlete cancels one of their own pending/confirmed bookings.
+  'POST /api/trainer/bookings/cancel': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    try {
+      await adminDbReady;
+      const booking = await getBooking(String(body.id || ''));
+      if (!booking || booking.athlete_id !== user.id) return json(res, 404, { error: 'no such booking' });
+      if (booking.status !== 'pending' && booking.status !== 'confirmed')
+        return json(res, 400, { error: 'booking cannot be cancelled' });
+      const updated = await updateBookingStatus({ id: booking.id, status: 'cancelled' });
+      json(res, 200, { ok: true, booking: updated });
+    } catch (error) {
+      console.error('trainer cancel failed:', error.message);
+      json(res, 503, { error: 'service unavailable' });
+    }
+  },
 
   // Public config the login screen needs before anyone is signed in.
   'GET /api/config': async (req, res) => json(res, 200, { invite_only: INVITE_ONLY }),
@@ -995,6 +1115,102 @@ const routes = {
     S._ts = Date.now();
     atomicWrite(stateFile(id), JSON.stringify(S));
     json(res, 200, { ok: true, routines });
+  },
+
+  /* ---------- trainer calendar (admin side) ---------- */
+
+  // Bookings in a date range. Trainer sees their own; owner/manager see everyone.
+  'GET /api/admin/trainer/bookings': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
+    const from = String(new URL(req.url, 'http://x').searchParams.get('from') || '');
+    const to = String(new URL(req.url, 'http://x').searchParams.get('to') || '');
+    try {
+      const trainerId = admin.role === 'trainer' ? admin.id : null;
+      const bookings = await listBookings({ trainerId, from: from || undefined, to: to || undefined });
+      const [admins, ta] = await Promise.all([listAdmins(), listTrainerAssignments()]);
+      const trainerName = new Map(admins.map(a => [a.id, a.name]));
+      const rows = bookings.map(b => ({
+        ...b,
+        trainerName: trainerName.get(b.trainer_id) || null,
+        athleteName: (db.users.find(u => u.id === b.athlete_id) || {}).name || null
+      }));
+      json(res, 200, { bookings: rows });
+    } catch (error) {
+      console.error('trainer bookings failed:', error.message);
+      json(res, 503, { error: 'service unavailable' });
+    }
+  },
+
+  // Change a booking's status (confirm / reject / cancel / done).
+  'POST /api/admin/trainer/bookings/status': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
+    const body = await readBody(req);
+    const status = String(body.status || '');
+    if (!['pending', 'confirmed', 'rejected', 'cancelled', 'done'].includes(status))
+      return json(res, 400, { error: 'bad status' });
+    try {
+      const booking = await getBooking(String(body.id || ''));
+      if (!booking) return json(res, 404, { error: 'no such booking' });
+      if (admin.role === 'trainer' && booking.trainer_id !== admin.id)
+        return json(res, 403, { error: 'no access to this booking' });
+      const updated = await updateBookingStatus({ id: booking.id, status });
+      json(res, 200, { ok: true, booking: updated });
+    } catch (error) {
+      console.error('trainer booking status failed:', error.message);
+      json(res, 503, { error: 'service unavailable' });
+    }
+  },
+
+  // Trainer creates a session directly (status = confirmed).
+  'POST /api/admin/trainer/bookings': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
+    const body = await readBody(req);
+    const athleteId = String(body.athlete_id || '');
+    const date = String(body.date || '');
+    const time = String(body.time || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time))
+      return json(res, 400, { error: 'date and time required' });
+    const u = db.users.find(x => x.id === athleteId);
+    if (!u) return json(res, 404, { error: 'no such athlete' });
+    try {
+      if (admin.role === 'trainer' && !(await requireProgramAccess(admin, athleteId)))
+        return json(res, 403, { error: 'no access to this athlete' });
+      const conflict = await findBookingConflict(admin.role === 'trainer' ? admin.id : String(body.trainer_id || admin.id), date, time);
+      if (conflict) return json(res, 409, { error: 'this slot is already booked' });
+      const booking = await createBooking({
+        trainerId: admin.role === 'trainer' ? admin.id : String(body.trainer_id || admin.id),
+        athleteId, date, time, note: body.note, status: 'confirmed'
+      });
+      json(res, 200, { ok: true, booking });
+    } catch (error) {
+      console.error('trainer booking create failed:', error.message);
+      json(res, 503, { error: 'service unavailable' });
+    }
+  },
+
+  // Working hours. Trainer edits their own; owner/manager can set any trainer's.
+  'GET /api/admin/trainer/availability': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
+    try {
+      const trainerId = admin.role === 'trainer' ? admin.id : String(new URL(req.url, 'http://x').searchParams.get('trainer_id') || admin.id);
+      json(res, 200, { availability: await getTrainerAvailability(trainerId) });
+    } catch (error) {
+      console.error('trainer availability get failed:', error.message);
+      json(res, 503, { error: 'service unavailable' });
+    }
+  },
+  'POST /api/admin/trainer/availability': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
+    const body = await readBody(req);
+    try {
+      const trainerId = admin.role === 'trainer' ? admin.id : String(body.trainer_id || admin.id);
+      if (!Array.isArray(body.slots)) return json(res, 400, { error: 'slots required' });
+      const availability = await setTrainerAvailability(trainerId, body.slots);
+      json(res, 200, { ok: true, availability });
+    } catch (error) {
+      console.error('trainer availability set failed:', error.message);
+      json(res, 503, { error: 'service unavailable' });
+    }
   },
 
 

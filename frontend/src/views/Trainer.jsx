@@ -5,6 +5,7 @@ import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 import { AthleteCard, StatusTag, daysAgo } from './Analytics.jsx'
 import TrainerProgram from './TrainerProgram.jsx'
+import TrainerBookings from './TrainerBookings.jsx'
 
 const STATUS_ORDER = [['all', 'Все'], ['active', 'Активен'], ['at_risk', 'Риск'], ['gone', 'Ушёл'], ['new', 'Новый']]
 
@@ -69,9 +70,9 @@ export default function Trainer({ admin, onLogout }) {
       <button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button>
     </div>
 
-    <div className="seg" style={{ marginBottom: 16, '--n': 2, '--i': ['athletes', 'add'].indexOf(tab) }}>
+    <div className="seg" style={{ marginBottom: 16, '--n': 3, '--i': ['athletes', 'add', 'calendar'].indexOf(tab) }}>
       <span className="seg-sel" />
-      {[['athletes', 'Спортсмены'], ['add', 'Добавить']].map(([v, label]) =>
+      {[['athletes', 'Спортсмены'], ['add', 'Добавить'], ['calendar', 'Календарь']].map(([v, label]) =>
         <button key={v} className={tab === v ? 'on' : ''} onClick={() => setTab(v)}>{label}</button>)}
     </div>
     {error && <div className="small" style={{ color: 'var(--red)', marginBottom: 10 }}>{error}</div>}
@@ -90,6 +91,8 @@ export default function Trainer({ admin, onLogout }) {
           <Icon name="chevronRight" style={{ color: 'var(--label-3)' }} />
         </div>)}</div>}
     </>}
+
+    {tab === 'calendar' && <TrainerBookings admin={admin} />}
 
     {tab === 'add' && <>
       <div className="card">

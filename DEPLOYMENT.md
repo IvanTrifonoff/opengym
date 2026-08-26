@@ -327,3 +327,36 @@ From an athlete's drill-down card (both `/trainer` and `/admin/analytics`) the
 - `AdminApp.jsx` now renders `<Modals />`/`<Toast />` in the admin route —
   without this, sheets (e.g. the exercise picker) never appeared outside the
   athlete app.
+### Trainer calendar / athlete bookings
+
+Trainers get a «Календарь» tab (in `/trainer`); athletes get a «Мой тренер»
+card on Home with a booking sheet.
+
+- **DB**: `trainer_availability(trainer_id, weekday, time_start, time_end)`
+  — working hours; `coach_bookings(id, trainer_id, athlete_id, date, time,
+  status, note)` — status ∈ `pending | confirmed | rejected | cancelled`.
+  Both created by the schema bootstrap in `api/admin-db.js`, no manual
+  migration needed.
+- **Athlete side** (`/api/trainer/*`, signed-in athlete session):
+  - `GET /api/trainer/me` — assigned trainer (`trainer_assignments`).
+  - `GET /api/trainer/availability` — trainer's working hours + already-taken
+    upcoming slots.
+  - `POST /api/trainer/book` — request a slot (`status=pending`). Validates:
+    slot inside working hours, not in the past, no conflict (409), trainer
+    assigned (403).
+  - `GET /api/trainer/my-bookings`, `POST /api/trainer/bookings/cancel`.
+- **Trainer side** (`/api/admin/trainer/*`, admin session):
+  - `GET/POST /api/admin/trainer/availability` — `{ slots: [{weekday,
+    time_start, time_end}] }`; trainer edits own, owner/manager any
+    (`trainer_id` param).
+  - `GET /api/admin/trainer/bookings` — list (filter `?status=`);
+    `POST /api/admin/trainer/bookings/status` — confirm/reject;
+    `POST /api/admin/trainer/bookings` — direct booking (status=confirmed).
+    A trainer can only book for their own athletes (403 otherwise);
+    operator has no access (403).
+- **Frontend**: `frontend/src/views/TrainerBookings.jsx` (new tab: working
+  hours editor, week grid, pending requests, «Записать»);
+  `frontend/src/components/CoachSheet.jsx` (new athlete sheet: free slots by
+  weekday, send request, my bookings + cancel). Home shows the «Мой тренер»
+  card only when the athlete has an assigned trainer; strings are in
+  `locales/ru.js` / `en.js`.

@@ -136,6 +136,28 @@ CREATE TABLE IF NOT EXISTS trainer_assignments (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS trainer_assignments_trainer_idx ON trainer_assignments (trainer_id);
+
+CREATE TABLE IF NOT EXISTS trainer_availability (
+  trainer_id TEXT NOT NULL,
+  weekday INT NOT NULL,
+  time_start TEXT NOT NULL,
+  time_end TEXT NOT NULL,
+  PRIMARY KEY (trainer_id, weekday)
+);
+
+CREATE TABLE IF NOT EXISTS coach_bookings (
+  id TEXT PRIMARY KEY,
+  trainer_id TEXT NOT NULL,
+  athlete_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  time TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','confirmed','rejected','cancelled','done')),
+  note TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS coach_bookings_trainer_date_idx ON coach_bookings (trainer_id, date);
+CREATE INDEX IF NOT EXISTS coach_bookings_athlete_idx ON coach_bookings (athlete_id, date);
 `;
 
 const LEDGER_MIGRATION = `
@@ -609,4 +631,73 @@ export async function listTrainerAssignments() {
   await ready();
   const result = await pool.query('SELECT user_id, trainer_id FROM trainer_assignments');
   return result.rows;
+}
+
+
+/* ---------- trainer calendar / bookings ---------- */
+export async function getTrainerAvailability(trainerId) {
+  await ready();
+  const result = await pool.query(
+    'SELECT weekday, time_start, time_end FROM trainer_availability WHERE trainer_id = $1 ORDER BY weekday', [trainerId]);
+  return result.rows;
+}
+
+export async function setTrainerAvailability(trainerId, slots) {
+  await ready();
+  await pool.query('DELETE FROM trainer_availability WHERE trainer_id = $1', [trainerId]);
+  for (const s of (slots || [])) {
+    const weekday = Math.max(0, Math.min(6, +s.weekday || 0));
+    const ts = String(s.time_start || '09:00').slice(0, 5);
+    const te = String(s.time_end || '18:00').slice(0, 5);
+    await pool.query(
+      `INSERT INTO trainer_availability (trainer_id, weekday, time_start, time_end)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (trainer_id, weekday) DO UPDATE SET time_start = EXCLUDED.time_start, time_end = EXCLUDED.time_end`,
+      [trainerId, weekday, ts, te]);
+  }
+  return getTrainerAvailability(trainerId);
+}
+
+export async function listBookings({ trainerId = null, athleteId = null, from = null, to = null } = {}) {
+  await ready();
+  const where = [];
+  const args = [];
+  if (trainerId) { args.push(trainerId); where.push(`trainer_id = $${args.length}`); }
+  if (athleteId) { args.push(athleteId); where.push(`athlete_id = $${args.length}`); }
+  if (from) { args.push(from); where.push(`date >= $${args.length}`); }
+  if (to) { args.push(to); where.push(`date <= $${args.length}`); }
+  const result = await pool.query(
+    `SELECT * FROM coach_bookings ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY date, time`, args);
+  return result.rows;
+}
+
+export async function createBooking({ trainerId, athleteId, date, time, note = '', status = 'pending' }) {
+  await ready();
+  const id = crypto.randomBytes(12).toString('base64url');
+  const result = await pool.query(
+    `INSERT INTO coach_bookings (id, trainer_id, athlete_id, date, time, status, note)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [id, trainerId, athleteId, date, time, status, String(note || '').slice(0, 200)]);
+  return result.rows[0];
+}
+
+export async function findBookingConflict(trainerId, date, time) {
+  await ready();
+  const result = await pool.query(
+    `SELECT id FROM coach_bookings WHERE trainer_id = $1 AND date = $2 AND time = $3 AND status IN ('pending', 'confirmed')`,
+    [trainerId, date, time]);
+  return result.rows[0] || null;
+}
+
+export async function getBooking(id) {
+  await ready();
+  const result = await pool.query('SELECT * FROM coach_bookings WHERE id = $1', [id]);
+  return result.rows[0] || null;
+}
+
+export async function updateBookingStatus({ id, status }) {
+  await ready();
+  const result = await pool.query(
+    'UPDATE coach_bookings SET status = $2, updated_at = now() WHERE id = $1 RETURNING *', [id, status]);
+  return result.rows[0] || null;
 }
