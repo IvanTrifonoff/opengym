@@ -13,7 +13,7 @@ import {
   acceptAccessEvent, bindExternalMember, integrationDbReady, integrationDbStatus, listExternalMembers
 } from './access-db.js';
 import {
-  acceptLoyaltyEvent, adminDbReady, applyLoyaltyRules, createAdminInvite, getAdmin, getAdminCredential, getAdminInvite,
+  acceptLoyaltyEvent, adminDbReady, applyLoyaltyRules, createAdminInvite, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
   listAdmins, listLoyaltyRules, registerAdmin, roleAllowed, saveLoyaltyRule, deleteLoyaltyRule, dispatchOutbox,
   syncAdminOwners, updateAdmin, updateAdminCounter, getWallet, listRewards, saveReward, deleteReward, redeemReward, listRedemptions, updateRedemption,
   setTrainerAssignment, listTrainerAssignments
@@ -671,8 +671,13 @@ const routes = {
 
   'POST /api/admin/staff/register/options': async (req, res) => {
     const body = await readBody(req);
-    const invite = await getAdminInvite(String(body.code || '').trim().toUpperCase());
-    if (!invite) return json(res, 400, { error: 'invalid or used staff invite' });
+    const rawCode = String(body.code || '').trim().toUpperCase();
+    const invite = await getAdminInvite(rawCode);
+    if (!invite) {
+      const used = await findUsedAdminInvite(rawCode);
+      if (used) return json(res, 400, { error: 'код уже использован — сотрудник уже зарегистрирован. Вход: /admin → «Войти как сотрудник» (или попросите новый код)' });
+      return json(res, 400, { error: 'invalid or used staff invite' });
+    }
     const id = crypto.randomBytes(12).toString('base64url');
     const options = await generateRegistrationOptions({
       rpName: RP_NAME + ' Admin', rpID: RP_ID, userID: Buffer.from(id),

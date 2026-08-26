@@ -59,6 +59,7 @@ function AdminRegister() {
       <input className="field" value={code} onChange={e => setCode(e.target.value)} placeholder="Invite-код" autoCapitalize="characters" />
       <Button variant="primary" style={{ marginTop: 12 }} onClick={register} disabled={busy}>{busy ? 'Создание passkey…' : 'Создать admin passkey'}</Button>
       <ErrorLine error={error} />
+      {error && <Button variant="ghost" size="sm" style={{ marginTop: 10 }} onClick={() => nav('/admin')}>Войти как сотрудник</Button>}
     </div>
   </div>
 }

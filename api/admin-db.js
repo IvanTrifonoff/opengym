@@ -247,6 +247,14 @@ export async function getAdminInvite(code) {
   return result.rows[0] || null;
 }
 
+export async function findUsedAdminInvite(code) {
+  await ready();
+  const result = await pool.query(
+    `SELECT code, name, role, used_at FROM admin_invites WHERE code = $1 AND used_at IS NOT NULL`, [code]
+  );
+  return result.rows[0] || null;
+}
+
 export async function registerAdmin({ id, name, role, credentialId, publicKey, counter, transports, inviteCode }) {
   await ready();
   const client = await pool.connect();
