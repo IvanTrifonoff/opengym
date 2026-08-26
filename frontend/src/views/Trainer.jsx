@@ -7,6 +7,7 @@ import { AthleteCard, StatusTag, daysAgo } from './Analytics.jsx'
 import TrainerProgram from './TrainerProgram.jsx'
 import TrainerBookings from './TrainerBookings.jsx'
 import { trainerHelpSheet } from '../components/TrainerHelp.jsx'
+import { refreshTrainerBadge, clearBadge } from '../lib/badge.js'
 
 const STATUS_ORDER = [['all', 'Все'], ['active', 'Активен'], ['at_risk', 'Риск'], ['gone', 'Ушёл'], ['new', 'Новый']]
 
@@ -35,7 +36,12 @@ export default function Trainer({ admin, onLogout }) {
 
   // how many booking requests are waiting for the trainer (badge in the header + tab)
   const refreshPending = () => api('/api/admin/trainer/bookings')
-    .then(d => setPendingCount((d.bookings || []).filter(b => b.status === 'pending').length))
+    .then(d => {
+      const n = (d.bookings || []).filter(b => b.status === 'pending').length
+      setPendingCount(n)
+      // app icon badge (Badging API) stays in sync with the in-portal counter
+      refreshTrainerBadge()
+    })
     .catch(() => {})
   useEffect(() => { refreshPending(); const t = setInterval(refreshPending, 30000); return () => clearInterval(t) }, [])
   // keep the badge in sync the moment bookings change (confirm/reject/create)
@@ -44,6 +50,8 @@ export default function Trainer({ admin, onLogout }) {
     window.addEventListener('trainer-bookings-changed', h)
     return () => window.removeEventListener('trainer-bookings-changed', h)
   }, [])
+  // leaving the trainer portal clears the trainer badge (the athlete app recomputes its own)
+  useEffect(() => () => clearBadge(), [])
 
   const makeInvite = () => {
     setBusy('invite')

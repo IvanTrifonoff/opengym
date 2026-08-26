@@ -22,10 +22,7 @@ export async function refreshBadge() {
     n += unviewed(wallet?.redemptions).length
     n += unviewed(bookings?.bookings).length
   } catch (e) { /* keep the current badge */ }
-  try {
-    if (n > 0) await navigator.setAppBadge(n)
-    else await navigator.clearAppBadge()
-  } catch (e) { /* badge API can throw when permission is missing — ignore */ }
+  await setBadge(n)
 }
 
 // The athlete opened the section where their pending rewards/bookings are shown
@@ -33,4 +30,29 @@ export async function refreshBadge() {
 export async function markBadgeSeen() {
   try { await api('/api/badge/seen', { method: 'POST', body: '{}' }) } catch (e) { /* not fatal */ }
   await refreshBadge()
+}
+
+// Trainer portal variant: the app icon badge shows how many booking requests are
+// waiting for this trainer (admin session — reads the adminsid cookie, same as the
+// in-portal bell). Shared set/clear helper so the two never fight over the badge.
+async function setBadge(n) {
+  try {
+    if (n > 0) await navigator.setAppBadge(n)
+    else await navigator.clearAppBadge()
+  } catch (e) { /* badge API can throw when permission is missing — ignore */ }
+}
+
+export async function refreshTrainerBadge() {
+  if (!badgeSupported()) return
+  let n = 0
+  try {
+    const b = await api('/api/admin/trainer/bookings').catch(() => null)
+    n = (b?.bookings || []).filter(x => x.status === 'pending').length
+  } catch (e) { /* keep the current badge */ }
+  await setBadge(n)
+}
+
+export async function clearBadge() {
+  if (!badgeSupported()) return
+  await setBadge(0)
 }
