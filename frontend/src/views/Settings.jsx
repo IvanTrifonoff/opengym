@@ -313,10 +313,19 @@ function MobileReminderCard({ S, update, toast }) {
   )
 }
 
+// Safari nuances: on iOS push only works from an installed (Home Screen) web app, not from
+// the Safari tab; on a Mac a Dock web app is the most app-like way to run it.
+const isSafariUA = () => /^((?!chrome|android|crios|fxios|edg|opr).)*safari/i.test(navigator.userAgent || '')
+const isIOSUA = () => /iPad|iPhone|iPod/.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+const isStandaloneMode = () => (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true
+
 function PushCard({ S, update, toast }) {
   const [on, setOn] = useState(false)
   const [busy, setBusy] = useState(false)
   const supported = pushSupported()
+  const iosSafari = isIOSUA() && isSafariUA()
+  const needsInstall = iosSafari && !isStandaloneMode()
+  const macSafari = !isIOSUA() && isSafariUA() && !isStandaloneMode()
 
   useEffect(() => {
     if (!supported) return
@@ -336,19 +345,28 @@ function PushCard({ S, update, toast }) {
     catch (e) { toast(e.message || t('Test failed')) }
   }
 
+  if (needsInstall) return (
+    <Section title={t('Notifications')} footer={t('Push works only from the installed app: on iPhone or iPad tap Share, then Add to Home Screen, and open the app from its icon.')}>
+      <Row icon="house" iconTint="var(--acc)" title={t('Install the app to your Home Screen')} subtitle={t('Notifications are not available from the Safari tab.')} />
+    </Section>
+  )
+
   if (!supported) return (
     <Section title={t('Notifications')}>
       <Row icon="bellSlash" iconTint="var(--grey)" title={t('Not supported in this browser.')} />
     </Section>
   )
 
+  const reminderNote = on && S.reminder?.on
+    ? t("Only sent on days you have a routine planned and haven't logged a workout yet.") +
+      (S.reminder?.tz ? ' ' + t('Timezone: {0} (auto-detected, updates if you travel).', S.reminder.tz) : '')
+    : ''
+  const macNote = macSafari ? t('On a Mac, notifications work in Safari — for the app experience you can also add it to the Dock: File → Add to Dock.') : ''
+  const pushFooter = [reminderNote, macNote].filter(Boolean).join(' ') || null
   return <>
     <Section
       title={t('Notifications')}
-      footer={on && S.reminder?.on
-        ? t("Only sent on days you have a routine planned and haven't logged a workout yet.") +
-          (S.reminder?.tz ? ' ' + t('Timezone: {0} (auto-detected, updates if you travel).', S.reminder.tz) : '')
-        : null}
+      footer={pushFooter}
     >
       <Row icon="bell" iconTint="var(--red)" title={t('Push notifications')} subtitle={t('Rest-timer alerts, even if openGym is closed.')}>
         <Switch checked={on} disabled={busy} onChange={toggle} />

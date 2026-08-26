@@ -467,3 +467,19 @@ card on Home with a booking sheet.
   русский перевод её строк (`Loyalty`, `Available points`, `Exchange`,
   `Not enough points`, `Reward history`, статусы заявок и др.).
 - Кнопка: `Settings.jsx` → карточка «Доступно баллов».
+## Подсказки Safari для push-уведомлений (приложение)
+
+Приложение использует стандартный Web Push API — Safari поддерживает его
+с iOS/iPadOS 16.4 (только для установленных на главный экран web-приложений)
+и macOS Safari 16+/Ventura. Чтобы вместо непонятной ошибки спортсмен видел
+инструкцию, в секции «Уведомления» (Настройки) добавлено определение Safari:
+
+- **iOS/iPadOS Safari вне PWA-режима** — вместо переключателя показывается
+  подсказка: «Установите приложение на главный экран» (Поделиться → На
+  главный экран), т.к. из вкладки Safari подписка невозможна;
+- **macOS Safari** — переключатель работает, в футере секции добавляется
+  заметка про «Файл → Добавить в Dock» для полноценного опыта.
+
+Детекция: `isSafariUA()` / `isIOSUA()` / `isStandaloneMode()` в
+`Settings.jsx` (`matchMedia('(display-mode: standalone)')` +
+`navigator.standalone`). Строки переведены в `locales/ru.js`.

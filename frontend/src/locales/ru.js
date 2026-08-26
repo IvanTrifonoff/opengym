@@ -614,4 +614,9 @@ export default {
   'The club declined the request and returned the points to your balance.': 'Клуб отклонил заявку и вернул баллы на ваш счёт.',
   'Got it': 'Понятно',
   'About points & rewards': 'О баллах и наградах',
+
+  'Install the app to your Home Screen': 'Установите приложение на главный экран',
+  'Notifications are not available from the Safari tab.': 'Из вкладки Safari уведомления недоступны.',
+  'Push works only from the installed app: on iPhone or iPad tap Share, then Add to Home Screen, and open the app from its icon.': 'Пуши работают только из установленного приложения: на iPhone или iPad нажмите «Поделиться», затем «На главный экран», и открывайте приложение с его иконки.',
+  'On a Mac, notifications work in Safari — for the app experience you can also add it to the Dock: File → Add to Dock.': 'На Mac уведомления работают в Safari — для полноценного опыта приложение можно добавить в Dock: Файл → «Добавить в Dock».',
 };
