@@ -6,6 +6,7 @@ import { Button, Switch } from '../components/ui.jsx'
 import { loyaltyHelpSheet } from '../components/LoyaltyHelp.jsx'
 import Analytics from './Analytics.jsx'
 import Trainer from './Trainer.jsx'
+import TrainerNotifications from './TrainerNotifications.jsx'
 import AdminHelp from './AdminHelp.jsx'
 import Modals from '../components/Modals.jsx'
 import Toast from '../components/Toast.jsx'
@@ -253,6 +254,10 @@ export default function AdminApp() {
   if (!admin) return <AdminLogin onLogin={setAdmin} />
   if (loc.pathname.startsWith('/admin/analytics')) return <Analytics admin={admin} />
   if (loc.pathname.startsWith('/admin/help')) return <AdminHelp />
+  if (loc.pathname.startsWith('/trainer/notifications')) {
+    if (admin.role !== 'trainer') return <Navigate to="/admin" replace />
+    return <TrainerNotifications />
+  }
   if (loc.pathname.startsWith('/trainer')) {
     if (admin.role !== 'trainer') return <Navigate to="/admin" replace />
     return <Trainer admin={admin} onLogout={() => api('/api/admin/auth/logout', { method: 'POST', body: '{}' }).then(() => { setAdmin(null); nav('/admin') })} />

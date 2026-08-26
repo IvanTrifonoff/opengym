@@ -32,9 +32,9 @@ export async function markBadgeSeen() {
   await refreshBadge()
 }
 
-// Trainer portal variant: the app icon badge shows how many booking requests are
-// waiting for this trainer (admin session — reads the adminsid cookie, same as the
-// in-portal bell). Shared set/clear helper so the two never fight over the badge.
+// Trainer portal variant: the app icon badge shows how many unread items are in the
+// trainer's notification center (admin session — reads the adminsid cookie, same as
+// the in-portal bell). Shared set/clear helper so the two never fight over the badge.
 async function setBadge(n) {
   try {
     if (n > 0) await navigator.setAppBadge(n)
@@ -46,8 +46,8 @@ export async function refreshTrainerBadge() {
   if (!badgeSupported()) return
   let n = 0
   try {
-    const b = await api('/api/admin/trainer/bookings').catch(() => null)
-    n = (b?.bookings || []).filter(x => x.status === 'pending').length
+    const d = await api('/api/admin/notifications').catch(() => null)
+    n = (d?.notifications || []).filter(x => !x.read).length
   } catch (e) { /* keep the current badge */ }
   await setBadge(n)
 }

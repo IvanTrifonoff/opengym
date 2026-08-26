@@ -505,6 +505,16 @@ const routes = {
       const conflict = await findBookingConflict(row.trainer_id, date, time);
       if (conflict) return json(res, 409, { error: 'this slot is already booked' });
       const booking = await createBooking({ trainerId: row.trainer_id, athleteId: user.id, date, time, note: body.note, status: 'pending' });
+      // the request lands in the trainer's notification center (same table as athletes)
+      try {
+        await saveNotification({
+          id: 'tbk-' + booking.id, userId: 'admin:' + row.trainer_id,
+          title: 'Новая заявка на тренировку',
+          body: (user.name || 'Спортсмен') + ' · ' + String(booking.date).slice(8, 10) + '.' + String(booking.date).slice(5, 7) + ' · ' + booking.time
+            + (body.note ? ' — ' + String(body.note).slice(0, 120) : ''),
+          payload: { booking_id: booking.id, status: 'pending', date: booking.date, time: booking.time, kind: 'booking' }
+        });
+      } catch (e) { console.error('trainer booking notif save failed:', e.message); }
       // push alert to the trainer (no-op if they haven't subscribed from the portal)
       await sendPush('admin:' + row.trainer_id, {
         title: 'Новая заявка на тренировку',
@@ -585,6 +595,25 @@ const routes = {
       await adminDbReady;
       await markBadgeSeen(user.id);
       json(res, 200, { ok: true });
+    } catch (error) { json(res, 503, { error: 'service unavailable' }); }
+  },
+
+  // Trainer notification center: same app_notifications table, scoped to the admin session.
+  'GET /api/admin/notifications': async (req, res) => {
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
+    try {
+      await adminDbReady;
+      json(res, 200, { notifications: await listNotifications('admin:' + admin.id) });
+    } catch (error) { json(res, 503, { error: 'service unavailable' }); }
+  },
+
+  'POST /api/admin/notifications/read': async (req, res) => {
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
+    const body = await readBody(req);
+    try {
+      await adminDbReady;
+      await markNotificationsRead('admin:' + admin.id, body.id ? String(body.id) : null);
+      json(res, 200, { ok: true, unread: await countUnreadNotifications('admin:' + admin.id) });
     } catch (error) { json(res, 503, { error: 'service unavailable' }); }
   },
 

@@ -31,25 +31,25 @@ export default function Trainer({ admin, onLogout }) {
   const [searched, setSearched] = useState(false)
   const [busy, setBusy] = useState('')
   const [pendingCount, setPendingCount] = useState(0)
+  const [unread, setUnread] = useState(0)
   const [pushOn, setPushOn] = useState(false)
   const [pushBusy, setPushBusy] = useState(false)
 
   const load = () => api('/api/admin/analytics/athletes').then(d => setAthletes(d.athletes || [])).catch(e => setError(e.message))
   useEffect(() => { load() }, [tab])
 
-  // how many booking requests are waiting for the trainer (badge in the header + tab)
+  // how many booking requests are waiting for the trainer (badge on the calendar tab)
   const refreshPending = () => api('/api/admin/trainer/bookings')
-    .then(d => {
-      const n = (d.bookings || []).filter(b => b.status === 'pending').length
-      setPendingCount(n)
-      // app icon badge (Badging API) stays in sync with the in-portal counter
-      refreshTrainerBadge()
-    })
+    .then(d => setPendingCount((d.bookings || []).filter(b => b.status === 'pending').length))
     .catch(() => {})
-  useEffect(() => { refreshPending(); const t = setInterval(refreshPending, 30000); return () => clearInterval(t) }, [])
-  // keep the badge in sync the moment bookings change (confirm/reject/create)
+  // unread items in the trainer notification center (header bell + app icon badge)
+  const refreshUnread = () => api('/api/admin/notifications')
+    .then(d => { setUnread((d.notifications || []).filter(n => !n.read).length); refreshTrainerBadge() })
+    .catch(() => {})
+  useEffect(() => { refreshPending(); refreshUnread(); const t = setInterval(() => { refreshPending(); refreshUnread() }, 30000); return () => clearInterval(t) }, [])
+  // keep the badges in sync the moment bookings change (confirm/reject/create)
   useEffect(() => {
-    const h = () => refreshPending()
+    const h = () => { refreshPending(); refreshUnread() }
     window.addEventListener('trainer-bookings-changed', h)
     return () => window.removeEventListener('trainer-bookings-changed', h)
   }, [])
@@ -109,7 +109,7 @@ export default function Trainer({ admin, onLogout }) {
         <h1 style={{ margin: 0 }}>Мои спортсмены</h1>
         <div className="sub">{admin.name} · тренер</div>
       </div>
-      <button className="btn xs tinted" style={{ alignSelf: 'center', flex: 'none' }} onClick={trainerHelpSheet}>Инструкция</button>{pushSupported() && <button className={'btn xs ' + (pushOn ? 'tinted' : 'plain')} style={{ alignSelf: 'center', flex: 'none' }} onClick={togglePush} disabled={pushBusy}>{pushBusy ? '…' : pushOn ? 'Пуши: вкл' : 'Вкл. пуши'}</button>}<button className="iconbtn" style={{ position: 'relative' }} onClick={() => setTab('calendar')} aria-label="Новые заявки"><Icon name="bell" />{pendingCount > 0 && <span className="notif-badge">{pendingCount > 9 ? '9+' : pendingCount}</span>}</button><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button>
+      <button className="btn xs tinted" style={{ alignSelf: 'center', flex: 'none' }} onClick={trainerHelpSheet}>Инструкция</button>{pushSupported() && <button className={'btn xs ' + (pushOn ? 'tinted' : 'plain')} style={{ alignSelf: 'center', flex: 'none' }} onClick={togglePush} disabled={pushBusy}>{pushBusy ? '…' : pushOn ? 'Пуши: вкл' : 'Вкл. пуши'}</button>}<button className="iconbtn" style={{ position: 'relative' }} onClick={() => nav('/trainer/notifications')} aria-label="Уведомления"><Icon name="bell" />{unread > 0 && <span className="notif-badge">{unread > 9 ? '9+' : unread}</span>}</button><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button>
     </div>
 
     {admin.impersonated && <div className="card" style={{ borderColor: 'var(--acc)', marginBottom: 14 }}><div className="row between" style={{ gap: 8 }}><div className="small">Вы смотрите интерфейс от имени <b>{admin.name}</b> · {admin.role}</div><Button size="sm" variant="primary" onClick={back}>Вернуться</Button></div></div>}
