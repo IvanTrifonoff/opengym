@@ -78,6 +78,49 @@ catch { vapid = webpush.generateVAPIDKeys(); fs.writeFileSync(vapidFile, JSON.st
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || (SECURE ? ORIGIN : 'mailto:admin@localhost');
 webpush.setVapidDetails(VAPID_SUBJECT, vapid.publicKey, vapid.privateKey);
 
+/* ---- push delivery monitoring ----
+   Counts deliveries, keeps a ring buffer of alertable failures, and POSTs to an
+   optional webhook (PUSH_ALERT_WEBHOOK) when delivery starts failing — debounced
+   to one alert per 5 minutes, plus a single "recovered" notice once things are
+   healthy again for 5 minutes. Dead subscriptions (404/410) are normal cleanup,
+   counted separately and never alerted. */
+const PUSH_ALERT_WEBHOOK = process.env.PUSH_ALERT_WEBHOOK || '';
+const PUSH_ALERT_DEBOUNCE_MS = 5 * 60 * 1000;
+const pushStats = {
+  sent: 0, failed: 0, expired: 0,
+  failures: [],                          // ring buffer of alertable failures
+  lastFailedAt: 0, lastAlertAt: 0, recoverySent: false
+};
+const endpointHost = ep => { try { return new URL(ep).host; } catch { return '?'; } };
+async function maybePushAlert() {
+  if (!PUSH_ALERT_WEBHOOK) return;
+  if (Date.now() - pushStats.lastAlertAt < PUSH_ALERT_DEBOUNCE_MS) return;
+  pushStats.lastAlertAt = Date.now();
+  pushStats.recoverySent = false;
+  const last = pushStats.failures[pushStats.failures.length - 1];
+  try {
+    await fetch(PUSH_ALERT_WEBHOOK, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'push_delivery_alert', origin: ORIGIN, failed: pushStats.failed,
+        last: last && { at: new Date(last.at).toISOString(), host: last.host, status: last.status, error: last.error }
+      })
+    });
+  } catch (e) { console.error('push alert webhook failed:', e.message); }
+}
+async function maybePushRecovery() {
+  if (!PUSH_ALERT_WEBHOOK) return;
+  if (!pushStats.failed || pushStats.recoverySent) return;
+  if (Date.now() - pushStats.lastFailedAt < PUSH_ALERT_DEBOUNCE_MS) return;
+  pushStats.recoverySent = true;
+  try {
+    await fetch(PUSH_ALERT_WEBHOOK, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'push_delivery_recovered', origin: ORIGIN, sent: pushStats.sent, failed: pushStats.failed })
+    });
+  } catch (e) { console.error('push recovery webhook failed:', e.message); }
+}
+
 async function sendPush(userId, payload) {
   const subs = db.subs.filter(s => s.userId === userId);
   if (!subs.length) return;
@@ -89,15 +132,24 @@ async function sendPush(userId, payload) {
     // at the library default (long) so a briefly-offline device still gets it once reconnected,
     // rather than risking it being dropped for the sake of shaving off latency that TTL doesn't
     // actually control anyway.
-    try { await webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, body, { urgency: 'high' }); }
+    try { await webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, body, { urgency: 'high' }); pushStats.sent++; }
     catch (e) {
-      console.error('push send failed', userId, e.statusCode, e.body || e.message);
       if (e.statusCode === 404 || e.statusCode === 410) {
+        // subscription no longer valid — normal cleanup, not an alert
+        pushStats.expired++;
         db.subs = db.subs.filter(s => s.endpoint !== sub.endpoint); dirty = true;
+      } else {
+        pushStats.failed++;
+        pushStats.lastFailedAt = Date.now();
+        pushStats.failures.push({ at: Date.now(), host: endpointHost(sub.endpoint), status: e.statusCode || null, error: String(e.body || e.message || '').slice(0, 200) });
+        if (pushStats.failures.length > 50) pushStats.failures.shift();
+        console.error('push send failed', userId, e.statusCode, e.body || e.message, endpointHost(sub.endpoint));
+        maybePushAlert();
       }
     }
   }));
   if (dirty) saveDb();
+  maybePushRecovery();
 }
 
 // Rest-timer alerts: client schedules on start/extend, cancels on skip or on-screen completion —
@@ -682,6 +734,22 @@ const routes = {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
     await sendPush(user.id, { title: 'openGym', body: 'Test notification ✅ — this is what alerts look like.', tag: 'test' });
+    json(res, 200, { ok: true });
+  },
+
+  'GET /api/admin/push/status': async (req, res) => {
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
+    json(res, 200, {
+      stats: pushStats,
+      degraded: pushStats.failed > 0 && Date.now() - pushStats.lastFailedAt < 24 * 3600000,
+      webhookConfigured: !!PUSH_ALERT_WEBHOOK
+    });
+  },
+
+  'POST /api/admin/push/status/reset': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
+    pushStats.sent = 0; pushStats.failed = 0; pushStats.expired = 0;
+    pushStats.failures = []; pushStats.lastFailedAt = 0; pushStats.lastAlertAt = 0; pushStats.recoverySent = false;
     json(res, 200, { ok: true });
   },
 
