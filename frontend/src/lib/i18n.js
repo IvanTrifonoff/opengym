@@ -2,7 +2,8 @@
 // src/locales/ map them to translations and are lazy-loaded (Vite code-splits each
 // import.meta.glob entry), so the initial bundle stays English-only.
 // Exercise instructions come from separately generated packs in src/instr/ (one per
-// language, from the upstream dataset) — also lazy-loaded on language switch.
+// language, from the upstream dataset) — loaded on demand (when an exercise card is
+// opened) so a ~1 MB pack of every exercise's steps never blocks app startup.
 import { useSyncExternalStore } from 'react'
 
 // UI languages. de/pt have no instruction pack upstream — instructions fall back to English.
@@ -45,15 +46,33 @@ export const instrFor = ex => (instr && instr[ex.id]) || ex.st || []
 // Translated title for an exercise in the current language (English name as fallback).
 export const exName = ex => (names && names[ex.id]) || ex.n || ''
 
+// Loads the instruction pack for the current language on demand (the packs are big —
+// a full catalogue of steps per exercise — so they load only when the exercise card is
+// opened, not at app startup). Resolves immediately if instructions are already here or
+// the language has none (English/unsupported → English steps fallback).
+let instrLoading = null
+export async function ensureInstr() {
+  if (instrLoading) return instrLoading
+  if (lang === 'en' || !INSTR_LANGS.includes(lang)) return
+  const l = lang
+  instrLoading = (async () => {
+    try { instr = (await instrPacks['../instr/' + l + '.js']()).default } catch (e) { instr = null }
+    if (lang === l) notify()
+  })()
+  return instrLoading
+}
+
 export async function setLang(l) {
   if (!LANGS[l]) l = 'en'
   if (l === lang && version > 0) return
   lang = l
+  instrLoading = null
   try {
     dict = l === 'en' ? {} : (await localePacks['../locales/' + l + '.js']()).default
-    instr = l === 'en' || !INSTR_LANGS.includes(l) ? null : (await instrPacks['../instr/' + l + '.js']()).default
     names = l === 'en' || !NAMES_LANGS.includes(l) ? null : (await namePacks['../names/' + l + '.js']()).default
-  } catch (e) { dict = {}; instr = null; names = null }
+  } catch (e) { dict = {}; names = null }
+  // instructions intentionally NOT loaded here — they come with ensureInstr() on demand
+  instr = null
   notify()
 }
 
