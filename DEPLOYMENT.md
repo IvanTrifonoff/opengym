@@ -508,3 +508,24 @@ api-контейнера падали с ESERVFAIL.
 **Проверено** (см. ниже): FCM принял реальную подписку и тестовые пуши;
 расшифровка aes128gcm и VAPID JWT — 14/14 PASS; outbox лояльности —
 `notified:1`, строка outbox `delivered:true`.
+## Бейдж на иконке приложения (Badging API, iOS 16.4+ PWA)
+
+На иконке установленного web-приложения показывается счётчик «сколько
+спортсмен ждёт»: **pending-заявки на награды** (из `/api/loyalty/wallet`) +
+**pending-записи к тренеру** (из `/api/trainer/my-bookings`).
+
+- `frontend/src/lib/badge.js` — `refreshBadge()`: feature-detect
+  (`navigator.setAppBadge`), считает pending-элементы, `setAppBadge(n)` /
+  `clearAppBadge()`. На iOS 16.4+ работает только для установленного на
+  главный экран приложения (и после выдачи разрешения на уведомления);
+  на остальных платформах — no-op.
+- `App.jsx` — рефреш при старте и при возврате в foreground
+  (focus/visibilitychange).
+- `Settings.jsx` (LoyaltyCard) и `CoachSheet.jsx` — рефреш после обмена
+  награды / отправки или отмены записи.
+- `public/sw.js` — в push-событии пересчитывает бейдж через API (пока
+  приложение закрыто), по клику на уведомление сбрасывает.
+
+Проверено (headless Chrome, аутентифицированный спортсмен): с 1 pending
+наградой + 1 pending записью `refreshBadge()` вызвал `setAppBadge(2)`;
+`sw.js` — синтаксис OK, отдаётся 200.

@@ -13,6 +13,7 @@ import { MOBILE, shareExport, syncReminder } from '../lib/mobile.js'
 import { loadStarterPlan, confirmSheet, importFromApp } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
 import { loyaltyInfoSheet } from '../components/LoyaltyInfo.jsx'
+import { refreshBadge } from '../lib/badge.js'
 import { Section, Row, SelectRow, Switch, Segmented, Button, TextField } from '../components/ui.jsx'
 
 export default function Settings() {
@@ -209,7 +210,7 @@ function LoyaltyCard({ toast }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const load = () => Promise.all([api('/api/loyalty/wallet'), api('/api/loyalty/rewards')])
-    .then(([w, r]) => { setWallet(w); setRewards(r.rewards || []); setError('') })
+    .then(([w, r]) => { setWallet(w); setRewards(r.rewards || []); setError(''); refreshBadge() })
     .catch(e => setError(e.message))
   useEffect(() => { load(); }, [])
   const redeem = reward => confirmSheet({
@@ -221,7 +222,7 @@ function LoyaltyCard({ toast }) {
       try {
         const result = await api('/api/loyalty/redeem', { method: 'POST', body: JSON.stringify({ reward_id: reward.id }) })
         toast(result.redemption.code ? t('Reward code: {0}', result.redemption.code) : t('Reward requested — show it to staff'))
-        await load()
+        await load(); refreshBadge()
       } catch (e) { toast(e.message) }
       setBusy(false)
     }

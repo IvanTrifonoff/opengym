@@ -1,5 +1,7 @@
 /* openGym service worker — runtime caching (works with Vite's hashed asset names).
-   Media (img/gif) cache-first; everything else network-first with offline fallback. */
+   Media (img/gif) cache-first; everything else network-first with offline fallback.
+   Also maintains the app icon badge (Badging API) while the app is backgrounded:
+   iOS 16.4+ Home Screen web apps and Chrome render it on the icon. */
 const CACHE = 'opengym-rt-v1'
 
 self.addEventListener('install', () => self.skipWaiting())
@@ -8,18 +10,43 @@ self.addEventListener('activate', e => {
     Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
   ).then(() => self.clients.claim()))
 })
+
+// Badge = how many things the athlete is waiting on (pending reward requests +
+// pending bookings), read straight from the API with the session cookie.
+async function syncBadge() {
+  if (typeof self.registration.setAppBadge !== 'function') return
+  let n = 0
+  try {
+    const [w, b] = await Promise.all([
+      fetch('./api/loyalty/wallet', { credentials: 'include' }).then(r => (r.ok ? r.json() : null)),
+      fetch('./api/trainer/my-bookings', { credentials: 'include' }).then(r => (r.ok ? r.json() : null))
+    ])
+    n += ((w && w.redemptions) || []).filter(x => x.status === 'pending').length
+    n += ((b && b.bookings) || []).filter(x => x.status === 'pending').length
+  } catch (e) { return }
+  try {
+    if (n > 0) await self.registration.setAppBadge(n)
+    else await self.registration.clearAppBadge()
+  } catch (e) { /* permission missing — ignore */ }
+}
+
 self.addEventListener('push', e => {
   const data = e.data ? e.data.json() : {}
-  e.waitUntil(self.registration.showNotification(data.title || 'openGym', {
-    body: data.body || '',
-    icon: 'icon-512.png',
-    badge: 'icon-180.png',
-    tag: data.tag || 'opengym',
-    renotify: true
-  }))
+  e.waitUntil((async () => {
+    await self.registration.showNotification(data.title || 'openGym', {
+      body: data.body || '',
+      icon: 'icon-512.png',
+      badge: 'icon-180.png',
+      tag: data.tag || 'opengym',
+      renotify: true
+    })
+    // refresh the badge right after a push lands (app may be closed)
+    await syncBadge()
+  })())
 })
 self.addEventListener('notificationclick', e => {
   e.notification.close()
+  if (typeof self.registration.clearAppBadge === 'function') self.registration.clearAppBadge().catch(() => {})
   e.waitUntil(self.clients.matchAll({ type: 'window' }).then(clients => {
     const c = clients.find(c => 'focus' in c)
     return c ? c.focus() : self.clients.openWindow('./')
