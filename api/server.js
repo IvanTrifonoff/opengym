@@ -505,6 +505,13 @@ const routes = {
       const conflict = await findBookingConflict(row.trainer_id, date, time);
       if (conflict) return json(res, 409, { error: 'this slot is already booked' });
       const booking = await createBooking({ trainerId: row.trainer_id, athleteId: user.id, date, time, note: body.note, status: 'pending' });
+      // push alert to the trainer (no-op if they haven't subscribed from the portal)
+      await sendPush('admin:' + row.trainer_id, {
+        title: 'Новая заявка на тренировку',
+        body: user.name + ' · ' + date + ' ' + time + (body.note ? ' — ' + String(body.note).slice(0, 120) : ''),
+        tag: 'booking-' + booking.id,
+        data: { booking_id: booking.id }
+      }).catch(e => console.error('trainer booking push failed:', e.message));
       json(res, 200, { ok: true, booking });
     } catch (error) {
       console.error('trainer book failed:', error.message);
@@ -740,30 +747,37 @@ const routes = {
   'GET /api/push/public-key': async (req, res) => json(res, 200, { key: vapid.publicKey }),
 
   'POST /api/push/subscribe': async (req, res) => {
+    // Athlete session (gymsid) or admin/trainer session (adminsid) — trainers subscribe
+    // from the portal so they can get push alerts about new booking requests.
     const user = readSession(req);
-    if (!user) return json(res, 401, { error: 'not signed in' });
+    const adminId = user ? null : adminSessionId(req);
+    if (!user && !adminId) return json(res, 401, { error: 'not signed in' });
     const body = await readBody(req);
     const sub = body.subscription;
     if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) return json(res, 400, { error: 'invalid subscription' });
+    const userId = user ? user.id : 'admin:' + adminId;
     db.subs = db.subs.filter(s => s.endpoint !== sub.endpoint);
-    db.subs.push({ userId: user.id, endpoint: sub.endpoint, keys: sub.keys, created: new Date().toISOString() });
+    db.subs.push({ userId, endpoint: sub.endpoint, keys: sub.keys, created: new Date().toISOString() });
     saveDb();
     json(res, 200, { ok: true });
   },
 
   'POST /api/push/unsubscribe': async (req, res) => {
     const user = readSession(req);
-    if (!user) return json(res, 401, { error: 'not signed in' });
+    const adminId = user ? null : adminSessionId(req);
+    if (!user && !adminId) return json(res, 401, { error: 'not signed in' });
     const body = await readBody(req);
-    db.subs = db.subs.filter(s => !(s.userId === user.id && s.endpoint === body.endpoint));
+    const userId = user ? user.id : 'admin:' + adminId;
+    db.subs = db.subs.filter(s => !(s.userId === userId && s.endpoint === body.endpoint));
     saveDb();
     json(res, 200, { ok: true });
   },
 
   'POST /api/push/test': async (req, res) => {
     const user = readSession(req);
-    if (!user) return json(res, 401, { error: 'not signed in' });
-    await sendPush(user.id, { title: 'openGym', body: 'Test notification ✅ — this is what alerts look like.', tag: 'test' });
+    const adminId = user ? null : adminSessionId(req);
+    if (!user && !adminId) return json(res, 401, { error: 'not signed in' });
+    await sendPush(user ? user.id : 'admin:' + adminId, { title: 'openGym', body: 'Test notification ✅ — this is what alerts look like.', tag: 'test' });
     json(res, 200, { ok: true });
   },
 

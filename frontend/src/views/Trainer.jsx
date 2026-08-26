@@ -8,6 +8,7 @@ import TrainerProgram from './TrainerProgram.jsx'
 import TrainerBookings from './TrainerBookings.jsx'
 import { trainerHelpSheet } from '../components/TrainerHelp.jsx'
 import { refreshTrainerBadge, clearBadge } from '../lib/badge.js'
+import { pushSupported, enablePush, disablePush } from '../lib/push.js'
 
 const STATUS_ORDER = [['all', 'Все'], ['active', 'Активен'], ['at_risk', 'Риск'], ['gone', 'Ушёл'], ['new', 'Новый']]
 
@@ -30,6 +31,8 @@ export default function Trainer({ admin, onLogout }) {
   const [searched, setSearched] = useState(false)
   const [busy, setBusy] = useState('')
   const [pendingCount, setPendingCount] = useState(0)
+  const [pushOn, setPushOn] = useState(false)
+  const [pushBusy, setPushBusy] = useState(false)
 
   const load = () => api('/api/admin/analytics/athletes').then(d => setAthletes(d.athletes || [])).catch(e => setError(e.message))
   useEffect(() => { load() }, [tab])
@@ -75,6 +78,22 @@ export default function Trainer({ admin, onLogout }) {
   }
   const back = () => api('/api/admin/impersonate/back', { method: 'POST', body: '{}' }).then(d => { location.href = d.redirect || '/admin' }).catch(() => {})
 
+  // push subscriptions for the trainer (alerts about new booking requests) — same
+  // mechanism as the athlete app, but the server maps the adminsid session to the trainer.
+  useEffect(() => {
+    if (!pushSupported()) return
+    navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription()).then(s => setPushOn(!!s)).catch(() => {})
+  }, [])
+  const togglePush = async () => {
+    if (pushBusy) return
+    setPushBusy(true)
+    try {
+      if (pushOn) { await disablePush(); setPushOn(false) }
+      else { await enablePush(); setPushOn(true) }
+    } catch (e) { setError(e.message) }
+    setPushBusy(false)
+  }
+
   if (prog) return <TrainerProgram athlete={prog} onBack={() => setProg(null)} />
   if (sel) return <AthleteCard id={sel} admin={admin} trainers={[]} onBack={() => setSel(null)} onProgram={() => setProg({ id: sel, name: (athletes.find(x => x.id === sel) || {}).name || 'Спортсмен' })} />
 
@@ -90,7 +109,7 @@ export default function Trainer({ admin, onLogout }) {
         <h1 style={{ margin: 0 }}>Мои спортсмены</h1>
         <div className="sub">{admin.name} · тренер</div>
       </div>
-      <button className="btn xs tinted" style={{ alignSelf: 'center', flex: 'none' }} onClick={trainerHelpSheet}>Инструкция</button><button className="iconbtn" style={{ position: 'relative' }} onClick={() => setTab('calendar')} aria-label="Новые заявки"><Icon name="bell" />{pendingCount > 0 && <span className="notif-badge">{pendingCount > 9 ? '9+' : pendingCount}</span>}</button><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button>
+      <button className="btn xs tinted" style={{ alignSelf: 'center', flex: 'none' }} onClick={trainerHelpSheet}>Инструкция</button>{pushSupported() && <button className={'btn xs ' + (pushOn ? 'tinted' : 'plain')} style={{ alignSelf: 'center', flex: 'none' }} onClick={togglePush} disabled={pushBusy}>{pushBusy ? '…' : pushOn ? 'Пуши: вкл' : 'Вкл. пуши'}</button>}<button className="iconbtn" style={{ position: 'relative' }} onClick={() => setTab('calendar')} aria-label="Новые заявки"><Icon name="bell" />{pendingCount > 0 && <span className="notif-badge">{pendingCount > 9 ? '9+' : pendingCount}</span>}</button><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button>
     </div>
 
     {admin.impersonated && <div className="card" style={{ borderColor: 'var(--acc)', marginBottom: 14 }}><div className="row between" style={{ gap: 8 }}><div className="small">Вы смотрите интерфейс от имени <b>{admin.name}</b> · {admin.role}</div><Button size="sm" variant="primary" onClick={back}>Вернуться</Button></div></div>}
