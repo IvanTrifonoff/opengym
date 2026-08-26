@@ -175,6 +175,10 @@ export const useStore = create((set, get) => {
       try {
         const me = await api('/api/me')
         get().setUser(me.user)
+        // Interface first: mark ready as soon as we know who we are — the app renders
+        // immediately (with the local copy of the data), and the full history pull
+        // continues in the background, updating the store when it lands.
+        set({ ready: true })
         await get().pullState()
         // Re-stamp the reminder's timezone on every load — keeps it correct if you're travelling,
         // without needing to revisit Settings.
@@ -184,8 +188,8 @@ export const useStore = create((set, get) => {
         }
       } catch (e) {
         if (e.status === 401) get().setUser(null)
+        set({ ready: true })
       }
-      set({ ready: true })
     }
   }
 })
