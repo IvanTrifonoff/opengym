@@ -4,7 +4,7 @@ import { useUI } from '../store/useUI.js'
 import { t, dateLocale } from '../lib/i18n.js'
 import { DAYS } from '../lib/format.js'
 import Icon from '../components/Icon.jsx'
-import { refreshBadge } from '../lib/badge.js'
+import { refreshBadge, markBadgeSeen } from '../lib/badge.js'
 import { Button } from '../components/ui.jsx'
 
 const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
@@ -41,7 +41,7 @@ export function CoachSheet({ user, close }) {
   const load = () => Promise.all([
     api('/api/trainer/availability'),
     api('/api/trainer/my-bookings')
-  ]).then(([a, m]) => { setData(a); setMine(m.bookings || []) }).catch(e => setErr(e.message))
+  ]).then(([a, m]) => { setData(a); setMine(m.bookings || []); markBadgeSeen() }).catch(e => setErr(e.message))
   useEffect(() => { load() }, [])
 
   const days = []

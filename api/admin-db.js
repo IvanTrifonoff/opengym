@@ -183,6 +183,11 @@ ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS branch_key TEXT;
 
 // Split shifts: a trainer may have several intervals per weekday (e.g. 9-12 and 16-21).
 // The original schema had PRIMARY KEY (trainer_id, weekday) which capped it at one row per day.
+const BADGE_SEEN_MIGRATION = `
+ALTER TABLE loyalty_redemptions ADD COLUMN IF NOT EXISTS viewed_at TIMESTAMPTZ;
+ALTER TABLE coach_bookings ADD COLUMN IF NOT EXISTS viewed_at TIMESTAMPTZ;
+`;
+
 const AVAILABILITY_MIGRATION = `
 ALTER TABLE trainer_availability DROP CONSTRAINT IF EXISTS trainer_availability_pkey;
 CREATE INDEX IF NOT EXISTS trainer_availability_trainer_weekday_idx ON trainer_availability (trainer_id, weekday);
@@ -195,6 +200,7 @@ export const adminDbReady = (async () => {
     await pool.query(SCHEMA);
     await pool.query(LEDGER_MIGRATION);
     await pool.query(ADMIN_MIGRATION);
+    await pool.query(BADGE_SEEN_MIGRATION);
     await pool.query(AVAILABILITY_MIGRATION);
   } catch (error) {
     initError = error;
@@ -393,12 +399,24 @@ export async function getWallet(userId) {
      FROM loyalty_ledger WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [userId]
   );
   const redemptions = await pool.query(
-    `SELECT r.id, r.cost, r.status, r.code, r.note, r.created_at, r.updated_at,
+    `SELECT r.id, r.cost, r.status, r.code, r.note, r.created_at, r.updated_at, r.viewed_at,
             w.id AS reward_id, w.name AS reward_name, w.kind AS reward_kind
      FROM loyalty_redemptions r JOIN loyalty_rewards w ON w.id = r.reward_id
      WHERE r.user_id = $1 ORDER BY r.created_at DESC LIMIT 50`, [userId]
   );
   return { balance: account.rows[0]?.balance || 0, ledger: ledger.rows, redemptions: redemptions.rows };
+}
+
+export async function markBadgeSeen(userId) {
+  // The athlete opened the section where their pending rewards/bookings are shown —
+  // from now on these no longer count on the app icon badge.
+  await ready();
+  await pool.query(
+    `UPDATE loyalty_redemptions SET viewed_at = COALESCE(viewed_at, now())
+     WHERE user_id = $1 AND status = 'pending'`, [userId]);
+  await pool.query(
+    `UPDATE coach_bookings SET viewed_at = COALESCE(viewed_at, now())
+     WHERE athlete_id = $1 AND status = 'pending'`, [userId]);
 }
 
 export async function listRewards(activeOnly = false) {

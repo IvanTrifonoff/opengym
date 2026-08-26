@@ -14,7 +14,7 @@ import {
 } from './access-db.js';
 import {
   acceptLoyaltyEvent, adminDbReady, applyLoyaltyRules, countUnreadNotifications, createAdminInvite, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
-  listAdmins, listLoyaltyRules, listNotifications, markNotificationsRead, registerAdmin, roleAllowed, saveLoyaltyRule, deleteLoyaltyRule, dispatchOutbox,
+  listAdmins, listLoyaltyRules, listNotifications, markBadgeSeen, markNotificationsRead, registerAdmin, roleAllowed, saveLoyaltyRule, deleteLoyaltyRule, dispatchOutbox,
   syncAdminOwners, updateAdmin, updateAdminCounter, getWallet, listRewards, saveReward, deleteReward, redeemReward, listRedemptions, updateRedemption,
   setTrainerAssignment, listTrainerAssignments,
   getTrainerAvailability, setTrainerAvailability, listBookings, createBooking,
@@ -568,6 +568,16 @@ const routes = {
     try {
       await adminDbReady;
       json(res, 200, { notifications: await listNotifications(user.id) });
+    } catch (error) { json(res, 503, { error: 'service unavailable' }); }
+  },
+
+  'POST /api/badge/seen': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    try {
+      await adminDbReady;
+      await markBadgeSeen(user.id);
+      json(res, 200, { ok: true });
     } catch (error) { json(res, 503, { error: 'service unavailable' }); }
   },
 

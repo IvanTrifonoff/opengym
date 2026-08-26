@@ -24,8 +24,8 @@ async function syncBadge() {
       fetch('./api/trainer/my-bookings', { credentials: 'include' }).then(r => (r.ok ? r.json() : null))
     ])
     n += ((n2 && n2.notifications) || []).filter(x => !x.read).length
-    n += ((w && w.redemptions) || []).filter(x => x.status === 'pending').length
-    n += ((b && b.bookings) || []).filter(x => x.status === 'pending').length
+    n += ((w && w.redemptions) || []).filter(x => x.status === 'pending' && !x.viewed_at).length
+    n += ((b && b.bookings) || []).filter(x => x.status === 'pending' && !x.viewed_at).length
   } catch (e) { return }
   try {
     if (n > 0) await self.registration.setAppBadge(n)
