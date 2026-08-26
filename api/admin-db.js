@@ -128,6 +128,14 @@ CREATE TABLE IF NOT EXISTS loyalty_outbox (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   delivered_at TIMESTAMPTZ
 );
+
+CREATE TABLE IF NOT EXISTS trainer_assignments (
+  user_id TEXT PRIMARY KEY,
+  trainer_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS trainer_assignments_trainer_idx ON trainer_assignments (trainer_id);
 `;
 
 const LEDGER_MIGRATION = `
@@ -136,12 +144,17 @@ ALTER TABLE loyalty_ledger ADD COLUMN IF NOT EXISTS source_type TEXT;
 ALTER TABLE loyalty_ledger ADD COLUMN IF NOT EXISTS source_id TEXT;
 `;
 
+const ADMIN_MIGRATION = `
+ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS branch_key TEXT;
+`;
+
 export const adminDbReady = (async () => {
   await integrationDbReady;
   if (!pool) return;
   try {
     await pool.query(SCHEMA);
     await pool.query(LEDGER_MIGRATION);
+    await pool.query(ADMIN_MIGRATION);
   } catch (error) {
     initError = error;
     console.error('admin database init failed:', error.message);
@@ -184,7 +197,7 @@ export async function syncAdminOwners(users, credentials, ownerIds) {
 export async function getAdmin(id) {
   await ready();
   const result = await pool.query(
-    `SELECT id, name, role, disabled, created_at, updated_at FROM admin_users WHERE id = $1`, [id]
+    `SELECT id, name, role, branch_key, disabled, created_at, updated_at FROM admin_users WHERE id = $1`, [id]
   );
   return result.rows[0] || null;
 }
@@ -206,7 +219,7 @@ export async function updateAdminCounter(credentialId, counter) {
 export async function listAdmins() {
   await ready();
   const result = await pool.query(
-    `SELECT a.id, a.name, a.role, a.disabled, a.created_at, a.updated_at,
+    `SELECT a.id, a.name, a.role, a.branch_key, a.disabled, a.created_at, a.updated_at,
             count(c.id)::int AS passkeys
      FROM admin_users a LEFT JOIN admin_credentials c ON c.admin_id = a.id
      GROUP BY a.id ORDER BY a.created_at`
@@ -568,3 +581,24 @@ export async function dispatchOutbox({ send, batch = 25 } = {}) {
   return sent;
 }
 
+export async function setTrainerAssignment({ userId, trainerId }) {
+  await ready();
+  if (!trainerId) {
+    await pool.query('DELETE FROM trainer_assignments WHERE user_id = $1', [userId]);
+    return { userId, trainerId: null };
+  }
+  const result = await pool.query(
+    `INSERT INTO trainer_assignments (user_id, trainer_id)
+     VALUES ($1, $2)
+     ON CONFLICT (user_id) DO UPDATE SET trainer_id = EXCLUDED.trainer_id, updated_at = now()
+     RETURNING user_id, trainer_id`,
+    [userId, trainerId]
+  );
+  return result.rows[0];
+}
+
+export async function listTrainerAssignments() {
+  await ready();
+  const result = await pool.query('SELECT user_id, trainer_id FROM trainer_assignments');
+  return result.rows;
+}

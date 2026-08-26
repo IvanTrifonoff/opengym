@@ -15,8 +15,10 @@ import {
 import {
   acceptLoyaltyEvent, adminDbReady, applyLoyaltyRules, createAdminInvite, getAdmin, getAdminCredential, getAdminInvite,
   listAdmins, listLoyaltyRules, registerAdmin, roleAllowed, saveLoyaltyRule, deleteLoyaltyRule, dispatchOutbox,
-  syncAdminOwners, updateAdmin, updateAdminCounter, getWallet, listRewards, saveReward, deleteReward, redeemReward, listRedemptions, updateRedemption
+  syncAdminOwners, updateAdmin, updateAdminCounter, getWallet, listRewards, saveReward, deleteReward, redeemReward, listRedemptions, updateRedemption,
+  setTrainerAssignment, listTrainerAssignments
 } from './admin-db.js';
+import { collectAnalytics, athleteDetail } from './analytics.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -236,6 +238,17 @@ async function requireAdminAccount(req, res, roles = ['owner', 'manager', 'train
     json(res, 503, { error: 'admin database unavailable' });
     return null;
   }
+}
+
+// Which slice of the network an admin may see in analytics. Owner sees everything;
+// a manager is scoped to their branch (null branch_key = whole network); a trainer sees
+// only athletes assigned to them; an operator gets statuses only (frontend decides what
+// to render — the data returned is the same list).
+function analyticsScope(admin) {
+  if (admin.role === 'owner') return { kind: 'all' };
+  if (admin.role === 'manager') return { kind: 'branch', branch: admin.branch_key || null };
+  if (admin.role === 'trainer') return { kind: 'trainer', trainerId: admin.id };
+  return { kind: 'statuses' };
 }
 
 function sessionCookie(user) {
@@ -796,6 +809,96 @@ const routes = {
     if (u.disabled) presence.delete(u.id);   // drop them off "training now" at once
     saveDb();
     json(res, 200, { ok: true, id: u.id, disabled: u.disabled });
+  },
+
+  /* ---------- analytics: athlete stats, discipline, leaderboard ---------- */
+  // Overview: KPI tiles. Every admin role can read it (operator sees the same numbers).
+  'GET /api/admin/analytics/overview': async (req, res) => {
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
+    try {
+      const { summary } = await collectAnalytics({ users: db.users, stateOf: readState, scope: analyticsScope(admin) });
+      json(res, 200, { summary, scope: analyticsScope(admin) });
+    } catch (error) {
+      console.error('analytics overview failed:', error.message);
+      json(res, 503, { error: 'analytics unavailable' });
+    }
+  },
+
+  // Athlete table: one row per athlete, scoped to the caller. Frontend renders statuses
+  // for an operator and full rows for everyone else.
+  'GET /api/admin/analytics/athletes': async (req, res) => {
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
+    try {
+      const { athletes } = await collectAnalytics({ users: db.users, stateOf: readState, scope: analyticsScope(admin) });
+      json(res, 200, { athletes, scope: analyticsScope(admin) });
+    } catch (error) {
+      console.error('analytics athletes failed:', error.message);
+      json(res, 503, { error: 'analytics unavailable' });
+    }
+  },
+
+  // Drill-down: one athlete. Owner/manager (branch-scoped), trainer (own athletes only).
+  // Operator has no drill-down.
+  'GET /api/admin/analytics/athlete': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
+    const id = new URL(req.url, 'http://x').searchParams.get('id');
+    const u = db.users.find(x => x.id === id);
+    if (!u) return json(res, 404, { error: 'no such user' });
+    try {
+      const detail = await athleteDetail({ user: u, stateOf: readState, scope: analyticsScope(admin) });
+      json(res, 200, detail);
+    } catch (error) {
+      if (error.status === 403) return json(res, 403, { error: 'no access to this athlete' });
+      console.error('analytics athlete detail failed:', error.message);
+      json(res, 503, { error: 'analytics unavailable' });
+    }
+  },
+
+  // Leaderboard: points / volume / streak. Owner + manager only.
+  'GET /api/admin/analytics/leaderboard': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
+    try {
+      const { leaderboard } = await collectAnalytics({ users: db.users, stateOf: readState, scope: analyticsScope(admin) });
+      json(res, 200, leaderboard);
+    } catch (error) {
+      console.error('analytics leaderboard failed:', error.message);
+      json(res, 503, { error: 'analytics unavailable' });
+    }
+  },
+
+  // Trainer list for the assignment picker. Owner + manager only.
+  'GET /api/admin/analytics/trainers': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
+    try {
+      const admins = await listAdmins();
+      json(res, 200, { trainers: admins.filter(a => a.role === 'trainer' && !a.disabled).map(a => ({ id: a.id, name: a.name })) });
+    } catch (error) {
+      console.error('analytics trainers failed:', error.message);
+      json(res, 503, { error: 'analytics unavailable' });
+    }
+  },
+
+  // Assign (or unassign) an athlete to a trainer. Owner + manager only.
+  'POST /api/admin/analytics/assign': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
+    const body = await readBody(req);
+    const userId = String(body.user_id || '').trim();
+    const trainerId = String(body.trainer_id || '').trim() || null;
+    if (!userId) return json(res, 400, { error: 'user_id required' });
+    const u = db.users.find(x => x.id === userId);
+    if (!u) return json(res, 404, { error: 'no such user' });
+    if (trainerId) {
+      const admins = await listAdmins();
+      if (!admins.some(a => a.id === trainerId && a.role === 'trainer' && !a.disabled))
+        return json(res, 400, { error: 'not a trainer' });
+    }
+    try {
+      const assignment = await setTrainerAssignment({ userId, trainerId });
+      json(res, 200, { ok: true, assignment });
+    } catch (error) {
+      console.error('analytics assign failed:', error.message);
+      json(res, 503, { error: 'analytics unavailable' });
+    }
   },
 
 

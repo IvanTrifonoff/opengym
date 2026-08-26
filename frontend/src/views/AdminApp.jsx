@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { api, passkeyAdminLogin, passkeyAdminRegister } from '../lib/api.js'
 import Icon from '../components/Icon.jsx'
 import { Button, Switch } from '../components/ui.jsx'
+import Analytics from './Analytics.jsx'
 
 const roles = ['owner', 'manager', 'trainer', 'operator']
 const eventTypes = [
@@ -172,11 +173,12 @@ function Staff({ admin }) {
 }
 
 function AdminDashboard({ admin, onLogout }) {
+  const nav = useNavigate()
   const [tab, setTab] = useState('overview'); const [staff, setStaff] = useState([]); const [rules, setRules] = useState([])
   useEffect(() => { api('/api/admin/staff').then(d => setStaff(d.admins || [])).catch(() => {}); api('/api/admin/loyalty/rules').then(d => setRules(d.rules || [])).catch(() => {}) }, [tab])
   const canEdit = admin.role === 'owner' || admin.role === 'manager'
   return <div className="narrow" style={{ paddingBottom: 40 }}>
-    <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">openGym Admin</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {admin.role}</div></div><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
+    <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">openGym Admin</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {admin.role}</div></div><button className="iconbtn" onClick={() => nav('/admin/analytics')} aria-label="Аналитика"><Icon name="chart" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
     <div className="seg" style={{ marginBottom: 16, '--n': 4, '--i': ['overview', 'loyalty', 'rewards', 'staff'].indexOf(tab) }}><span className="seg-sel" />{[['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ['staff', 'Сотрудники']].map(([v, label]) => <button key={v} className={tab === v ? 'on' : ''} onClick={() => setTab(v)}>{label}</button>)}</div>
     {tab === 'overview' && <><div className="tiles"><div className="tile"><div className="l">Сотрудники</div><div className="v">{staff.length || '—'}</div></div><div className="tile"><div className="l">Правила</div><div className="v">{rules.length || '—'}</div></div><div className="tile"><div className="l">Роль</div><div className="v" style={{ fontSize: '1rem' }}>{admin.role}</div></div><div className="tile"><div className="l">База</div><div className="v" style={{ fontSize: '1rem', color: 'var(--green)' }}>online</div></div></div><div className="card"><h2 style={{ marginTop: 0 }}>Быстрый старт</h2><p className="dim">Создайте правило «Посещение» и выдайте сотруднику invite-код. События СКУД начнут начислять баллы после привязки member_key к профилю спортсмена.</p><Button variant="primary" onClick={() => setTab('loyalty')}>Настроить loyalty</Button></div></>}
     {tab === 'loyalty' && <Loyalty canEdit={canEdit} />}
@@ -210,5 +212,6 @@ export default function AdminApp() {
   if (register) return <AdminRegister />
   if (admin === undefined) return <div className="narrow" style={{ paddingTop: '42vh', textAlign: 'center' }}><Icon name="dumbbell" style={{ color: 'var(--label-3)', fontSize: 30 }} /></div>
   if (!admin) return <AdminLogin onLogin={setAdmin} />
+  if (loc.pathname.startsWith('/admin/analytics')) return <Analytics admin={admin} />
   return <AdminDashboard admin={admin} onLogout={() => api('/api/admin/auth/logout', { method: 'POST', body: '{}' }).then(() => { setAdmin(null); nav('/admin') })} />
 }

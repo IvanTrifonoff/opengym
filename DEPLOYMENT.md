@@ -212,4 +212,57 @@ Served as a static file:
 - Features marked «в разработке» (analytics, member cards, referral links,
   challenges) are intentionally positioned as roadmap — they are NOT implemented
   yet; do not claim otherwise in marketing copy.
+## 14. Athlete analytics (/admin/analytics)
 
+Separate admin module with stats on athletes: discipline (attendance, streak,
+frequency, churn risk), successes (leaderboards, records, points), and a
+per-athlete drill-down card. Read-only against PostgreSQL + per-user JSON state.
+
+### Access (role-based scope)
+
+- `owner` — sees the whole network.
+- `manager` — sees their branch only (`admin_users.branch_key`); `branch_key IS NULL`
+  means the whole network.
+- `trainer` — sees only athletes assigned to them (`trainer_assignments`).
+- `operator` — statuses only: overview + the status list, no drill-down, no leaderboard.
+
+### Files
+
+- `api/analytics.js` (new) — aggregation: `collectAnalytics()` (summary + athlete
+  rows + leaderboard) and `athleteDetail()` (weekly buckets, best lifts, recent
+  workouts, ledger, redemptions, achievements). Formulas mirror the app's own
+  stats: streak weeks, workout volume (Σ w×r of done sets), frequency
+  (max(visits30, workouts30) / 4.33), status by last activity:
+  active ≤14d, at_risk ≤30d, gone >30d, new = registered <90d with no activity.
+- `api/admin-db.js` — schema additions: `admin_users.branch_key` (migration
+  `ADMIN_MIGRATION`), `trainer_assignments(user_id PK, trainer_id)`,
+  `setTrainerAssignment()` / `listTrainerAssignments()`.
+- `api/server.js` — `analyticsScope(admin)` + six endpoints:
+  `GET /api/admin/analytics/overview`, `/athletes`, `/athlete?id=`,
+  `/leaderboard`, `/trainers`, `POST /api/admin/analytics/assign`
+  (assign/unassign: empty `trainer_id` clears). Detail + leaderboard + trainers
+  are gated to owner/manager; detail additionally allows a trainer for their own
+  athletes.
+- `frontend/src/views/Analytics.jsx` (new) — KPI tiles, athlete table with status
+  chips and search/filters, leaderboard tab, drill-down card with trainer picker.
+- `frontend/src/views/AdminApp.jsx` — routes `/admin/analytics` internally (login
+  gate shared), entry button (chart icon) in the dashboard header.
+
+### Branch/trainer setup
+
+Branch keys are free-form strings (e.g. `branch-1`) and currently come from
+`visits.branch_key` / `external_member_bindings.branch_key`. To scope a manager,
+set `branch_key` directly in the DB:
+
+```sql
+UPDATE admin_users SET branch_key = 'branch-1' WHERE id = '<admin id>';
+```
+
+Athlete→trainer assignment is done in the drill-down card (owner/manager only).
+
+### Vite base fix (subpath routes)
+
+`frontend/vite.config.js` now builds with `base: '/'` for web and `base: './'`
+for mobile (`VITE_MOBILE=1`). Without the absolute base, the SPA served at
+subpaths like `/admin/analytics` resolves `./assets/*` to `/admin/assets/*`
+(404) and the page renders empty — this also affected `/admin/register`.
