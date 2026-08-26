@@ -945,11 +945,17 @@ const routes = {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
     const body = await readBody(req);
     let code;
-    // 16 hex chars = 64 bits, up from 8 chars / 32 bits. The app has no rate limiting by design
-    // (that's the reverse proxy's job) and /api/register/options tells a caller whether a code is
-    // good, so the code itself has to be the thing that isn't worth guessing. Codes already in
-    // db.json keep working — validation is an exact string compare, never a length or format check.
-    do { code = crypto.randomBytes(8).toString('hex').toUpperCase(); } while (db.invites.some(i => i.code === code));
+    // Default: 16 hex chars = 64 bits. The app has no rate limiting by design (that's the reverse
+    // proxy's job) and /api/register/options tells a caller whether a code is good, so the code
+    // itself has to be the thing that isn't worth guessing. `short: true` (used by the admin UI)
+    // emits 8 chars from a 32-char unambiguous alphabet ≈ 40 bits — still unguessable, but short
+    // enough to dictate over the phone. Validation is an exact string compare, never a format check.
+    const SAFE32 = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    if (body.short) {
+      do { code = Array.from(crypto.randomBytes(8), b => SAFE32[b & 31]).join(''); } while (db.invites.some(i => i.code === code));
+    } else {
+      do { code = crypto.randomBytes(8).toString('hex').toUpperCase(); } while (db.invites.some(i => i.code === code));
+    }
     const invite = { code, note: String(body.note || '').slice(0, 60), createdBy: admin.id, created: new Date().toISOString() };
     db.invites.push(invite);
     saveDb();

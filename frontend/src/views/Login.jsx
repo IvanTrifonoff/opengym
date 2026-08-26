@@ -11,7 +11,7 @@ import { Button } from '../components/ui.jsx'
 function RegisterSheet({ close }) {
   const { setUser, pushState, pullState } = useStore()
   const [name, setName] = useState('')
-  const [code, setCode] = useState('')
+  const [code, setCode] = useState(() => new URLSearchParams(location.search).get('invite') || '')
   const [inviteOnly, setInviteOnly] = useState(false)
   const ref = useRef(null)
   useEffect(() => { setTimeout(() => ref.current?.focus(), 250) }, [])

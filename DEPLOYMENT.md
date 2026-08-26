@@ -266,3 +266,18 @@ Athlete→trainer assignment is done in the drill-down card (owner/manager only)
 for mobile (`VITE_MOBILE=1`). Without the absolute base, the SPA served at
 subpaths like `/admin/analytics` resolves `./assets/*` to `/admin/assets/*`
 (404) and the page renders empty — this also affected `/admin/register`.
+### Athlete invites (admin UI)
+
+Athlete registration is invite-gated (`INVITE_ONLY=1`). Codes are now issued
+from the admin dashboard — tab **«Приглашения»** (owner/manager only):
+
+- **Create** — `POST /api/admin/invites/new` with `{ note, short: true }`
+  returns an 8-char code from a 32-char unambiguous alphabet (≈40 bits; the
+  default no-flag path still returns the original 16-hex code). The UI shows
+  the code and a ready link `https://<origin>/?invite=<CODE>` with copy buttons.
+- **List** — `GET /api/admin/invites` returns all codes with `usedByName`
+  resolved for display.
+- **Revoke** — `POST /api/admin/invites/revoke` (unused codes only).
+- The athlete opens the invite link → «Create new profile» → the invite field
+  is prefilled from the `?invite=` URL param (`Login.jsx` / `Settings.jsx`),
+  then they finish with their passkey as usual.

@@ -172,18 +172,39 @@ function Staff({ admin }) {
   </>
 }
 
+function Invites({ admin }) {
+  const [invites, setInvites] = useState([]); const [note, setNote] = useState(''); const [created, setCreated] = useState(null); const [error, setError] = useState('')
+  const canManage = admin.role === 'owner' || admin.role === 'manager'
+  const load = () => api('/api/admin/invites').then(d => setInvites(d.invites || [])).catch(e => setError(e.message))
+  useEffect(() => { load(); }, [])
+  const create = () => api('/api/admin/invites/new', { method: 'POST', body: JSON.stringify({ note, short: true }) }).then(d => { setCreated(d.invite); setNote(''); load() }).catch(e => setError(e.message))
+  const revoke = code => api('/api/admin/invites/revoke', { method: 'POST', body: JSON.stringify({ code }) }).then(load).catch(e => setError(e.message))
+  const link = code => location.origin + '/?invite=' + code
+  return <>
+    <div className="row between" style={{ marginBottom: 10 }}><div><h2 style={{ margin: 0 }}>Приглашения спортсменов</h2><div className="sub">Код для регистрации в приложении — вход остаётся через passkey</div></div></div>
+    {canManage && <div className="card"><h3 style={{ marginTop: 0 }}>Создать код</h3><div className="row" style={{ gap: 8 }}><input className="field" value={note} onChange={e => setNote(e.target.value)} placeholder="Кому выдаётся (необязательно)" /><Button variant="primary" size="sm" onClick={create}>Создать</Button></div>
+      {created && <div className="small" style={{ marginTop: 10 }}>Код: <b style={{ fontSize: 18, letterSpacing: '.12em' }}>{created.code}</b><br />Ссылка для спортсмена: <span className="dim">{link(created.code)}</span>{' '}<button className="btn xs plain" onClick={() => navigator.clipboard?.writeText(link(created.code))}>Копировать ссылку</button>{' '}<button className="btn xs plain" onClick={() => navigator.clipboard?.writeText(created.code)}>Копировать код</button></div>}
+    </div>}
+    <ErrorLine error={error} />
+    {!invites.length && <div className="card empty">Кодов пока нет. Создайте первый — спортсмен введёт его при создании профиля.</div>}
+    <div className="list">{invites.map(i => <div className="item" key={i.code}><div className="grow"><div className="tt" style={{ letterSpacing: '.08em' }}>{i.code}</div><div className="ss">{i.note || 'без пометки'} · {new Date(i.created).toLocaleDateString()}</div></div>{i.usedBy ? <span className="tag acc">использован{i.usedByName ? ' — ' + i.usedByName : ''}</span> : <><span className="tag">свободен</span><button className="btn xs plain" onClick={() => revoke(i.code)}>Отозвать</button></>}</div>)}</div>
+  </>
+}
+
 function AdminDashboard({ admin, onLogout }) {
   const nav = useNavigate()
   const [tab, setTab] = useState('overview'); const [staff, setStaff] = useState([]); const [rules, setRules] = useState([])
   useEffect(() => { api('/api/admin/staff').then(d => setStaff(d.admins || [])).catch(() => {}); api('/api/admin/loyalty/rules').then(d => setRules(d.rules || [])).catch(() => {}) }, [tab])
   const canEdit = admin.role === 'owner' || admin.role === 'manager'
+  const tabs = [['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ['staff', 'Сотрудники'], ...(canEdit ? [['invites', 'Приглашения']] : [])]
   return <div className="narrow" style={{ paddingBottom: 40 }}>
     <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">openGym Admin</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {admin.role}</div></div><button className="iconbtn" onClick={() => nav('/admin/analytics')} aria-label="Аналитика"><Icon name="chart" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
-    <div className="seg" style={{ marginBottom: 16, '--n': 4, '--i': ['overview', 'loyalty', 'rewards', 'staff'].indexOf(tab) }}><span className="seg-sel" />{[['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ['staff', 'Сотрудники']].map(([v, label]) => <button key={v} className={tab === v ? 'on' : ''} onClick={() => setTab(v)}>{label}</button>)}</div>
+    <div className="seg" style={{ marginBottom: 16, '--n': tabs.length, '--i': tabs.map(([v]) => v).indexOf(tab) }}><span className="seg-sel" />{tabs.map(([v, label]) => <button key={v} className={tab === v ? 'on' : ''} onClick={() => setTab(v)}>{label}</button>)}</div>
     {tab === 'overview' && <><div className="tiles"><div className="tile"><div className="l">Сотрудники</div><div className="v">{staff.length || '—'}</div></div><div className="tile"><div className="l">Правила</div><div className="v">{rules.length || '—'}</div></div><div className="tile"><div className="l">Роль</div><div className="v" style={{ fontSize: '1rem' }}>{admin.role}</div></div><div className="tile"><div className="l">База</div><div className="v" style={{ fontSize: '1rem', color: 'var(--green)' }}>online</div></div></div><div className="card"><h2 style={{ marginTop: 0 }}>Быстрый старт</h2><p className="dim">Создайте правило «Посещение» и выдайте сотруднику invite-код. События СКУД начнут начислять баллы после привязки member_key к профилю спортсмена.</p><Button variant="primary" onClick={() => setTab('loyalty')}>Настроить loyalty</Button></div></>}
     {tab === 'loyalty' && <Loyalty canEdit={canEdit} />}
     {tab === 'rewards' && <Rewards canEdit={canEdit} />}
     {tab === 'staff' && <Staff admin={admin} />}
+    {tab === 'invites' && <Invites admin={admin} />}
   </div>
 }
 

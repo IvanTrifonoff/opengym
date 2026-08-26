@@ -370,7 +370,7 @@ function PushCard({ S, update, toast }) {
 // one, so a form that cannot collect it is a form that cannot succeed.
 function RegisterInline({ close, setUser, pushState, pullState, toast }) {
   const nameRef = useRef(null)
-  const [code, setCode] = useState('')
+  const [code, setCode] = useState(() => new URLSearchParams(location.search).get('invite') || '')
   const [inviteOnly, setInviteOnly] = useState(false)
   useEffect(() => { api('/api/config').then(c => setInviteOnly(!!c.invite_only)).catch(() => {}) }, [])
   const go = async () => {
