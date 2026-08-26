@@ -11,16 +11,19 @@ self.addEventListener('activate', e => {
   ).then(() => self.clients.claim()))
 })
 
-// Badge = how many things the athlete is waiting on (pending reward requests +
-// pending bookings), read straight from the API with the session cookie.
+// Badge = how many things the athlete is waiting on (unread notifications +
+// pending reward requests + pending bookings), read straight from the API
+// with the session cookie.
 async function syncBadge() {
   if (typeof self.registration.setAppBadge !== 'function') return
   let n = 0
   try {
-    const [w, b] = await Promise.all([
+    const [n2, w, b] = await Promise.all([
+      fetch('./api/notifications', { credentials: 'include' }).then(r => (r.ok ? r.json() : null)),
       fetch('./api/loyalty/wallet', { credentials: 'include' }).then(r => (r.ok ? r.json() : null)),
       fetch('./api/trainer/my-bookings', { credentials: 'include' }).then(r => (r.ok ? r.json() : null))
     ])
+    n += ((n2 && n2.notifications) || []).filter(x => !x.read).length
     n += ((w && w.redemptions) || []).filter(x => x.status === 'pending').length
     n += ((b && b.bookings) || []).filter(x => x.status === 'pending').length
   } catch (e) { return }

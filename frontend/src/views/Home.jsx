@@ -11,6 +11,7 @@ import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 import { glyphOf } from '../lib/glyphs.js'
+import { refreshBadge } from '../lib/badge.js'
 
 // Home = what to do now + a quick glance. Deep charts & history live in Stats.
 export default function Home() {
@@ -19,7 +20,15 @@ export default function Home() {
   const user = useStore(s => s.user)
   const [weekOffset, setWeekOffset] = useState(0)
   const [trainer, setTrainer] = useState(null)
+  const [unread, setUnread] = useState(0)
   useEffect(() => { if (user) api('/api/trainer/me').then(d => setTrainer(d.trainer || null)).catch(() => {}) }, [user])
+  useEffect(() => {
+    if (!user) return
+    api('/api/notifications').then(d => setUnread((d.notifications || []).filter(n => !n.read).length)).catch(() => {})
+    const onVisible = () => { if (document.visibilityState === 'visible' && user) api('/api/notifications').then(d => setUnread((d.notifications || []).filter(n => !n.read).length)).catch(() => {}) }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [user])
 
   const today = new Date()
   const routine = effectiveRoutine(S, todayISO())
@@ -52,7 +61,13 @@ export default function Home() {
   return <div className="narrow">
     <div className="hdr">
       <div><h1>{user ? t('Hi {0}', user.name) : 'openGym'}</h1><div className="sub">{today.toLocaleDateString(dateLocale(), { weekday: 'long', day: 'numeric', month: 'long' })}</div></div>
-      <button className="iconbtn" onClick={() => nav('/settings')} aria-label={t('Settings')}><Icon name="gear" /></button>
+      <div className="row" style={{ gap: 4 }}>
+        {user && <button className="iconbtn" onClick={() => nav('/notifications')} aria-label={t('Notifications')} style={{ position: 'relative' }}>
+          <Icon name="bell" />
+          {unread > 0 && <span className="notif-badge">{unread > 9 ? '9+' : unread}</span>}
+        </button>}
+        <button className="iconbtn" onClick={() => nav('/settings')} aria-label={t('Settings')}><Icon name="gear" /></button>
+      </div>
     </div>
 
     <div className="card">

@@ -24,6 +24,7 @@ import Stats from './views/Stats.jsx'
 import History from './views/History.jsx'
 import Library from './views/Library.jsx'
 import Settings from './views/Settings.jsx'
+import Notifications from './views/Notifications.jsx'
 import Admin from './views/Admin.jsx'
 import AdminApp, { AdminBoundary } from './views/AdminApp.jsx'
 
@@ -88,6 +89,7 @@ function Shell() {
               <Route path="/history" element={<History />} />
               <Route path="/library" element={<Library />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/notifications" element={<Notifications />} />
               <Route path="*" element={<Navigate to="/home" replace />} />
             </Routes>
           )}

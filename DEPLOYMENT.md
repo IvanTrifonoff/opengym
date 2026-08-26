@@ -582,3 +582,42 @@ FCM-эндпоинте; сообщения: ru «+15 баллов — …», en 
 Проверено end-to-end: реальная FCM-подписка + мёртвый эндпоинт → `sent:1,
 failed:1, degraded:true`; вебхук получил `push_delivery_alert` с деталями;
 в админке баннер и плитка «сбои» → «Сбросить» → «ok», баннер исчезает.
+## Внутриприложение «Уведомления» (центр сообщений)
+
+Раздел «Уведомления» в приложении спортсмена: страница `/notifications` со
+списком полученных push-сообщений, чтобы было что «прочитывать».
+
+**Как работает:**
+- Каждое сообщение, которое уходит через `dispatchOutbox` (авто-пуши о
+  начислении баллов, уведомления из правил лояльности), дополнительно
+  сохраняется в таблицу `app_notifications` (идемпотентно: повторная доставка
+  той же строки outbox не дублирует запись).
+- В шапке главной (`/home`) — колокольчик с числом непрочитанных (до 9+);
+  обновляется при загрузке и возврате в приложение.
+- Страница `/notifications`: список (заголовок, текст, время), при открытии всё
+  помечается прочитанным (`POST /api/notifications/read`), карточки
+  «непрочитанные» подсвечены.
+- Бейдж на иконке (Badging API) теперь считает: непрочитанные уведомления +
+  pending-награды + pending-записи (`lib/badge.js`, `sw.js` — то же самое в
+  push-событии, пока приложение закрыто).
+
+**API:**
+- `GET /api/notifications` — список для текущего пользователя (последние 50);
+- `POST /api/notifications/read` `{id?}` — пометить одно или все прочитанным,
+  возвращает `{ok, unread}`.
+
+**Схема (мигрируется автоматически при старте api):**
+```sql
+CREATE TABLE IF NOT EXISTS app_notifications (
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT 'openGym', body TEXT NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(), read_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS app_notifications_user_idx ON app_notifications (user_id, created_at DESC);
+```
+
+Проверено end-to-end: правило «+15 за посещение» → событие через вебхук →
+строка в `app_notifications` → колокольчик с бейджем «3» → страница со списком
+(русский текст, время) → авто-read (`unread:0` после открытия); 0 JS-ошибок.
+Тестовые данные убраны.

@@ -13,8 +13,8 @@ import {
   acceptAccessEvent, bindExternalMember, integrationDbReady, integrationDbStatus, listExternalMembers
 } from './access-db.js';
 import {
-  acceptLoyaltyEvent, adminDbReady, applyLoyaltyRules, createAdminInvite, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
-  listAdmins, listLoyaltyRules, registerAdmin, roleAllowed, saveLoyaltyRule, deleteLoyaltyRule, dispatchOutbox,
+  acceptLoyaltyEvent, adminDbReady, applyLoyaltyRules, countUnreadNotifications, createAdminInvite, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
+  listAdmins, listLoyaltyRules, listNotifications, markNotificationsRead, registerAdmin, roleAllowed, saveLoyaltyRule, deleteLoyaltyRule, dispatchOutbox,
   syncAdminOwners, updateAdmin, updateAdminCounter, getWallet, listRewards, saveReward, deleteReward, redeemReward, listRedemptions, updateRedemption,
   setTrainerAssignment, listTrainerAssignments,
   getTrainerAvailability, setTrainerAvailability, listBookings, createBooking,
@@ -560,6 +560,26 @@ const routes = {
     if (!user) return json(res, 401, { error: 'not signed in' });
     try { json(res, 200, { rewards: await listRewards(true) }); }
     catch (error) { console.error('rewards failed:', error.message); json(res, 503, { error: 'loyalty database unavailable' }); }
+  },
+
+  'GET /api/notifications': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    try {
+      await adminDbReady;
+      json(res, 200, { notifications: await listNotifications(user.id) });
+    } catch (error) { json(res, 503, { error: 'service unavailable' }); }
+  },
+
+  'POST /api/notifications/read': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    try {
+      await adminDbReady;
+      await markNotificationsRead(user.id, body.id ? String(body.id) : null);
+      json(res, 200, { ok: true, unread: await countUnreadNotifications(user.id) });
+    } catch (error) { json(res, 503, { error: 'service unavailable' }); }
   },
 
   'POST /api/loyalty/redeem': async (req, res) => {

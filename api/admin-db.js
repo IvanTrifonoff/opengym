@@ -129,6 +129,17 @@ CREATE TABLE IF NOT EXISTS loyalty_outbox (
   delivered_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS app_notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT 'openGym',
+  body TEXT NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  read_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS app_notifications_user_idx ON app_notifications (user_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS trainer_assignments (
   user_id TEXT PRIMARY KEY,
   trainer_id TEXT NOT NULL,
@@ -617,6 +628,14 @@ export async function dispatchOutbox({ send, batch = 25 } = {}) {
     for (const row of rows) {
       try {
         const payload = row.payload || {};
+        // keep every loyalty message in the in-app notification center too (idempotent —
+        // a retried send re-claims the same outbox row and must not duplicate the entry)
+        await pool.query(
+          `INSERT INTO app_notifications (id, user_id, title, body, payload)
+           VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
+          ['ob-' + row.id, row.user_id, 'openGym',
+           String(payload.message || payload.body || '').slice(0, 300), JSON.stringify(payload)]
+        );
         await send(row.user_id, {
           title: 'openGym',
           body: String(payload.message || payload.body || '').slice(0, 300),
@@ -636,6 +655,31 @@ export async function dispatchOutbox({ send, batch = 25 } = {}) {
     client.release();
   }
   return sent;
+}
+
+
+export async function listNotifications(userId, limit = 50) {
+  await ready();
+  const r = await pool.query(
+    `SELECT id, title, body, created_at, read_at FROM app_notifications
+     WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`, [userId, limit]
+  );
+  return r.rows.map(x => ({ id: x.id, title: x.title, body: x.body, created_at: x.created_at, read: !!x.read_at }));
+}
+
+export async function markNotificationsRead(userId, id) {
+  await ready();
+  if (id) {
+    await pool.query(`UPDATE app_notifications SET read_at = COALESCE(read_at, now()) WHERE user_id = $1 AND id = $2`, [userId, id]);
+  } else {
+    await pool.query(`UPDATE app_notifications SET read_at = COALESCE(read_at, now()) WHERE user_id = $1 AND read_at IS NULL`, [userId]);
+  }
+}
+
+export async function countUnreadNotifications(userId) {
+  await ready();
+  const r = await pool.query(`SELECT count(*)::int AS n FROM app_notifications WHERE user_id = $1 AND read_at IS NULL`, [userId]);
+  return r.rows[0].n;
 }
 
 export async function setTrainerAssignment({ userId, trainerId }) {

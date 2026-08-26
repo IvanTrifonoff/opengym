@@ -189,6 +189,15 @@ body.resting #app{padding-bottom:calc(250px + var(--sab))}
 .iconbtn:active{background:var(--surface-2);transform:scale(.92)}
 .iconbtn.on-ss{background:var(--acc-soft);color:var(--acc)}
 
+/* unread count on the header bell (notifications) */
+.notif-badge{
+  position:absolute;top:2px;right:0;min-width:16px;height:16px;border-radius:9px;
+  background:var(--acc);color:#fff;font-size:10px;font-weight:700;line-height:16px;
+  text-align:center;padding:0 4px;box-shadow:0 0 0 2px var(--surface);
+}
+/* unread card in the notification list */
+.card.unread{box-shadow:inset 2px 0 0 var(--acc)}
+
 h4.sec{
   font-size:13px;font-weight:400;letter-spacing:-.004em;color:var(--label-2);
   text-transform:none;margin:22px 0 8px;padding:0 4px;
