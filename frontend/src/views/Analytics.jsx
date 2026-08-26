@@ -7,6 +7,7 @@ import { fmtDate } from '../lib/format.js'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 import LineChart from '../components/LineChart.jsx'
+import TrainerProgram from './TrainerProgram.jsx'
 
 const DAY = 86400000
 const STATUS = {
@@ -49,7 +50,7 @@ function Leaderboard({ lb }) {
   </div>
 }
 
-export function AthleteCard({ id, admin, trainers, onBack }) {
+export function AthleteCard({ id, admin, trainers, onBack, onProgram }) {
   const [d, setD] = useState(null)
   const [err, setErr] = useState('')
   const [tr, setTr] = useState('')
@@ -82,6 +83,7 @@ export function AthleteCard({ id, admin, trainers, onBack }) {
         <h1 style={{ margin: 0 }}>{d.user.name} <StatusTag status={d.status} /></h1>
         <div className="sub">{d.user.branch ? 'филиал ' + d.user.branch : 'без филиала'} · создан {d.user.created ? fmtDate(d.user.created.slice(0, 10), true) : '—'} · активность {daysAgo(d.lastActivity)}</div>
       </div>
+      {onProgram && <button className="iconbtn" onClick={onProgram} aria-label="Программа"><Icon name="list" /></button>}
     </div>
 
     {canManage && <div className="card" style={{ marginBottom: 12 }}>
@@ -176,6 +178,7 @@ export default function Analytics({ admin }) {
   const [leaderboard, setLeaderboard] = useState(null)
   const [trainers, setTrainers] = useState([])
   const [sel, setSel] = useState(null)
+  const [prog, setProg] = useState(null)
   const [filter, setFilter] = useState('all')
   const [q, setQ] = useState('')
   const canManage = admin.role === 'owner' || admin.role === 'manager'
@@ -194,7 +197,8 @@ export default function Analytics({ admin }) {
     }
   }, [canManage])
 
-  if (sel) return <AthleteCard id={sel} admin={admin} trainers={trainers} onBack={() => setSel(null)} />
+  if (prog) return <TrainerProgram athlete={prog} onBack={() => setProg(null)} />
+  if (sel) return <AthleteCard id={sel} admin={admin} trainers={trainers} onBack={() => setSel(null)} onProgram={() => setProg({ id: sel, name: (athletes.find(x => x.id === sel) || {}).name || 'Спортсмен' })} />
 
   const list = athletes.filter(a =>
     (filter === 'all' || a.status === filter) &&

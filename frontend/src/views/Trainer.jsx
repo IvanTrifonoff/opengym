@@ -4,6 +4,7 @@ import { api } from '../lib/api.js'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 import { AthleteCard, StatusTag, daysAgo } from './Analytics.jsx'
+import TrainerProgram from './TrainerProgram.jsx'
 
 const STATUS_ORDER = [['all', 'Все'], ['active', 'Активен'], ['at_risk', 'Риск'], ['gone', 'Ушёл'], ['new', 'Новый']]
 
@@ -13,6 +14,7 @@ export default function Trainer({ admin, onLogout }) {
   const [tab, setTab] = useState('athletes')
   const [athletes, setAthletes] = useState([])
   const [sel, setSel] = useState(null)
+  const [prog, setProg] = useState(null)
   const [filter, setFilter] = useState('all')
   const [q, setQ] = useState('')
   const [error, setError] = useState('')
@@ -49,7 +51,8 @@ export default function Trainer({ admin, onLogout }) {
       .catch(e => setError(e.message)).finally(() => setBusy(''))
   }
 
-  if (sel) return <AthleteCard id={sel} admin={admin} trainers={[]} onBack={() => setSel(null)} />
+  if (prog) return <TrainerProgram athlete={prog} onBack={() => setProg(null)} />
+  if (sel) return <AthleteCard id={sel} admin={admin} trainers={[]} onBack={() => setSel(null)} onProgram={() => setProg({ id: sel, name: (athletes.find(x => x.id === sel) || {}).name || 'Спортсмен' })} />
 
   const list = athletes.filter(a =>
     (filter === 'all' || a.status === filter) &&

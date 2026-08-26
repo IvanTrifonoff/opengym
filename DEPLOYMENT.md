@@ -303,3 +303,27 @@ redirected to `/admin`). Login uses the same admin passkey.
 
 Frontend: `frontend/src/views/Trainer.jsx` (new); `App.jsx` treats `/trainer`
 as an admin route; `AdminApp.jsx` routes it through the same login gate.
+### Trainer program view/edit + exercise stats
+
+From an athlete's drill-down card (both `/trainer` and `/admin/analytics`) the
+«Программа» button opens the athlete's training program:
+
+- **GET `/api/admin/trainer/athlete/program?id=`** — owner/manager any athlete;
+  a trainer only their assigned athletes (`requireProgramAccess`). Returns
+  `{ unit, routines, week, dayPlan, customEx, workouts }` — workouts are
+  included so per-exercise history can be rendered client-side.
+- **PUT `/api/admin/trainer/athlete/program?id=`** — merges only `routines`
+  into the athlete's state file (`state-<uid>.json`): workouts and everything
+  else stay untouched, so a stale trainer copy can never clobber the athlete's
+  logs. Sanitised server-side (name/emoji/prog whitelisted, sets/reps/weight
+  clamped, caps on counts). Sets `_ts` so the athlete app picks the change up
+  on next sync.
+- **`frontend/src/views/TrainerProgram.jsx`** (new) — two tabs:
+  - «Программа»: weekly day mapping, create/rename/delete routines, add
+    exercises (shared `exercisePicker` sheet), inline sets × reps × weight
+    editing, reorder/remove, save button.
+  - «Прогресс»: per-exercise history from the athlete's logged workouts —
+    best weight, done/total sets, and per-date sets like `60 × 8, 62,5 × 6`.
+- `AdminApp.jsx` now renders `<Modals />`/`<Toast />` in the admin route —
+  without this, sheets (e.g. the exercise picker) never appeared outside the
+  athlete app.

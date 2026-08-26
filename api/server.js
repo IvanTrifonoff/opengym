@@ -251,6 +251,17 @@ function analyticsScope(admin) {
   return { kind: 'statuses' };
 }
 
+// Trainer program access: owner/manager see any athlete; a trainer only their
+// own assigned athletes (trainer_assignments).
+async function requireProgramAccess(admin, userId) {
+  if (admin.role === 'owner' || admin.role === 'manager') return true;
+  if (admin.role === 'trainer') {
+    const ta = await listTrainerAssignments();
+    return ta.some(x => x.user_id === userId && x.trainer_id === admin.id);
+  }
+  return false;
+}
+
 function sessionCookie(user) {
   return `gymsid=${makeSession(user)}; Path=/; Max-Age=${SESSION_DAYS * 86400}; HttpOnly;${SECURE} SameSite=Lax`;
 }
@@ -931,6 +942,59 @@ const routes = {
       console.error('analytics users failed:', error.message);
       json(res, 503, { error: 'analytics unavailable' });
     }
+  },
+
+  // View an athlete's training program + workout history (for per-exercise stats).
+  'GET /api/admin/trainer/athlete/program': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
+    const id = String(new URL(req.url, 'http://x').searchParams.get('id') || '');
+    const u = db.users.find(x => x.id === id);
+    if (!u) return json(res, 404, { error: 'no such user' });
+    if (!(await requireProgramAccess(admin, id))) return json(res, 403, { error: 'no access to this athlete' });
+    const S = readState(id) || {};
+    json(res, 200, {
+      unit: S.unit || 'kg',
+      routines: S.routines || [],
+      week: S.week || {},
+      dayPlan: S.dayPlan || {},
+      customEx: S.customEx || [],
+      workouts: S.workouts || []
+    });
+  },
+
+  // Save a trainer's edits to the athlete's routines. Merges only `routines` into
+  // the athlete's state — workouts and everything else stay untouched, so a stale
+  // trainer copy can never clobber the athlete's logs. Sanitised server-side.
+  'PUT /api/admin/trainer/athlete/program': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
+    const id = String(new URL(req.url, 'http://x').searchParams.get('id') || '');
+    const u = db.users.find(x => x.id === id);
+    if (!u) return json(res, 404, { error: 'no such user' });
+    if (!(await requireProgramAccess(admin, id))) return json(res, 403, { error: 'no access to this athlete' });
+    const body = await readBody(req);
+    if (!Array.isArray(body.routines)) return json(res, 400, { error: 'routines required' });
+    if (body.routines.length > 20) return json(res, 400, { error: 'too many routines' });
+    const routines = body.routines.map(r => {
+      const id2 = String(r.id || '').slice(0, 64) || ('r' + crypto.randomBytes(6).toString('base64url'));
+      const ex = (Array.isArray(r.ex) ? r.ex : []).slice(0, 60).map(e => ({
+        id: String(e.id || '').slice(0, 32),
+        sets: Math.max(1, Math.min(20, +e.sets || 3)),
+        reps: Math.max(1, Math.min(200, +e.reps || 10)),
+        weight: Math.max(0, Math.min(10000, +e.weight || 0))
+      }));
+      return {
+        id: id2,
+        name: String(r.name || '').trim().slice(0, 60) || 'Программа',
+        emoji: /^[a-zA-Z]{1,24}$/.test(String(r.emoji || '')) ? String(r.emoji) : 'dumbbell',
+        prog: /^[a-z_]*$/.test(String(r.prog || '')) ? String(r.prog || '') : '',
+        ex
+      };
+    });
+    const S = readState(id) || {};
+    S.routines = routines;
+    S._ts = Date.now();
+    atomicWrite(stateFile(id), JSON.stringify(S));
+    json(res, 200, { ok: true, routines });
   },
 
 

@@ -5,6 +5,8 @@ import Icon from '../components/Icon.jsx'
 import { Button, Switch } from '../components/ui.jsx'
 import Analytics from './Analytics.jsx'
 import Trainer from './Trainer.jsx'
+import Modals from '../components/Modals.jsx'
+import Toast from '../components/Toast.jsx'
 
 const roles = ['owner', 'manager', 'trainer', 'operator']
 const eventTypes = [
@@ -216,7 +218,7 @@ export class AdminBoundary extends Component {
   static getDerivedStateFromError() { return { failed: true } }
   componentDidCatch(err) { console.error('openGym admin render error:', err) }
   render() {
-    if (!this.state.failed) return this.props.children
+    if (!this.state.failed) return <>{this.props.children}<Modals /><Toast /></>
     return (
       <div className="narrow" style={{ paddingTop: '16vh', textAlign: 'center' }}>
         <div style={{ color: 'var(--acc)', fontSize: 36, marginBottom: 8 }}><Icon name="wrench" /></div>
