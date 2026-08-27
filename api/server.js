@@ -335,6 +335,34 @@ async function requireProgramAccess(admin, userId) {
 }
 
 const timeInRange = (t, start, end) => t >= start && t < end;
+const validTime = t => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t));
+const BOOKING_TRANSITIONS = {
+  pending: new Set(['confirmed', 'rejected', 'cancelled']),
+  confirmed: new Set(['cancelled', 'done']),
+  rejected: new Set(), cancelled: new Set(), done: new Set()
+};
+function bookingTransitionAllowed(from, to) { return from === to || !!BOOKING_TRANSITIONS[from]?.has(to); }
+function validateAvailabilitySlots(slots) {
+  if (!Array.isArray(slots) || slots.length > 14) throw new Error('invalid availability');
+  const seen = new Set();
+  for (const s of slots) {
+    const weekday = Number(s.weekday);
+    const start = String(s.time_start || ''); const end = String(s.time_end || '');
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6 || !validTime(start) || !validTime(end) || start >= end) throw new Error('invalid availability interval');
+    const key = weekday + ':' + start + '-' + end;
+    if (seen.has(key)) throw new Error('duplicate availability interval');
+    seen.add(key);
+  }
+  for (const a of slots) for (const b of slots) if (a !== b && Number(a.weekday) === Number(b.weekday) && String(a.time_start) < String(b.time_end) && String(b.time_start) < String(a.time_end)) throw new Error('overlapping availability intervals');
+}
+function bookingNotification(booking, admin, status) {
+  const lang = langOf(booking.athlete_id);
+  const who = admin?.name ? admin.name + ' · ' : '';
+  const when = String(booking.date || '').slice(8, 10) + '.' + String(booking.date || '').slice(5, 7) + ' · ' + (booking.time || '');
+  const text = { confirmed: {en:'Trainer confirmed your session: ',ru:'Тренер подтвердил запись: '}, rejected:{en:'Trainer declined your request: ',ru:'Тренер отклонил заявку: '}, cancelled:{en:'Your session was cancelled: ',ru:'Запись отменена: '}, done:{en:'Session completed: ',ru:'Тренировка отмечена выполненной: '} }[status];
+  const body = who + (text?.[lang] || text?.en || '') + when;
+  return { title: lang === 'ru' ? 'Запись к тренеру' : 'Trainer booking', body };
+}
 function nextHour(t) { const [h, m] = t.split(':').map(Number); return String(h + 1).padStart(2, '0') + ':00'; }
 function daySlots(availability, weekday) {
   // Split shifts: merge every interval for this weekday (e.g. 09-12 and 16-21).
@@ -1381,6 +1409,8 @@ const routes = {
       if (!booking) return json(res, 404, { error: 'no such booking' });
       if (admin.role === 'trainer' && booking.trainer_id !== admin.id)
         return json(res, 403, { error: 'no access to this booking' });
+      if (!bookingTransitionAllowed(booking.status, status))
+        return json(res, 409, { error: 'invalid booking status transition' });
       const updated = await updateBookingStatus({ id: booking.id, status });
       // let the athlete know their request was answered (confirmed / rejected / cancelled / done)
       if (['confirmed', 'rejected', 'cancelled', 'done'].includes(status)) {
@@ -1430,10 +1460,11 @@ const routes = {
         return json(res, 403, { error: 'no access to this athlete' });
       const conflict = await findBookingConflict(admin.role === 'trainer' ? admin.id : String(body.trainer_id || admin.id), date, time);
       if (conflict) return json(res, 409, { error: 'this slot is already booked' });
-      const booking = await createBooking({
-        trainerId: admin.role === 'trainer' ? admin.id : String(body.trainer_id || admin.id),
-        athleteId, date, time, note: body.note, status: 'confirmed'
-      });
+      const trainerId = admin.role === 'trainer' ? admin.id : String(body.trainer_id || admin.id);
+      const booking = await createBooking({ trainerId, athleteId, date, time, note: body.note, status: 'confirmed' });
+      const notice = bookingNotification(booking, admin, 'confirmed');
+      try { await saveNotification({ id: 'bk-' + booking.id, userId: athleteId, title: notice.title, body: notice.body, payload: { booking_id: booking.id, status: 'confirmed', date, time } }); } catch (e) { console.error('manual booking notif persist failed:', e.message); }
+      await sendPush(athleteId, { title: notice.title, body: notice.body, tag: 'booking-' + booking.id, data: { booking_id: booking.id, status: 'confirmed' } }).catch(e => console.error('manual booking push failed:', e.message));
       json(res, 200, { ok: true, booking });
     } catch (error) {
       console.error('trainer booking create failed:', error.message);
@@ -1458,6 +1489,7 @@ const routes = {
     try {
       const trainerId = admin.role === 'trainer' ? admin.id : String(body.trainer_id || admin.id);
       if (!Array.isArray(body.slots)) return json(res, 400, { error: 'slots required' });
+      validateAvailabilitySlots(body.slots);
       const availability = await setTrainerAvailability(trainerId, body.slots);
       json(res, 200, { ok: true, availability });
     } catch (error) {

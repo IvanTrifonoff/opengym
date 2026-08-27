@@ -15,12 +15,12 @@ const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0
 const fmt = d => d.slice(8, 10) + '.' + d.slice(5, 7)
 const nextHour = t => String(+t.split(':')[0] + 1).padStart(2, '0') + ':00'
 const daySlots = (avail, wd) => {
-  const a = (avail || []).find(x => x.weekday === wd)
-  if (!a) return []
   const out = []
-  let t = a.time_start
-  while (t < a.time_end) { out.push(t); t = nextHour(t) }
-  return out
+  for (const a of (avail || []).filter(x => x.weekday === wd)) {
+    let t = a.time_start
+    while (t < a.time_end) { if (!out.includes(t)) out.push(t); t = nextHour(t) }
+  }
+  return out.sort()
 }
 
 export default function TrainerBookings({ admin }) {
@@ -42,7 +42,7 @@ export default function TrainerBookings({ admin }) {
   const load = () => Promise.all([
     api('/api/admin/trainer/availability').then(d => {
       setAvailability(d.availability || [])
-      if (!(d.availability || []).length) setHours([1, 2, 3, 4, 5].map(wd => ({ weekday: wd, time_start: '09:00', time_end: '18:00' })))
+      setHours((d.availability || []).length ? d.availability : [1, 2, 3, 4, 5].map(wd => ({ weekday: wd, time_start: '09:00', time_end: '18:00' })))
     }),
     api('/api/admin/trainer/bookings?from=' + days[0] + '&to=' + days[days.length - 1]).then(d => setBookings(d.bookings || [])),
     api('/api/admin/analytics/athletes').then(d => setRoster(d.athletes || [])).catch(() => {})

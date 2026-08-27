@@ -126,7 +126,11 @@ CREATE TABLE IF NOT EXISTS loyalty_outbox (
   kind TEXT NOT NULL,
   payload JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  delivered_at TIMESTAMPTZ
+  delivered_at TIMESTAMPTZ,
+  claimed_at TIMESTAMPTZ,
+  claim_token TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT
 );
 
 CREATE TABLE IF NOT EXISTS app_notifications (
@@ -188,6 +192,13 @@ ALTER TABLE loyalty_redemptions ADD COLUMN IF NOT EXISTS viewed_at TIMESTAMPTZ;
 ALTER TABLE coach_bookings ADD COLUMN IF NOT EXISTS viewed_at TIMESTAMPTZ;
 `;
 
+const OUTBOX_MIGRATION = `
+ALTER TABLE loyalty_outbox ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;
+ALTER TABLE loyalty_outbox ADD COLUMN IF NOT EXISTS claim_token TEXT;
+ALTER TABLE loyalty_outbox ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE loyalty_outbox ADD COLUMN IF NOT EXISTS last_error TEXT;
+`;
+
 const AVAILABILITY_MIGRATION = `
 ALTER TABLE trainer_availability DROP CONSTRAINT IF EXISTS trainer_availability_pkey;
 CREATE INDEX IF NOT EXISTS trainer_availability_trainer_weekday_idx ON trainer_availability (trainer_id, weekday);
@@ -202,6 +213,13 @@ export const adminDbReady = (async () => {
     await pool.query(ADMIN_MIGRATION);
     await pool.query(BADGE_SEEN_MIGRATION);
     await pool.query(AVAILABILITY_MIGRATION);
+    await pool.query(OUTBOX_MIGRATION);
+    await pool.query(OUTBOX_MIGRATION);
+    await pool.query(OUTBOX_MIGRATION);
+    await pool.query(OUTBOX_MIGRATION);
+    await pool.query(OUTBOX_MIGRATION);
+    await pool.query(OUTBOX_MIGRATION);
+    await pool.query(OUTBOX_MIGRATION);
   } catch (error) {
     initError = error;
     console.error('admin database init failed:', error.message);
@@ -635,14 +653,21 @@ export async function dispatchOutbox({ send, batch = 25 } = {}) {
   let sent = 0;
   try {
     await client.query('BEGIN');
+    const token = crypto.randomBytes(16).toString('hex');
     const claimed = await client.query(
-      `SELECT id, user_id, kind, payload FROM loyalty_outbox
-       WHERE delivered_at IS NULL
-       ORDER BY id LIMIT $1 FOR UPDATE SKIP LOCKED`, [batch]
+      `WITH picked AS (
+         SELECT id FROM loyalty_outbox
+         WHERE delivered_at IS NULL
+           AND (claimed_at IS NULL OR claimed_at < now() - interval '10 minutes')
+         ORDER BY id LIMIT $1 FOR UPDATE SKIP LOCKED
+       )
+       UPDATE loyalty_outbox o
+       SET claimed_at = now(), claim_token = $2, attempts = attempts + 1
+       FROM picked p WHERE o.id = p.id
+       RETURNING o.id, o.user_id, o.kind, o.payload`, [batch, token]
     );
     const rows = claimed.rows;
-    if (!rows.length) { await client.query('COMMIT'); return 0; }
-    await client.query('COMMIT'); // release the claim; we deliver outside the txn
+    await client.query('COMMIT');
     for (const row of rows) {
       try {
         const payload = row.payload || {};
@@ -660,11 +685,11 @@ export async function dispatchOutbox({ send, batch = 25 } = {}) {
           tag: payload.tag || ('loyalty-' + row.id),
           data: { outbox_id: row.id, rule_id: payload.rule_id, event_id: payload.event_id }
         });
-        await pool.query('UPDATE loyalty_outbox SET delivered_at = now() WHERE id = $1', [row.id]);
+        await pool.query('UPDATE loyalty_outbox SET delivered_at = now(), claimed_at = NULL, claim_token = NULL, last_error = NULL WHERE id = $1 AND claim_token = $2', [row.id, token]);
         sent++;
       } catch (error) {
         console.error('outbox dispatch failed', row.id, error.message);
-        // leave undelivered for the next tick
+        await pool.query('UPDATE loyalty_outbox SET claimed_at = NULL, claim_token = NULL, last_error = $2 WHERE id = $1 AND claim_token = $3', [row.id, String(error.message).slice(0, 500), token]).catch(() => {});
       }
     }
   } catch (error) {
