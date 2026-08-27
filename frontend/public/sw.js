@@ -41,7 +41,8 @@ self.addEventListener('push', e => {
       icon: 'icon-512.png',
       badge: 'icon-180.png',
       tag: data.tag || 'opengym',
-      renotify: true
+      renotify: true,
+      data: { url: data.url || './notifications' }
     })
     // refresh the badge right after a push lands (app may be closed)
     await syncBadge()
@@ -50,9 +51,16 @@ self.addEventListener('push', e => {
 self.addEventListener('notificationclick', e => {
   e.notification.close()
   if (typeof self.registration.clearAppBadge === 'function') self.registration.clearAppBadge().catch(() => {})
-  e.waitUntil(self.clients.matchAll({ type: 'window' }).then(clients => {
+  const url = (e.notification.data && e.notification.data.url) || './notifications'
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
     const c = clients.find(c => 'focus' in c)
-    return c ? c.focus() : self.clients.openWindow('./')
+    if (c) {
+      c.focus()
+      // navigate to the notifications page even if app is already open
+      c.navigate(url).catch(() => {})
+    } else {
+      self.clients.openWindow(url)
+    }
   }))
 })
 

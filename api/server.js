@@ -122,6 +122,8 @@ async function maybePushRecovery() {
 }
 
 async function sendPush(userId, payload) {
+  // Ensure push payload includes navigation URL for the service worker
+  if (!payload.url) payload.url = '/notifications';
   const subs = db.subs.filter(s => s.userId === userId);
   if (!subs.length) return;
   const body = JSON.stringify(payload);
@@ -808,6 +810,20 @@ const routes = {
     if (!user && !adminId) return json(res, 401, { error: 'not signed in' });
     await sendPush(user ? user.id : 'admin:' + adminId, { title: 'openGym', body: 'Test notification ✅ — this is what alerts look like.', tag: 'test' });
     json(res, 200, { ok: true });
+  },
+  'GET /api/push/health': async (req, res) => {
+    const user = readSession(req);
+    const adminId = user ? null : adminSessionId(req);
+    if (!user && !adminId) return json(res, 401, { error: 'not signed in' });
+    const userId = user ? user.id : 'admin:' + adminId;
+    const mySubs = db.subs.filter(s => s.userId === userId);
+    json(res, 200, {
+      userId,
+      subscriptionCount: mySubs.length,
+      subscriptions: mySubs.map(s => ({ created: s.created, host: endpointHost(s.endpoint) })),
+      globalSubCount: db.subs.length,
+      pushStats
+    });
   },
 
   'GET /api/admin/push/status': async (req, res) => {
