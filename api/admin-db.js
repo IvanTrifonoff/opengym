@@ -869,6 +869,12 @@ export async function listRecurringSeries(trainerId) {
   return r.rows;
 }
 
+export async function listRecurringSummary() {
+  await ready();
+  const r = await pool.query(`SELECT trainer_id, athlete_id, weekday, time, active FROM recurring_bookings`);
+  return r.rows;
+}
+
 export async function listRecurringSkips(trainerId) {
   await ready();
   const r = await pool.query(

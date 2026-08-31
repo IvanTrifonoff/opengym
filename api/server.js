@@ -19,7 +19,7 @@ import {
   setTrainerAssignment, listTrainerAssignments,
   getTrainerAvailability, setTrainerAvailability, listBookings, createBooking,
   findBookingConflict, getBooking, updateBookingStatus,
-  listRecurringSeries, listRecurringSkips, setRecurringSeries, deleteRecurringSeries, skipRecurringDate, unskipRecurringDate, rollRecurringForward
+  listRecurringSeries, listRecurringSkips, listRecurringSummary, setRecurringSeries, deleteRecurringSeries, skipRecurringDate, unskipRecurringDate, rollRecurringForward
 } from './admin-db.js';
 import { collectAnalytics, athleteDetail } from './analytics.js';
 import { buildRetentionSnapshot, scheduleRetentionSnapshot } from './retention-runner.js';
@@ -1232,6 +1232,28 @@ const routes = {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     try {
       const { athletes } = await collectAnalytics({ users: db.users, stateOf: readState, scope: analyticsScope(admin) });
+      // mark clients that have locked recurring («постоянные») slots, with a short schedule summary
+      try {
+        const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+        const rec = await listRecurringSummary();
+        const byAth = new Map();
+        for (const r of rec) {
+          if (!r.active) continue;
+          if (!byAth.has(r.athlete_id)) byAth.set(r.athlete_id, []);
+          byAth.get(r.athlete_id).push(r);
+        }
+        const scopeKind = analyticsScope(admin).kind;
+        const scout = admin.role === 'trainer' ? admin.id : null;
+        for (const a of athletes) {
+          const list = byAth.get(a.id) || [];
+          const mine = scout ? list.filter(r => r.trainer_id === scout) : list;
+          a.recurring = mine.length > 0;
+          if (mine.length) {
+            const uniq = [...new Set(mine.map(r => days[r.weekday] + ' ' + r.time))];
+            a.recurringTime = uniq.slice(0, 3).join(', ') + (uniq.length > 3 ? '…' : '');
+          }
+        }
+      } catch (e) { console.error('recurring annotate failed:', e.message); }
       json(res, 200, { athletes, scope: analyticsScope(admin) });
     } catch (error) {
       console.error('analytics athletes failed:', error.message);

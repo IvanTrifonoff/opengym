@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.10.3 — 2026-08-31
+
+«Постоянные клиенты» видны в аналитике.
+
+- 🏷 **«Постоянник» badge** on an athlete in the trainer roster (`/trainer`) and the admin
+  analytics list (`/admin/analytics`), so a trainer instantly sees which clients have locked
+  recurring slots.
+- 📋 The badge row also shows the standing schedule: «постоянные слоты: Пн 18:00, Ср 17:00».
+- Backend `/api/admin/analytics/athletes` now annotates each athlete with `recurring` +
+  `recurringTime`, scoped correctly (a trainer sees only their own recurring clients).
+- Verified: Artem (with a series) shows the badge + schedule in both views; Testuser1 (no
+  series) doesn't. Test series cleaned up after. Tests: 192 passed.
+
 ## v1.10.2 — 2026-08-31
 
 «Постоянные клиенты»: спортсмен теперь узнаёт о закреплённых слотах.

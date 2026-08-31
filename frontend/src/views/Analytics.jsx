@@ -252,8 +252,8 @@ export default function Analytics({ admin }) {
       {!list.length ? <div className="card empty">Спортсменов нет.</div> :
         <div className="list">{list.map(a => <div className="item" key={a.id} onClick={canDrill ? () => setSel(a.id) : undefined} style={canDrill ? { cursor: 'pointer' } : undefined}>
           <div className="grow">
-            <div className="tt">{a.name} <StatusTag status={a.status} /></div>
-            <div className="ss">визиты {a.visits} · тренировки {a.workouts} · серия {a.streak} нед · {a.freq ? a.freq + '/нед' : '—'} · активность {daysAgo(a.lastActivity)}</div>
+            <div className="tt">{a.name} <StatusTag status={a.status} />{a.recurring && <span className="tag" style={{ marginLeft: 6, color: 'var(--acc)', borderColor: 'var(--acc)55' }}>постоянник</span>}</div>
+            <div className="ss">визиты {a.visits} · тренировки {a.workouts} · серия {a.streak} нед · {a.freq ? a.freq + '/нед' : '—'} · активность {daysAgo(a.lastActivity)}{a.recurring && a.recurringTime ? ' · постоянные слоты: ' + a.recurringTime : ''}</div>
             {canManage && a.branch && <div className="small dim">филиал {a.branch}{a.trainerId ? ' · тренер привязан' : ''}</div>}
           </div>
           {admin.role === 'owner' && <button className="btn xs plain" onClick={e => { e.stopPropagation(); impersonate(a) }}>Войти как</button>}

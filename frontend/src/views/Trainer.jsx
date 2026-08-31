@@ -129,8 +129,8 @@ export default function Trainer({ admin, onLogout }) {
       {!list.length ? <div className="card empty">У вас пока нет спортсменов. Перейдите во вкладку «Добавить».</div> :
         <div className="list">{list.map(a => <div className="item" key={a.id} onClick={() => setSel(a.id)} style={{ cursor: 'pointer' }}>
           <div className="grow">
-            <div className="tt">{a.name} <StatusTag status={a.status} /></div>
-            <div className="ss">визиты {a.visits} · тренировки {a.workouts} · серия {a.streak} нед · {a.freq ? a.freq + '/нед' : '—'} · активность {daysAgo(a.lastActivity)}</div>
+            <div className="tt">{a.name} <StatusTag status={a.status} />{a.recurring && <span className="tag" style={{ marginLeft: 6, color: 'var(--acc)', borderColor: 'var(--acc)55' }}>постоянник</span>}</div>
+            <div className="ss">визиты {a.visits} · тренировки {a.workouts} · серия {a.streak} нед · {a.freq ? a.freq + '/нед' : '—'} · активность {daysAgo(a.lastActivity)}{a.recurring && a.recurringTime ? ' · постоянные слоты: ' + a.recurringTime : ''}</div>
           </div>
           <Icon name="chevronRight" style={{ color: 'var(--label-3)' }} />
         </div>)}</div>}
