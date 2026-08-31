@@ -1679,8 +1679,45 @@ async function notifyRetentionTrainers({ prev, next }) {
   }
 }
 
+/* Network-level retention alert for owners: when the nightly snapshot shows the number
+   of athletes who are GONE or AT RISK grew overnight, notify every owner account via the
+   notification center (and a push if subscribed). The id carries the date, so a network
+   that keeps worsening doesn't spam owners daily — one alert per day max. */
+async function notifyRetentionOwner({ prev, next }) {
+  try {
+    const s = next && next.summary, p = prev && prev.summary;
+    if (!s) return;
+    const dGone = (s.gone || 0) - (p ? (p.gone || 0) : 0);
+    const dRisk = (s.atRisk || 0) - (p ? (p.atRisk || 0) : 0);
+    if (dGone <= 0 && dRisk <= 0) return;   // no growth -> nothing to say
+    const admins = await listAdmins();
+    const owners = admins.filter(a => a.role === 'owner' && !a.disabled);
+    if (!owners.length) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const parts = [];
+    if (dGone > 0) parts.push('ушли ' + s.gone + ' (+' + dGone + ' за сутки)');
+    if (dRisk > 0) parts.push('в зоне риска ' + s.atRisk + ' (+' + dRisk + ')');
+    const body = parts.join(', ') + '. Спортсмены теряют мотивацию — пора открыть вкладку «Удержание».';
+    const id = 'ret-net-' + today;
+    for (const o of owners) {
+      await saveNotification({
+        id, userId: 'admin:' + o.id,
+        title: 'Удержание: отток растёт',
+        body, payload: { kind: 'retention-net' }
+      });
+      await sendPush('admin:' + o.id, {
+        title: 'Удержание: отток растёт', body, tag: 'retention-net', url: '/admin/analytics'
+      }).catch(() => {});
+      console.log('[retention] alert owner', o.id, 'network risk growth');
+    }
+  } catch (e) {
+    console.error('[retention] owner alert failed:', e.message);
+  }
+}
+
+
   // Retention: precompute the snapshot nightly (default 04:00, RETENTION_RUN_HOUR overrides).
   scheduleRetentionSnapshot({ users: db.users, stateOf: readState, dataDir: DATA,
     hour: parseInt(process.env.RETENTION_RUN_HOUR || '4', 10),
-    onSnapshot: notifyRetentionTrainers });
+    onSnapshot: async d => { await notifyRetentionTrainers(d); await notifyRetentionOwner(d); } });
 });

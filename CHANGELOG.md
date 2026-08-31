@@ -11,6 +11,7 @@ Retention analytics: why athletes leave, computed at night, shown to the gym own
 - 📉 **Honest retention funnel.** Of those who ever trained, how many held on to 4 and 8 weeks — a monotone chain (trained ≥ week4 ≥ week8) that never reads backwards.
 - 🔎 **Role-scoped numbers.** A trainer sees only their own athletes: summary, funnel and list are recomputed from the filtered rows, not from the whole network's cached snapshot.
 - 🔔 **Trainer alerts on downgrade.** The nightly runner diffs the previous snapshot against the new one; when an athlete's level worsens (active → at_risk/gone, at_risk → gone), the assigned trainer gets a notification-center entry plus a push — one per day per athlete, idempotent, no spam.
+- 📣 **Owner alert on network-wide outflow.** When the number of gone/at_risk athletes grows overnight, every owner account gets a notification-center entry plus a push («Удержание: отток растёт — ушли N (+X за сутки)…») with a link straight to the «Удержание» tab — one per day, idempotent.
 
 ### Verification
 
