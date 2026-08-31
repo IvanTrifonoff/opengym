@@ -21,6 +21,7 @@ import {
   findBookingConflict, getBooking, updateBookingStatus
 } from './admin-db.js';
 import { collectAnalytics, athleteDetail } from './analytics.js';
+import { buildRetentionSnapshot, scheduleRetentionSnapshot } from './retention-runner.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -1276,6 +1277,35 @@ const routes = {
 
   // Assign (or unassign) an athlete to a trainer. Owner/manager pick any trainer;
   // a trainer can only manage their own roster (trainer_id is forced to self).
+  // Retention ("Удержание"): serves the nightly precomputed snapshot, filtered by role.
+  // No live DB/state scan at request time — the heavy work runs once at night.
+  'GET /api/admin/analytics/retention': async (req, res) => {
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
+    try {
+      const scope = analyticsScope(admin);
+      const snapFile = path.join(DATA, 'retention-snapshot.json');
+      let snap = null;
+      try { snap = JSON.parse(fs.readFileSync(snapFile, 'utf8')); } catch {}
+      // First boot / no nightly run yet: build on demand so the tab is never empty.
+      if (!snap || !snap.athletes) {
+        snap = await buildRetentionSnapshot({ users: db.users, stateOf: readState, dataDir: DATA });
+      }
+      let rows = snap.athletes;
+      // scope filtering for trainers (their own athletes) & the network-wide default
+      if (scope.kind === 'trainer') {
+        const ta = await listTrainerAssignments();
+        const mine = new Set(ta.filter(x => x.trainer_id === admin.id).map(x => x.user_id));
+        rows = rows.filter(r => mine.has(r.id));
+      }
+      json(res, 200, { generatedAt: snap.generatedAt, summary: snap.summary, funnel: snap.funnel,
+        zones: snap.zones, athletes: rows });
+    } catch (error) {
+      console.error('retention endpoint failed:', error.message);
+      json(res, 503, { error: 'retention unavailable' });
+    }
+  },
+
+
   'POST /api/admin/analytics/assign': async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const body = await readBody(req);
@@ -1593,4 +1623,7 @@ http.createServer(async (req, res) => {
   // Loyalty outbox dispatcher: safety net for notifications that failed on the
   // first attempt (or were queued while the API was down). Runs every 30s.
   setInterval(() => dispatchOutbox({ send: sendPush }).catch(e => console.error('outbox tick failed:', e.message)), 30000);
+  // Retention: precompute the snapshot nightly (default 04:00, RETENTION_RUN_HOUR overrides).
+  scheduleRetentionSnapshot({ users: db.users, stateOf: readState, dataDir: DATA,
+    hour: parseInt(process.env.RETENTION_RUN_HOUR || '4', 10) });
 });

@@ -8,6 +8,7 @@ import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 import LineChart from '../components/LineChart.jsx'
 import TrainerProgram from './TrainerProgram.jsx'
+import Retention from './Retention.jsx'
 
 const DAY = 86400000
 const STATUS = {
@@ -233,11 +234,13 @@ export default function Analytics({ admin }) {
       <Tile l="Новые" v={summary.fresh} />
     </div>}
 
-    <div className="seg" style={{ marginBottom: 12, '--n': canManage ? 2 : 1, '--i': ['athletes', 'leaderboard'].indexOf(tab) }}>
+    <div className="seg" style={{ marginBottom: 12, '--n': canManage ? 3 : 2, '--i': ['athletes', 'retention', 'leaderboard'].indexOf(tab) }}>
       <span className="seg-sel" />
-      {[['athletes', 'Спортсмены'], ...(canManage ? [['leaderboard', 'Лидерборд']] : [])].map(([v, label]) =>
+      {[['athletes', 'Спортсмены'], ['retention', 'Удержание'], ...(canManage ? [['leaderboard', 'Лидерборд']] : [])].map(([v, label]) =>
         <button key={v} className={tab === v ? 'on' : ''} onClick={() => setTab(v)}>{label}</button>)}
     </div>
+
+    {tab === 'retention' && <Retention admin={admin} />}
 
     {tab === 'leaderboard' && leaderboard && <Leaderboard lb={leaderboard} />}
 

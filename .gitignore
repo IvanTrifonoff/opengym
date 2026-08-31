@@ -4,6 +4,7 @@ data/secret
 data/db.json
 data/vapid.json
 data/state-*.json
+data/retention-snapshot.json
 data-published-quarantine/
 
 # Dependencies
