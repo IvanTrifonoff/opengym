@@ -1,5 +1,6 @@
 import { Component, useEffect, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { setLang, detectBrowserLang, useLang } from '../lib/i18n.js'
 import { api, passkeyAdminLogin, passkeyAdminRegister } from '../lib/api.js'
 import Icon from '../components/Icon.jsx'
 import NavBar from '../components/NavBar.jsx'
@@ -260,6 +261,11 @@ export class AdminBoundary extends Component {
 export default function AdminApp() {
   const loc = useLocation(); const nav = useNavigate(); const [admin, setAdmin] = useState(undefined)
   const register = loc.pathname === '/admin/register'
+  // i18n: the athlete Shell initialises the language, but the admin/trainer portal
+  // has its own root — without this the names pack never loads and exercise titles
+  // stay English everywhere (progress, exercise picker, best results).
+  useLang()
+  useEffect(() => { setLang(detectBrowserLang()) }, [])
   useEffect(() => { if (!register) api('/api/admin/auth/me').then(d => setAdmin(d.admin)).catch(() => setAdmin(null)) }, [register])
   if (register) return <AdminRegister />
   if (admin === undefined) return <div className="narrow" style={{ paddingTop: '42vh', textAlign: 'center' }}><Icon name="dumbbell" style={{ color: 'var(--label-3)', fontSize: 30 }} /></div>
