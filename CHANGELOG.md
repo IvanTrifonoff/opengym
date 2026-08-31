@@ -1,5 +1,121 @@
 # Changelog
 
+## v1.8.1 — 2026-08-27
+
+Stability and hardening of the push and booking flows, so the notifications from v1.7.0 stay reliable in production.
+
+### Hardened booking flows (#45)
+
+- 🔒 **Booking and loyalty cash-out are now safe against retries and concurrent runs.** The booking state machine validates transitions before persisting, and claiming a reward from the loyalty outbox is made idempotent — a repeated claim cannot double-apply points or hand out the same reward twice.
+- 🧩 **Notification click lands on the right screen.** Clicking a push now navigates to the in-app notification center (`/notifications`), and push payloads carry a `url` field so the target destination is explicit per notification.
+- 🩺 **Diagnostics.** Added a push/health debug endpoint so delivery can be checked directly.
+
+### Docs
+
+- 📘 DEPLOYMENT.md gained a dedicated section on fixing push notifications (DNS resolver fix and verification steps from v1.7.0).
+
+## v1.8.0 — 2026-08-26
+
+Data isolation and startup performance for the athlete app.
+
+### Data stays per user
+
+- 🧷 **Cache, custom exercises and all state are isolated per user.** `localStorage` was shared across every account on a device (`gym_state_v1`): switching accounts leaked another user's state (including custom exercises) into their account. The cache is now keyed by `userId` (`gym_state_<id>`, guests get `gym_state_guest`), `setUser()` reloads the new user's state, and the dirty flag is per-user. Registering from guest mode transfers data via `keepLocal`. Verified end-to-end: one user's custom exercise is invisible to another in the same browser and on the server.
+
+### Faster startup
+
+- ⚡ **Interface renders before history loads.** `ready` is set as soon as `/api/me` returns; history (`pullState`) loads in the background and updates the store as it arrives, so the first screen no longer blocks on the full training history.
+- 🧠 **Exercise instructions load lazily.** Switching language no longer pulls a ~1 MB instruction pack at startup — only UI strings and exercise names. Instructions are fetched via `ensureInstr()` when an exercise card is opened and re-render in the chosen language, with the English steps as an instant fallback.
+
+## v1.7.0 — 2026-08-26
+
+Push notifications done end-to-end: delivery to athletes about points and bookings, badges, and a shared notification center with monitoring.
+
+### Loyalty points, pushed (#44)
+
+- 🔔 **Automatic push when points land.** When an athlete earns points they get a localized push ("+15 баллов — Ежедневное посещение") with correct case declension, queued through the `loyalty_outbox` and delivered via the existing web-push/VAPID stack. A rule's own *(!!)* custom notification overrides the automatic one. Verified end-to-end: rule → event → outbox → push on a real FCM subscription.
+
+### A notification center for everyone
+
+- 📬 **In-app notification center.** Every loyalty message is also stored in `app_notifications`. A bell in the app header shows unread count; the `/notifications` page marks everything read when opened.
+- 👤 **One badge, three sources.** The icon badge now counts unread notifications + pending rewards + pending trainer bookings; the service worker keeps it in sync on push events.
+- 🧽 **Badge resets once you've looked.** Pending rewards and bookings get a `viewed_at` when their section is opened (Settings → Loyalty, trainer sheet), and the badge recomputes to 0.
+- 🏋️ **Trainer badges too.** The trainer portal's bell and the Calendar tab count pending booking requests (30 s polling + instant after any action). The install-icon badge mirrors the same pending count and clears on sign-out.
+
+### Delivery that works
+
+- 📲 **Real end-to-end sends.** Trainers get a push when an athlete books through the portal (with the athlete's name, date and time); athletes get one when a booking is confirmed/rejected/cancelled/completed (trainer name + date, in the athlete's language, also saved to the center).
+- ⚠️ **Delivery monitoring and alerts.** In-memory sent/failed/expired counters and a failure buffer, a failure banner on the admin Overview with a reset button, and an optional webhook alert (`PUSH_ALERT_WEBHOOK`, 5 min debounce + recovery notification). Dead subscriptions (404/410) are ordinary cleanup, not alerts.
+- 🔧 **Safari install prompts.** On iOS/iPadOS outside PWA mode the app shows "Установите приложение на главный экран" instead of a broken toggle; on macOS Safari a footer note explains "Добавить в Dock".
+- 🌐 **Fix: pushes failed on the VPS.** `8.8.8.8` is unreachable from the VPS, so Docker forwarded external DNS to a dead resolver and every push died with `EAI_AGAIN`/`ESERVFAIL`. The API container now uses a working DNS (8.8.4.4, 1.1.1.1); the internal network is untouched.
+
+## v1.6.0 — 2026-08-26
+
+Built-in help: every surface now explains itself, no external docs required.
+
+- 🎁 **Loyalty program builder.** An "Инструкция" button in the Loyalty and Rewards tabs opens a guided sheet: the event → rule → reward flow, every rule/reward field, redemption requests, event sources, and ready-made scenarios.
+- ❓ **Admin FAQ.** A new `/admin/help` page — accordion with search across roles and access, staff and invitations, loyalty, analytics, trainer portal, "Войти как", and the athlete app. A "Справка" icon was added to the admin and trainer headers.
+- 📋 **Trainer portal guide.** An "Инструкция" button opens a sheet covering the athlete list and statuses, adding athletes (invite/search), programs and progress, the calendar with working hours and requests, plus tips and access notes.
+- 🤔 **Athlete "Points & rewards" explainer.** A "?" on the balance card opens "Баллы и награды": how points accrue, what rewards are, how to redeem them and request statuses. The whole loyalty section in the app was also translated into Russian.
+
+## v1.5.0 — 2026-08-26
+
+The trainer and owner experience: split schedules, and the owner can see any account from the inside.
+
+### Split working hours (#46)
+
+- 🗓️ **Non-contiguous schedules.** The Calendar editor lets you add/remove intervals per day; a day with no intervals becomes a rest day. The migration drops the `(trainer_id, weekday)` primary key, `daySlots()` merges a day's intervals, and booking validation accepts any interval's time.
+
+### Owner sees it as you do
+
+- 🕵️ **"Войти как" — impersonation.** The owner can view the interface as any athlete or staff member: buttons in staff/athlete lists, plus an "от имени …" banner with "Вернуться" in `/admin` and `/trainer`. Athletes get a separate `gymsid` session (admin session untouched); staff get `adminsid` flagged `impersonate:` with the original session parked in `adminsid_orig`. Owner-only, no nested impersonation.
+
+## v1.4.0 — 2026-08-26
+
+Trainer portal: programs, calendars and bookings with confirmation.
+
+- 🏋️ **View and edit athlete programs.** A "Программа" button in an athlete card (`/trainer` and `/admin/analytics`) opens their training plan: create/rename/delete programs, add exercises from the shared catalog, edit sets × reps × weight, reorder, save. A "Прогресс" tab shows per-exercise history — best weight and sets/weights by date from the athlete's logs. `GET/PUT /api/admin/trainer/athlete/program` (owner/manager see anyone; trainer only their own via `trainer_assignments`, otherwise 403). PUT merges only routines into the state file — logs and other data are never overwritten.
+- 📅 **Trainer calendar with bookings.** `trainer_availability` + `coach_bookings` tables; athlete API for their trainer (`/api/trainer/me`, `/availability`, `/book` → pending, `/my-bookings`, `/bookings/cancel`); trainer API to manage hours and bookings (`/api/admin/trainer/availability`, `/bookings` — list, status, direct create). Trainer portal gains a Calendar tab: hours editor, week grid, requests, "Записать". The athlete app shows a "Мой тренер" card on Home with a booking modal. Scoping enforced: trainer = own athletes only, operator denied, schedule conflicts → 409, outside hours → 400.
+- 📇 **Invite codes for athletes.** Admins (owner/manager) get an "Приглашения" screen that creates short 8-character codes (~40 bits, safe alphabet), ready links `?invite=CODE` with copy, a list with free/used status, and the ability to revoke unused codes.
+- 🩹 **Clear "code already used" message.** Reopening a one-time staff link now explains in Russian that the code is already used (invite already registered) and offers "Войти как сотрудник" via passkey, instead of the opaque "invalid or used staff invite".
+
+## v1.3.0 — 2026-08-21
+
+Analytics for the network, and a marketing page written in the app's own design language.
+
+### Athlete analytics module (#42)
+
+- 📊 **New `/admin/analytics` module**, read-only, role-scoped: owner sees the whole network, manager their branch (`admin_users.branch_key`), trainer only athletes assigned via `trainer_assignments`, operator statuses only. Endpoints: overview, athletes, athlete drill-down, leaderboard, trainers, assign. KPI tiles, status chips (active/at-risk/gone/new), weekly activity, best lifts, points ledger and rewards in the drill-down card. Also fixed SPA subpath rendering — Vite base is now absolute for web builds (mobile keeps relative via `VITE_MOBILE`).
+
+### Promo page (#41)
+
+- 💼 **A Russian landing page at `/promo`** selling the platform to fitness-club owners: retention problem, loyalty engine, rewards, access-control integration, push, passkey login, staff roles, pricing tiers, FAQ. Served as a static file via a dedicated nginx location (bypassing the SPA fallback); roadmap features are explicitly marked as not yet implemented.
+- 🎨 **Built with the app's own design tokens** instead of generic marketing styling: SF Pro type scale with tight tracking, black background with iOS-style surfaces, the green accent, hairline separators, and real app components (cards, list rows, chips, tiles, primary/tinted/ghost buttons).
+
+## v1.2.5 — 2026-08-21
+
+Network, loyalty and localization foundations.
+
+### Admin panel, loyalty engine and access-control (#40)
+
+- 🛂 **A `/admin` SPA** with separate passkey accounts and staff roles (owner/manager/trainer/operator) and invite-code registration.
+- 🎯 **Configurable loyalty programs** (points / achievements / rewards / notifications with per-period limits) stored as data and applied without code changes.
+- 🔌 **Webhook endpoints** for access control (SCUD/turnstile) and loyalty events, idempotent on `event_id`, guarded by a shared secret.
+- 🎁 **Rewards catalog** with staff-confirmed and auto-code redemptions backed by an immutable points ledger, and a **wallet UI** inside Settings for balance, rewards and history.
+- 🔔 **Loyalty notification dispatcher**: rules with a notification action queue a row in `loyalty_outbox`; the dispatcher sends it via the existing web-push/VAPID stack. Rows are claimed with `FOR UPDATE SKIP LOCKED` so concurrent runs never double-send; `delivered_at` is set only on success. It runs after webhook rule application (response includes the notified count) and every 30 s as a retry safety net.
+- 🐛 **Fixed the React 19 `useEffect(load, [])` crash** that white-screened admin tabs and the Settings wallet (wrap in `() => { load() }`), and added an AdminBoundary error boundary.
+- 📝 **Docs**: DEPLOYMENT.md for future agents, `.env.example`, `.gitignore`.
+
+### Exercise translations
+
+- 🌍 **All 1,324 exercise names translated into Russian** (lazy-loaded via i18n, applied on language switch). Search now matches Russian names, and a semantic generator composes correct Russian word order and cases instead of word-by-word concatenation:
+  - "тяга со штангой" → **"тяга штанги в наклоне"** (bent-over row)
+  - "тяга штанги со стоек" / "тяга штанги на задние дельты" / "тяга штанги к подбородку"
+  - "румынская становая тяга со штангой"
+  - one-arm exercises keep "одной рукой" in the right place.
+  - 1062 entries changed versus the previous file; 0 untranslated.
+- 🎞️ **Fixed GIF animations in the Plan tab**: media base now uses absolute `/gif/ /img/` so animations load (they previously resolved relative to `/plan/r/` → 404).
+
 ## v1.2.4 — 2026-08-01
 
 The effort ratings you have been recording since v1.2.3 now answer questions, and bodyweight
