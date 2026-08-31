@@ -757,3 +757,18 @@ First public release. A complete, self-hostable gym & body-weight tracker.
 ### Changed
 - Comment on `media`: clarified that exercise media is already committed in the
   repo, so a dead upstream dataset cannot break a fresh deploy.
+
+## 1.0.6 — единая семвер-версионность и выпуск в прод
+
+### Added
+- `scripts/release.sh` — единственная точка прод-релиза: авто-бамп версии
+  (или явный semver), build+тесты, синхронная правка `frontend/package.json`,
+  `api/package.json`, блок `CHANGELOG.md`, тег `vX.Y.Z`, вливание в `main` и push.
+  В `main` код попадает только этим путём.
+- `VERSIONING.md` — политика: один источник истины (git-tag), правила
+  patch/minor/major, схема веток dev→main, релизный цикл.
+
+### Notes
+- Устранено расхождение старых шкал: CHANGELOG был `1.10.x`, package.json — `1.2.x`.
+  Теперь одна семвер-шкала; прод `impulse.trfnv.ru` стартует с `v1.0.0`.
+- Redis-контейнер из предыдущего шага включён в тот же деплой-комплект.
