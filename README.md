@@ -135,6 +135,7 @@ its own product.*
 - [VERSIONING.md](VERSIONING.md) — версионность (семвер, git-tag, релизный цикл)
 - [DEPLOY.md](DEPLOY.md) — разворачивание прод-стека на новой VPS
 - [CHANGELOG.md](CHANGELOG.md) — журнал версий
+- [docs/demo-loyalty.md](docs/demo-loyalty.md) — демо-сценарий лояльности для презентации
 
 ## Quick start (self-host)
 
