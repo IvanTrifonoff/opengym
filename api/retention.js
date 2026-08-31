@@ -63,7 +63,7 @@ export function riskLevels() {
   ];
 }
 
-export async function collectRetention({ users, stateOf, now = Date.now() }) {
+export async function collectRetention({ users, stateOf, now = Date.now(), recurring = null }) {
   const athletes = users
     .filter(u => !u.admin)
     .map(u => {
@@ -73,6 +73,7 @@ export async function collectRetention({ users, stateOf, now = Date.now() }) {
       const w = windowOf(ws, now);
       const prog = progression((S.routines || []).flatMap(r => r.ex || []), ws, now);
       const life = lifetime(S);
+      const rec = recurring && recurring.get ? recurring.get(u.id) : undefined;
       const reasons = [];
       let score = 0;
       if (gap != null && gap >= 30) { score = Math.max(score, 5); reasons.push('нет активности 30+ дней'); }
@@ -81,6 +82,10 @@ export async function collectRetention({ users, stateOf, now = Date.now() }) {
       if (w.curW < w.prevW * 0.6 && w.prevW > 0) { score += 2; reasons.push('снижение частоты'); }
       if (prog && prog.stalled) { score += 2; reasons.push('прогресс остановился'); }
       if (w.prevS > 0 && w.curS < w.prevS * 0.6) { score += 1; reasons.push('меньше подходов'); }
+      // A client with a locked recurring («постоянная») series has a standing reservation —
+      // treat them as at_risk at worst, never «ушёл». The trainer still holds their slot.
+      let level = levelKey(score);
+      if (rec) { if (level === 'gone') { level = 'at_risk'; score = Math.min(score, 4.4); } }
       const lastBW = S.bodyweight && S.bodyweight.length ? S.bodyweight[S.bodyweight.length - 1] : null;
       const bwDelta = S.bodyweight && S.bodyweight.length >= 2 ? Math.round((S.bodyweight[S.bodyweight.length - 1].w - S.bodyweight[0].w) * 10) / 10 : null;
       return {
@@ -93,8 +98,9 @@ export async function collectRetention({ users, stateOf, now = Date.now() }) {
         stall: prog ? prog.stalled : null, topLift: prog ? prog.top : null,
         spanDays: life ? life.spanDays : null,
         bw: lastBW ? lastBW.w : null, bwDelta,
+        recurring: !!rec, recurringTime: rec || null,
         score: Math.round(score * 10) / 10, reasons,
-        level: levelKey(score)
+        level
       };
     })
     .filter(Boolean);

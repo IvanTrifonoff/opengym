@@ -7,12 +7,26 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { collectRetention } from './retention.js';
+import { listRecurringSummary } from './admin-db.js';
 
 export async function buildRetentionSnapshot({ users, stateOf, dataDir, now = Date.now() }) {
   const file = path.join(dataDir, 'retention-snapshot.json');
   let prev = null;
   try { prev = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* first run */ }
-  const snap = await collectRetention({ users, stateOf, now });
+  // Annotate athletes that have locked recurring («постоянные») slots: those clients are
+  // treated as at_risk at worst by the model. Build a network-wide summary from the DB.
+  const recurring = new Map();
+  try {
+    const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+    const rows = await listRecurringSummary();
+    const grouped = new Map();
+    for (const r of rows) { if (!r.active) continue; if (!grouped.has(r.athlete_id)) grouped.set(r.athlete_id, []); grouped.get(r.athlete_id).push(r); }
+    for (const [aid, list] of grouped) {
+      const uniq = [...new Set(list.map(x => days[x.weekday] + ' ' + x.time))];
+      recurring.set(aid, uniq.slice(0, 3).join(', ') + (uniq.length > 3 ? '…' : ''));
+    }
+  } catch (e) { console.error('[retention] recurring annotation failed:', e.message); }
+  const snap = await collectRetention({ users, stateOf, now, recurring });
   const tmp = file + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(snap, null, 2));
   fs.renameSync(tmp, file);

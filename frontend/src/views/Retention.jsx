@@ -87,13 +87,14 @@ export default function Retention({ admin }) {
         const label = LEVEL_LABELS[a.level] || a.level
         return <div className="item" key={a.id}>
           <div className="grow">
-            <div className="tt">{a.name} <span className="tag" style={{ color: lc, borderColor: lc + '55' }}>{label}</span></div>
+            <div className="tt">{a.name} <span className="tag" style={{ color: lc, borderColor: lc + '55' }}>{label}</span>{a.recurring && <span className="tag" style={{ marginLeft: 6, color: 'var(--acc)', borderColor: 'var(--acc)55' }}>постоянник</span>}</div>
             <div className="ss">
               {a.workouts ? `${a.workouts} тр · активность ${daysAgo(a.lastWorkout)}` : 'без тренировок'}
               {a.gapDays != null && ` · перерыв ${a.gapDays} дн`}
               {a.workouts4w != null && ` · 4нед/ранее: ${a.workouts4w}/${a.prev4w}`}
               {a.volume4w ? ` · объём ${fmtV(a.volume4w)} кг` : ''}
               {a.stall && ' · прогресс встал'}
+              {a.recurring && a.recurringTime ? ` · постоянные слоты: ${a.recurringTime}` : ''}
             </div>
             {a.reasons.length > 0 && <div className="small" style={{ color: 'var(--red)', marginTop: 3 }}>⚠ {a.reasons.join(' · ')}</div>}
             {a.workouts > 0 && <div className="small dim" style={{ marginTop: 3 }}>

@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.10.4 — 2026-08-31
+
+Постоянные серии учтены в модели удержания.
+
+- 🧷 **A client with a locked recurring («постоянная») slot is never labelled «ушёл».** If the
+  risk model would mark them `gone`, it caps them to `at_risk` (score 4.4) — because the
+  trainer is still holding their standing reservation, so writing them off is premature.
+- 🏷 The retention snapshot now carries `recurring` + `recurringTime` per athlete; the
+  «Удержание» tab shows a «постоянник» badge and the standing schedule
+  («постоянные слоты: Пн 18:00») so a trainer/owner sees why a seemingly-idle client is
+  only at risk.
+- Built nightly as part of the same snapshot (DB recurring rules read once at build time,
+  no extra load during the day).
+
+### Verified
+- With a series on the `gone` athlete Testuser1: level changes gone → at_risk, badge +
+  schedule shown; reasons still describe the real workout slack (no new activity). After
+  removing the series and rebuilding, Testuser1 returns to `gone` (no recurring). Tests: 192 passed.
+
 ## v1.10.3 — 2026-08-31
 
 «Постоянные клиенты» видны в аналитике.
