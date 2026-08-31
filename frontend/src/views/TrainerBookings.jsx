@@ -35,6 +35,9 @@ export default function TrainerBookings({ admin }) {
   const [addAthlete, setAddAthlete] = useState('')
   const [addTime, setAddTime] = useState('')
   const [busy, setBusy] = useState('')
+  const [recur, setRecur] = useState([])
+  const [showRecur, setShowRecur] = useState(false)
+  const [recurForm, setRecurForm] = useState({ athlete: '', rules: [] })
 
   const days = []
   for (let i = 0; i < 14; i++) { const d = new Date(); d.setDate(d.getDate() + i); days.push(iso(d)) }
@@ -51,7 +54,8 @@ export default function TrainerBookings({ admin }) {
       setHours(map)
     }),
     api('/api/admin/trainer/bookings?from=' + days[0] + '&to=' + days[days.length - 1]).then(d => setBookings(d.bookings || [])),
-    api('/api/admin/analytics/athletes').then(d => setRoster(d.athletes || [])).catch(() => {})
+    api('/api/admin/analytics/athletes').then(d => setRoster(d.athletes || [])).catch(() => {}),
+    api('/api/admin/trainer/recurring').then(d => setRecur(d.series || [])).catch(() => {})
   ]).catch(e => setErr(e.message)).finally(() => window.dispatchEvent(new CustomEvent('trainer-bookings-changed')))
   useEffect(() => { load() }, [])
 
@@ -76,6 +80,32 @@ export default function TrainerBookings({ admin }) {
       .then(() => { setAddMode(false); setAddAthlete(''); setAddTime(''); load() })
       .catch(e => setErr(e.message)).finally(() => setBusy(''))
   }
+  const openRecurForm = () => {
+    setRecurForm({ athlete: '', rules: [0, 1, 2, 3, 4, 5, 6].map(wd => ({ weekday: wd, time: (wd >= 1 && wd <= 5) ? '18:00' : '' })) })
+    setShowRecur(v => !v)
+  }
+  const saveRecur = () => {
+    const rules = (recurForm.rules || []).filter(r => r.time)
+    if (!recurForm.athlete || !rules.length) return
+    setBusy('recur')
+    api('/api/admin/trainer/recurring', { method: 'POST', body: JSON.stringify({ athlete_id: recurForm.athlete, rules }) })
+      .then(() => { setShowRecur(false); setRecurForm({ athlete: '', rules: [] }); load() })
+      .catch(e => setErr(e.message)).finally(() => setBusy(''))
+  }
+  const delRecur = athleteId => {
+    if (!window.confirm('Удалить постоянную серию этого клиента? Все будущие повторяющиеся записи будут убраны.')) return
+    setBusy('recurdel')
+    api('/api/admin/trainer/recurring/delete', { method: 'POST', body: JSON.stringify({ athlete_id: athleteId }) })
+      .then(() => load()).catch(e => setErr(e.message)).finally(() => setBusy(''))
+  }
+  const skipDay = (athleteId, date) => {
+    api('/api/admin/trainer/recurring/skip', { method: 'POST', body: JSON.stringify({ athlete_id: athleteId, date }) })
+      .then(load).catch(e => setErr(e.message))
+  }
+  const unskipDay = (athleteId, date) => {
+    api('/api/admin/trainer/recurring/unskip', { method: 'POST', body: JSON.stringify({ athlete_id: athleteId, date }) })
+      .then(load).catch(e => setErr(e.message))
+  }
 
   const wd = new Date(selDay + 'T12:00:00').getDay()
   const slots = daySlots(availability, wd)
@@ -85,9 +115,12 @@ export default function TrainerBookings({ admin }) {
   const pending = bookings.filter(b => b.status === 'pending')
 
   return <div style={{ paddingBottom: 30 }}>
-    <div className="row between" style={{ marginBottom: 12 }}>
+    <div className="row between" style={{ marginBottom: 12, flexWrap: 'wrap', gap: 6 }}>
       <div><h2 style={{ margin: 0 }}>Календарь</h2><div className="sub">Записи на тренировки · {pending.length ? pending.length + ' заявок ждут' : 'заявок нет'}</div></div>
-      <Button size="sm" variant={showHours ? 'primary' : 'tinted'} icon="clock" onClick={() => setShowHours(v => !v)}>Часы работы</Button>
+      <div className="row" style={{ gap: 6 }}>
+        <Button size="sm" variant={showHours ? 'primary' : 'tinted'} icon="clock" onClick={() => setShowHours(v => !v)}>Часы работы</Button>
+        <Button size="sm" variant={showRecur ? 'primary' : 'tinted'} onClick={openRecurForm}>Постоянные клиенты</Button>
+      </div>
     </div>
     {err && <div className="small" style={{ color: 'var(--red)', marginBottom: 10 }}>{err}</div>}
 
@@ -113,6 +146,34 @@ export default function TrainerBookings({ admin }) {
         </div>
       })}
       <Button variant="primary" size="sm" style={{ marginTop: 8 }} onClick={saveHours} disabled={busy === 'hours'}>{busy === 'hours' ? 'Сохранение…' : 'Сохранить часы'}</Button>
+    </div>}
+
+    {showRecur && <div className="card" style={{ marginBottom: 12 }}>
+      <div className="row between"><h3 style={{ margin: 0 }}>Постоянные клиенты</h3><button className="iconbtn" onClick={() => setShowRecur(false)}><Icon name="xmark" /></button></div>
+      <p className="dim small" style={{ margin: '6px 0 10px' }}>Закрепите клиенту постоянные слоты (например Пн и Ср в 18:00). Они резервируются вперёд на 8 недель, и другие спортсмены не смогут их занять.</p>
+      {recur.length > 0 && <div className="list" style={{ marginBottom: 10 }}>
+        {recur.map(se => <div className="item" key={se.series_id}>
+          <div className="grow">
+            <div className="tt">{se.athleteName}</div>
+            <div className="ss">{se.rules.map(r => DAYS[r.weekday] + ' ' + r.time).join(' · ')}</div>
+            {se.skips && se.skips.length ? <div className="ss">пропущено: {se.skips.map(x => <button key={x} className="btn xs plain" onClick={() => unskipDay(se.athlete_id, x)}>{fmt(x)} вернуть</button>)}</div> : null}
+          </div>
+          <button className="btn xs plain" onClick={() => delRecur(se.athlete_id)} disabled={busy === 'recurdel'}>Удалить</button>
+        </div>)}
+      </div>}
+      <div style={{ marginBottom: 8 }}>
+        <select className="field" value={recurForm.athlete} onChange={e => setRecurForm(f => ({ ...f, athlete: e.target.value }))}>
+          <option value="">Спортсмен…</option>
+          {roster.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+      </div>
+      {(recurForm.rules || []).map(rl => <div className="row" key={rl.weekday} style={{ gap: 8, marginBottom: 5 }}>
+        <span style={{ width: 34, fontWeight: 500 }}>{DAYS[rl.weekday]}</span>
+        <input type="time" className="field" style={{ flex: 1, padding: '6px 8px' }} value={rl.time}
+          onChange={e => setRecurForm(f => ({ ...f, rules: f.rules.map(x => x.weekday === rl.weekday ? { ...x, time: e.target.value } : x) }))} />
+        <span className="small dim">{rl.time ? 'постоянн.' : 'выходной'}</span>
+      </div>)}
+      <Button variant="primary" size="sm" style={{ marginTop: 8 }} onClick={saveRecur} disabled={busy === 'recur' || !recurForm.athlete}>{busy === 'recur' ? 'Сохранение…' : 'Сохранить серию'}</Button>
     </div>}
 
     {pending.length > 0 && <div className="card" style={{ marginBottom: 12 }}>
@@ -159,11 +220,12 @@ export default function TrainerBookings({ admin }) {
         const s = STATUS[b.status] || { label: b.status, color: 'var(--label-3)' }
         return <div className="item" key={b.id}>
           <div className="grow">
-            <div className="tt">{b.time} · {b.athleteName || 'Спортсмен'}</div>
+            <div className="tt">{b.time} · {b.athleteName || 'Спортсмен'}{b.series_id && <span className="tag" style={{ marginLeft: 6 }}>постоянн.</span>}</div>
             <div className="ss">{b.note || '—'}</div>
           </div>
           <span className="tag" style={{ color: s.color, borderColor: s.color + '55' }}>{s.label}</span>
-          {b.status === 'confirmed' && <button className="btn xs plain" onClick={() => setStatus(b.id, 'cancelled')} disabled={busy === b.id}>Отменить</button>}
+          {b.series_id && b.status === 'confirmed' && <button className="btn xs plain" onClick={() => skipDay(b.athlete_id, b.date)}>Пропустить день</button>}
+          {!b.series_id && b.status === 'confirmed' && <button className="btn xs plain" onClick={() => setStatus(b.id, 'cancelled')} disabled={busy === b.id}>Отменить</button>}
         </div>
       })}</div>}
   </div>

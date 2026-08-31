@@ -103,7 +103,7 @@ export function CoachSheet({ user, close }) {
         const s = STATUS[b.status] || { label: b.status, color: 'var(--label-3)' }
         return <div className="item" key={b.id}>
           <div className="grow">
-            <div className="tt">{fmtDate(b.date)} · {b.time}</div>
+            <div className="tt">{fmtDate(b.date)} · {b.time}{b.series_id && <span className="tag" style={{ marginLeft: 6 }}>{t('Recurring')}</span>}</div>
             <div className="ss">{b.note || '—'}</div>
           </div>
           <span className="tag" style={{ color: s.color, borderColor: s.color + '55' }}>{t(s.label)}</span>

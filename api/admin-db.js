@@ -204,6 +204,27 @@ ALTER TABLE trainer_availability DROP CONSTRAINT IF EXISTS trainer_availability_
 CREATE INDEX IF NOT EXISTS trainer_availability_trainer_weekday_idx ON trainer_availability (trainer_id, weekday);
 `;
 
+const RECURRING_MIGRATION = `
+CREATE TABLE IF NOT EXISTS recurring_bookings (
+  series_id TEXT NOT NULL,
+  trainer_id TEXT NOT NULL,
+  athlete_id TEXT NOT NULL,
+  weekday INT NOT NULL,
+  time TEXT NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS recurring_bookings_trainer_idx ON recurring_bookings (trainer_id, athlete_id);
+CREATE INDEX IF NOT EXISTS recurring_bookings_active_idx ON recurring_bookings (series_id);
+CREATE TABLE IF NOT EXISTS recurring_skips (
+  series_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  PRIMARY KEY (series_id, date)
+);
+ALTER TABLE coach_bookings ADD COLUMN IF NOT EXISTS series_id TEXT;
+CREATE INDEX IF NOT EXISTS coach_bookings_series_idx ON coach_bookings (series_id);
+`;
+
 export const adminDbReady = (async () => {
   await integrationDbReady;
   if (!pool) return;
@@ -213,6 +234,7 @@ export const adminDbReady = (async () => {
     await pool.query(ADMIN_MIGRATION);
     await pool.query(BADGE_SEEN_MIGRATION);
     await pool.query(AVAILABILITY_MIGRATION);
+    await pool.query(RECURRING_MIGRATION);
     await pool.query(OUTBOX_MIGRATION);
     await pool.query(OUTBOX_MIGRATION);
     await pool.query(OUTBOX_MIGRATION);
@@ -822,4 +844,169 @@ export async function updateBookingStatus({ id, status }) {
   const result = await pool.query(
     'UPDATE coach_bookings SET status = $2, updated_at = now() WHERE id = $1 RETURNING *', [id, status]);
   return result.rows[0] || null;
+}
+
+
+// --- Recurring ("постоянная") bookings: a trainer reserves fixed weekly slots for a
+// regular athlete. One series per (trainer, athlete) holds several (weekday, time) rules.
+// Active rules are materialized into confirmed coach_bookings for a rolling horizon, so the
+// existing conflict / taken-slot logic locks them from everyone else. ---
+
+const RECUR_HORIZON_DAYS = 56; // 8 weeks; rolls forward
+export const recurHorizonDays = () => RECUR_HORIZON_DAYS;
+
+function isoDate(d) {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return d.getFullYear() + '-' + m + '-' + day;
+}
+
+export async function listRecurringSeries(trainerId) {
+  await ready();
+  const r = await pool.query(
+    `SELECT series_id, trainer_id, athlete_id, weekday, time, active, created_at
+     FROM recurring_bookings WHERE trainer_id = $1 ORDER BY created_at, weekday, time`, [trainerId]);
+  return r.rows;
+}
+
+export async function listRecurringSkips(trainerId) {
+  await ready();
+  const r = await pool.query(
+    `SELECT DISTINCT s.series_id, s.date
+     FROM recurring_skips s
+     JOIN recurring_bookings rb ON rb.series_id = s.series_id AND rb.trainer_id = $1
+     WHERE s.date >= to_char(current_date, 'YYYY-MM-DD')
+     ORDER BY s.date`, [trainerId]);
+  return r.rows.map(x => ({ series_id: x.series_id, date: x.date }));
+}
+
+function timeIn(a, start, end) { return a >= start && a < end; }
+
+// Materialize (or extend) the rolling horizon for ONE series. Availability check: a rule is
+// only materialized while the slot stays inside the trainer's current working hours for that
+// weekday, so if the trainer shortens hours, future recurrences go dormant instead of ghosting.
+export async function materializeRecurringSeries({ trainerId, seriesId, avails, horizonDays = RECUR_HORIZON_DAYS }) {
+  await ready();
+  const rules = await pool.query(
+    `SELECT weekday, time, athlete_id FROM recurring_bookings
+     WHERE series_id = $1 AND trainer_id = $2 AND active = TRUE`, [seriesId, trainerId]);
+  if (!rules.rows.length) return [];
+  const skips = await pool.query(`SELECT date FROM recurring_skips WHERE series_id = $1`, [seriesId]);
+  const skipDates = new Set(skips.rows.map(r => r.date));
+  const avail = avails || await pool.query(
+    `SELECT weekday, time_start, time_end FROM trainer_availability WHERE trainer_id = $1`, [trainerId]);
+  const availRows = Array.isArray(avail) ? avail : (avail.rows || []);
+  const created = [];
+  const now = new Date();
+  for (let i = 0; i < horizonDays; i++) {
+    const d = new Date(now.getTime() + i * 86400000);
+    const wd = d.getDay();
+    const dateStr = isoDate(d);
+    for (const rule of rules.rows) {
+      if (rule.weekday !== wd) continue;
+      if (skipDates.has(dateStr)) continue;
+      // must still be inside working hours (hour grid: start <= slot < end)
+      const isOpen = availRows.some(a => a.weekday === wd && timeIn(rule.time, a.time_start, a.time_end));
+      if (!isOpen) continue;
+      const conflict = await pool.query(
+        `SELECT id FROM coach_bookings WHERE trainer_id = $1 AND date = $2 AND time = $3
+          AND status IN ('pending','confirmed')`, [trainerId, dateStr, rule.time]);
+      if (conflict.rows.length) continue; // already taken (one-off or another series) -> leave it
+      await pool.query(
+        `INSERT INTO coach_bookings (id, trainer_id, athlete_id, date, time, status, note, series_id)
+         VALUES ($1,$2,$3,$4,$5,'confirmed',$6,$7)`,
+        [crypto.randomBytes(12).toString('base64url'), trainerId, rule.athlete_id, dateStr, rule.time, '', seriesId]);
+      created.push({ date: dateStr, time: rule.time });
+    }
+  }
+  return created;
+}
+
+// Roll the horizon forward for one trainer (or all trainers). Returns new rows created.
+export async function rollRecurringForward(trainerId = null) {
+  await ready();
+  const where = trainerId ? 'WHERE trainer_id = $1' : '';
+  const args = trainerId ? [trainerId] : [];
+  const r = await pool.query(
+    `SELECT DISTINCT series_id, trainer_id FROM recurring_bookings ${where}`, args);
+  let n = 0;
+  for (const row of r.rows) {
+    n += (await materializeRecurringSeries({ trainerId: row.trainer_id, seriesId: row.series_id })).length;
+  }
+  return n;
+}
+
+// Replace the whole series for an athlete with new rules, then refresh future materialized rows.
+export async function setRecurringSeries({ trainerId, athleteId, rules }) {
+  await ready();
+  const existing = await pool.query(
+    `SELECT series_id FROM recurring_bookings WHERE trainer_id = $1 AND athlete_id = $2 LIMIT 1`,
+    [trainerId, athleteId]);
+  const seriesId = existing.rows[0] ? existing.rows[0].series_id
+    : crypto.randomBytes(8).toString('base64url').slice(0, 10);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // drop stale materialized future rows of this series, then recreate
+    await client.query(
+      `DELETE FROM coach_bookings WHERE series_id = $1
+        AND date >= to_char(current_date, 'YYYY-MM-DD') AND status IN ('pending','confirmed')`, [seriesId]);
+    await client.query(
+      `DELETE FROM recurring_bookings WHERE trainer_id = $1 AND athlete_id = $2`, [trainerId, athleteId]);
+    for (const rl of (rules || [])) {
+      const wd = Math.max(0, Math.min(6, +rl.weekday || 0));
+      const tm = String(rl.time || '').slice(0, 5);
+      if (!/^\d{2}:\d{2}$/.test(tm)) continue;
+      await client.query(
+        `INSERT INTO recurring_bookings (series_id, trainer_id, athlete_id, weekday, time, active)
+         VALUES ($1,$2,$3,$4,$5,TRUE)`, [seriesId, trainerId, athleteId, wd, tm]);
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally { client.release(); }
+  const created = await materializeRecurringSeries({ trainerId, seriesId });
+  return { seriesId, created };
+}
+
+export async function deleteRecurringSeries({ trainerId, athleteId }) {
+  await ready();
+  const s = await pool.query(
+    `SELECT series_id FROM recurring_bookings WHERE trainer_id = $1 AND athlete_id = $2 LIMIT 1`,
+    [trainerId, athleteId]);
+  if (!s.rows.length) return { seriesId: null };
+  const seriesId = s.rows[0].series_id;
+  await pool.query(`DELETE FROM recurring_skips WHERE series_id = $1`, [seriesId]);
+  await pool.query(`DELETE FROM recurring_bookings WHERE series_id = $1`, [seriesId]);
+  await pool.query(
+    `DELETE FROM coach_bookings WHERE series_id = $1
+      AND date >= to_char(current_date, 'YYYY-MM-DD') AND status IN ('pending','confirmed')`, [seriesId]);
+  return { seriesId };
+}
+
+export async function skipRecurringDate({ trainerId, athleteId, date }) {
+  await ready();
+  const s = await pool.query(
+    `SELECT series_id FROM recurring_bookings WHERE trainer_id = $1 AND athlete_id = $2 LIMIT 1`,
+    [trainerId, athleteId]);
+  if (!s.rows.length) throw new Error('no recurring series for this athlete');
+  const seriesId = s.rows[0].series_id;
+  await pool.query(
+    `INSERT INTO recurring_skips (series_id, date) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [seriesId, date]);
+  await pool.query(
+    `DELETE FROM coach_bookings WHERE series_id = $1 AND date = $2 AND status IN ('pending','confirmed')`, [seriesId, date]);
+  return { seriesId };
+}
+
+export async function unskipRecurringDate({ trainerId, athleteId, date }) {
+  await ready();
+  const s = await pool.query(
+    `SELECT series_id FROM recurring_bookings WHERE trainer_id = $1 AND athlete_id = $2 LIMIT 1`,
+    [trainerId, athleteId]);
+  if (!s.rows.length) throw new Error('no recurring series for this athlete');
+  const seriesId = s.rows[0].series_id;
+  await pool.query(`DELETE FROM recurring_skips WHERE series_id = $1 AND date = $2`, [seriesId, date]);
+  await materializeRecurringSeries({ trainerId, seriesId });
+  return { seriesId };
 }

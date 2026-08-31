@@ -571,6 +571,7 @@ export default {
   'Send request': 'Отправить заявку',
   'Sending…': 'Отправка…',
   'My bookings': 'Мои записи',
+  'Recurring': 'Постоянная',
   'No bookings yet.': 'Записей пока нет.',
   'No free slots this day.': 'В этот день свободных слотов нет.',
   'Trainer has not set working hours yet.': 'Тренер ещё не задал часы работы.',

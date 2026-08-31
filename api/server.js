@@ -18,7 +18,8 @@ import {
   syncAdminOwners, updateAdmin, updateAdminCounter, getWallet, listRewards, saveReward, deleteReward, redeemReward, listRedemptions, updateRedemption,
   setTrainerAssignment, listTrainerAssignments,
   getTrainerAvailability, setTrainerAvailability, listBookings, createBooking,
-  findBookingConflict, getBooking, updateBookingStatus
+  findBookingConflict, getBooking, updateBookingStatus,
+  listRecurringSeries, listRecurringSkips, setRecurringSeries, deleteRecurringSeries, skipRecurringDate, unskipRecurringDate, rollRecurringForward
 } from './admin-db.js';
 import { collectAnalytics, athleteDetail } from './analytics.js';
 import { buildRetentionSnapshot, scheduleRetentionSnapshot } from './retention-runner.js';
@@ -504,6 +505,7 @@ const routes = {
       const row = ta.find(x => x.user_id === user.id);
       if (!row) return json(res, 200, { availability: [], taken: [] });
       const availability = await getTrainerAvailability(row.trainer_id);
+      await rollRecurringForward(row.trainer_id); // refresh materialized "постоянные" slots
       const bookings = await listBookings({ trainerId: row.trainer_id, from: localToday() });
       const taken = bookings.filter(b => b.status === 'pending' || b.status === 'confirmed')
         .map(b => ({ date: b.date, time: b.time }));
@@ -566,6 +568,9 @@ const routes = {
     if (!user) return json(res, 401, { error: 'not signed in' });
     try {
       await adminDbReady;
+      const ta = await listTrainerAssignments();
+      const trow = ta.find(x => x.user_id === user.id);
+      if (trow) await rollRecurringForward(trow.trainer_id);
       const bookings = await listBookings({ athleteId: user.id });
       json(res, 200, { bookings });
     } catch (error) {
@@ -1428,6 +1433,7 @@ const routes = {
     const to = String(new URL(req.url, 'http://x').searchParams.get('to') || '');
     try {
       const trainerId = admin.role === 'trainer' ? admin.id : null;
+      await rollRecurringForward(trainerId || undefined);
       const bookings = await listBookings({ trainerId, from: from || undefined, to: to || undefined });
       const [admins, ta] = await Promise.all([listAdmins(), listTrainerAssignments()]);
       const trainerName = new Map(admins.map(a => [a.id, a.name]));
@@ -1544,6 +1550,109 @@ const routes = {
     }
   },
 
+
+
+  // ---- Recurring ("постоянная") bookings: fixed weekly slots reserved for a regular
+  // athlete, materialized forward so they lock automatically and can't be taken by others. ----
+  'GET /api/admin/trainer/recurring': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
+    try {
+      const trainerId = admin.role === 'trainer' ? admin.id : String(new URL(req.url, 'http://x').searchParams.get('trainer_id') || admin.id);
+      const rows = await listRecurringSeries(trainerId);
+      const skips = await listRecurringSkips(trainerId);
+      const byName = new Map(db.users.map(u => [u.id, u.name || u.id]));
+      const series = new Map();
+      for (const r of rows) {
+        if (!series.has(r.series_id)) series.set(r.series_id, {
+          series_id: r.series_id, athlete_id: r.athlete_id,
+          athleteName: byName.get(r.athlete_id) || r.athlete_id, rules: []
+        });
+        series.get(r.series_id).rules.push({ weekday: r.weekday, time: r.time });
+      }
+      for (const [, se] of series) se.skips = skips.filter(x => x.series_id === se.series_id).map(x => x.date);
+      json(res, 200, { series: [...series.values()] });
+    } catch (error) {
+      console.error('recurring list failed:', error.message);
+      json(res, 503, { error: 'recurring unavailable' });
+    }
+  },
+
+  'POST /api/admin/trainer/recurring': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
+    const body = await readBody(req);
+    const athleteId = String(body.athlete_id || '');
+    const u = db.users.find(x => x.id === athleteId);
+    if (!u) return json(res, 404, { error: 'no such athlete' });
+    const trainerId = admin.role === 'trainer' ? admin.id : String(body.trainer_id || admin.id);
+    const rules = Array.isArray(body.rules) ? body.rules : [];
+    try {
+      if (admin.role === 'trainer' && !(await requireProgramAccess(admin, athleteId)))
+        return json(res, 403, { error: 'no access to this athlete' });
+      const avail = await getTrainerAvailability(trainerId);
+      const clean = [];
+      for (const rl of rules) {
+        const wd = Math.max(0, Math.min(6, +rl.weekday || 0));
+        const tm = String(rl.time || '').slice(0, 5);
+        if (!/^\d{2}:\d{2}$/.test(tm)) continue;
+        if (!avail.some(a => a.weekday === wd && tm >= a.time_start && tm < a.time_end))
+          return json(res, 400, { error: 'recurring time outside working hours' });
+        if (clean.some(c => c.weekday === wd && c.time === tm)) continue;
+        clean.push({ weekday: wd, time: tm });
+      }
+      if (!clean.length) return json(res, 400, { error: 'at least one day is required' });
+      const r = await setRecurringSeries({ trainerId, athleteId, rules: clean });
+      json(res, 200, { ok: true, series_id: r.seriesId, created: r.created });
+    } catch (error) {
+      console.error('recurring set failed:', error.message);
+      json(res, 503, { error: 'service unavailable' });
+    }
+  },
+
+  'POST /api/admin/trainer/recurring/delete': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
+    const body = await readBody(req);
+    const athleteId = String(body.athlete_id || '');
+    const trainerId = admin.role === 'trainer' ? admin.id : String(body.trainer_id || admin.id);
+    try {
+      const r = await deleteRecurringSeries({ trainerId, athleteId });
+      json(res, 200, { ok: true, series_id: r.seriesId });
+    } catch (error) {
+      console.error('recurring delete failed:', error.message);
+      json(res, 503, { error: 'service unavailable' });
+    }
+  },
+
+  'POST /api/admin/trainer/recurring/skip': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
+    const body = await readBody(req);
+    const athleteId = String(body.athlete_id || '');
+    const date = String(body.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json(res, 400, { error: 'date required' });
+    const trainerId = admin.role === 'trainer' ? admin.id : String(body.trainer_id || admin.id);
+    try {
+      const r = await skipRecurringDate({ trainerId, athleteId, date });
+      json(res, 200, { ok: true, series_id: r.seriesId });
+    } catch (error) {
+      console.error('recurring skip failed:', error.message);
+      json(res, 503, { error: error.message });
+    }
+  },
+
+  'POST /api/admin/trainer/recurring/unskip': async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
+    const body = await readBody(req);
+    const athleteId = String(body.athlete_id || '');
+    const date = String(body.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json(res, 400, { error: 'date required' });
+    const trainerId = admin.role === 'trainer' ? admin.id : String(body.trainer_id || admin.id);
+    try {
+      const r = await unskipRecurringDate({ trainerId, athleteId, date });
+      json(res, 200, { ok: true, series_id: r.seriesId });
+    } catch (error) {
+      console.error('recurring unskip failed:', error.message);
+      json(res, 503, { error: error.message });
+    }
+  },
 
   'GET /api/admin/integrations/access/bindings': async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
@@ -1720,4 +1829,7 @@ async function notifyRetentionOwner({ prev, next }) {
   scheduleRetentionSnapshot({ users: db.users, stateOf: readState, dataDir: DATA,
     hour: parseInt(process.env.RETENTION_RUN_HOUR || '4', 10),
     onSnapshot: async d => { await notifyRetentionTrainers(d); await notifyRetentionOwner(d); } });
+  // Roll "постоянные" booking horizons forward daily (GET endpoints also roll lazily).
+  setTimeout(() => rollRecurringForward().catch(() => {}), 10000);
+  setInterval(() => rollRecurringForward().catch(() => {}), 24 * 60 * 60 * 1000);
 });

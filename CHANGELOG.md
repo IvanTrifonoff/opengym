@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.10.0 — 2026-08-31
+
+Recurring trainer bookings («постоянные клиенты»): fixed weekly slots locked for regular athletes.
+
+### What it does
+
+- 🗓 **Trainers can assign a recurring series to an athlete** — several days of the week, each with a time (e.g. Пн 18:00 и Ср 17:00). The slots are reserved **8 weeks ahead and roll forward automatically**.
+- 🔒 **Those slots can't be taken by others.** Recurring rows are materialized as confirmed bookings, so they appear in the trainer's occupied slots and in the athlete-facing free-slot view — any attempt to book into one returns `409 this slot is already booked`. The rest of the booking flow stays untouched.
+- ✅ **Immediately confirmed** — no per-date request/confirmation; the client just sees their standing slots in «My bookings», marked «Постоянная».
+- 🕐 **Tied to working hours** — a rule is only accepted (and only materialized) while the time stays inside the trainer's availability for that weekday; if hours shorten, future recurrences go dormant instead of ghosting.
+- ➖ **Per-day skip** and **unskip** — the trainer can drop or restore a single occurrence; deleting a series removes all its future bookings.
+
+### Details
+
+- New tables `recurring_bookings` (rules) and `recurring_skips` (per-date skips); `coach_bookings` gains `series_id` to mark materialized rows.
+- `materializeRecurringSeries` fills the rolling 56-day horizon (respecting availability, skips and existing conflicts); `rollRecurringForward` rolls it forward on bookings access and once a day.
+- Trainer portal: «Постоянные клиенты» panel (list, add/edit form per weekday, delete series, per-day skip/undo). Athlete sheet: recurring bookings are marked «Постоянная».
+- Verified end-to-end on production: series with two rules materialized 16 bookings over 8 weeks; booking into a slot → 409; skip removed one occurrence, unskip restored it; delete cleared rules + future rows. Tests: 192 passed.
+
 ## v1.9.1 — 2026-08-31
 
 Fixed the trainer hours editor: the split-schedule UI (multiple intervals per day) was accidentally reverted.
