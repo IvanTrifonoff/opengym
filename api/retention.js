@@ -106,12 +106,16 @@ export async function collectRetention({ users, stateOf, now = Date.now() }) {
     atRisk: athletes.filter(a => a.level === 'at_risk').length,
     gone: athletes.filter(a => a.level === 'gone').length,
     avgGap: withActivity.length ? Math.round(withActivity.reduce((s, a) => s + (a.gapDays || 0), 0) / withActivity.length) : 0,
-    atRiskPct: withActivity.length ? Math.round(athletes.filter(a => a.level !== 'active').length / withActivity.length * 100) : 0
+    atRiskPct: athletes.length ? Math.round(athletes.filter(a => a.level !== 'active').length / athletes.length * 100) : 0
   };
+  // Retention funnel: of those who ever trained, how many kept going to 4 / 8 weeks.
+  // spanDays = time between first and last workout — the honest "how long they held on".
+  // A monotone chain (trained >= week4 >= week8) so it never reads backwards.
+  const trained = athletes.filter(a => a.spanDays != null);
   const funnel = {
-    started30: athletes.filter(a => { const l = a.lastWorkout || tsOf(a.created); return l != null && now - l < 30 * DAY; }).length,
-    week4: athletes.filter(a => a.gapDays == null || a.gapDays <= 21).length,
-    week8: athletes.filter(a => a.gapDays == null || a.gapDays <= 49).length
+    trained: trained.length,
+    week4: trained.filter(a => a.spanDays >= 21).length,
+    week8: trained.filter(a => a.spanDays >= 49).length
   };
   return {
     generatedAt: now, summary, funnel, zones: riskLevels(),

@@ -1288,7 +1288,8 @@ const routes = {
       try { snap = JSON.parse(fs.readFileSync(snapFile, 'utf8')); } catch {}
       // First boot / no nightly run yet: build on demand so the tab is never empty.
       if (!snap || !snap.athletes) {
-        snap = await buildRetentionSnapshot({ users: db.users, stateOf: readState, dataDir: DATA });
+        const built = await buildRetentionSnapshot({ users: db.users, stateOf: readState, dataDir: DATA });
+        snap = built.snap;
       }
       let rows = snap.athletes;
       // scope filtering for trainers (their own athletes) & the network-wide default
@@ -1297,7 +1298,22 @@ const routes = {
         const mine = new Set(ta.filter(x => x.trainer_id === admin.id).map(x => x.user_id));
         rows = rows.filter(r => mine.has(r.id));
       }
-      json(res, 200, { generatedAt: snap.generatedAt, summary: snap.summary, funnel: snap.funnel,
+      // Recompute summary/funnel from the filtered rows so a trainer sees THEIR numbers,
+      // not the whole network's (the cached snapshot is network-wide).
+      const sum = { total: rows.length };
+      sum.active = rows.filter(r => r.level === 'active').length;
+      sum.atRisk = rows.filter(r => r.level === 'at_risk').length;
+      sum.gone = rows.filter(r => r.level === 'gone').length;
+      const withAct = rows.filter(r => r.workouts > 0);
+      sum.avgGap = withAct.length ? Math.round(withAct.reduce((s, r) => s + (r.gapDays || 0), 0) / withAct.length) : 0;
+      sum.atRiskPct = rows.length ? Math.round((rows.length - sum.active) / rows.length * 100) : 0;
+      const trained = rows.filter(r => r.spanDays != null);
+      const funnel = {
+        trained: trained.length,
+        week4: trained.filter(r => r.spanDays >= 21).length,
+        week8: trained.filter(r => r.spanDays >= 49).length
+      };
+      json(res, 200, { generatedAt: snap.generatedAt, summary: sum, funnel,
         zones: snap.zones, athletes: rows });
     } catch (error) {
       console.error('retention endpoint failed:', error.message);

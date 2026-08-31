@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.9.0 — 2026-08-31
+
+Retention analytics: why athletes leave, computed at night, shown to the gym owner and trainers.
+
+### «Удержание» tab in /admin/analytics
+
+- 🎯 **Risk model per athlete.** Nightly snapshot (`data/retention-snapshot.json`) with level (active / at_risk / gone), gap since last workout, frequency/volume/sets trend (last 4 weeks vs previous 4), stalled-progress detection and a weighted risk score with plain-Russian reasons — «нет активности 30+ дней», «снижение частоты», «прогресс остановился», «меньше подходов».
+- 🌙 **Nightly recompute only.** The heavy math runs once at night (04:00 by default, `RETENTION_RUN_HOUR` to override); the tab reads the ready snapshot all day and never touches state/PG at request time. First boot builds on demand so the tab is never empty.
+- 📉 **Honest retention funnel.** Of those who ever trained, how many held on to 4 and 8 weeks — a monotone chain (trained ≥ week4 ≥ week8) that never reads backwards.
+- 🔎 **Role-scoped numbers.** A trainer sees only their own athletes: summary, funnel and list are recomputed from the filtered rows, not from the whole network's cached snapshot.
+- 🔔 **Trainer alerts on downgrade.** The nightly runner diffs the previous snapshot against the new one; when an athlete's level worsens (active → at_risk/gone, at_risk → gone), the assigned trainer gets a notification-center entry plus a push — one per day per athlete, idempotent, no spam.
+
+### Verification
+
+- End-to-end on production data: Testuser1 → gone (score 10, all four reasons), Artem → active (12/12 sessions, stable volume). Owner sees the whole network, trainer Andrey sees only his two athletes. UI checked in headless Chrome for both roles — no JS errors, funnel and risk tiles render correctly.
+
 ## v1.8.1 — 2026-08-27
 
 Stability and hardening of the push and booking flows, so the notifications from v1.7.0 stay reliable in production.
