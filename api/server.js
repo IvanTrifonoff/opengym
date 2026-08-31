@@ -24,6 +24,8 @@ import {
 } from './admin-db.js';
 import { collectAnalytics, athleteDetail } from './analytics.js';
 import { buildRetentionSnapshot, scheduleRetentionSnapshot } from './retention-runner.js';
+import { createWebhookRoutes } from './routes/webhook.js';
+import { createNotificationsRoutes } from './routes/notifications.js';
 
 import {
   validTime, timeInRange, bookingTransitionAllowed, validateAvailabilitySlots,
@@ -556,55 +558,6 @@ const routes = {
     catch (error) { console.error('rewards failed:', error.message); json(res, 503, { error: 'loyalty database unavailable' }); }
   },
 
-  'GET /api/notifications': async (req, res) => {
-    const user = readSession(req);
-    if (!user) return json(res, 401, { error: 'not signed in' });
-    try {
-      await adminDbReady;
-      json(res, 200, { notifications: await listNotifications(user.id) });
-    } catch (error) { json(res, 503, { error: 'service unavailable' }); }
-  },
-
-  'POST /api/badge/seen': async (req, res) => {
-    const user = readSession(req);
-    if (!user) return json(res, 401, { error: 'not signed in' });
-    try {
-      await adminDbReady;
-      await markBadgeSeen(user.id);
-      json(res, 200, { ok: true });
-    } catch (error) { json(res, 503, { error: 'service unavailable' }); }
-  },
-
-  // Trainer notification center: same app_notifications table, scoped to the admin session.
-  'GET /api/admin/notifications': async (req, res) => {
-    const admin = await requireAdminAccount(req, res); if (!admin) return;
-    try {
-      await adminDbReady;
-      json(res, 200, { notifications: await listNotifications('admin:' + admin.id) });
-    } catch (error) { json(res, 503, { error: 'service unavailable' }); }
-  },
-
-  'POST /api/admin/notifications/read': async (req, res) => {
-    const admin = await requireAdminAccount(req, res); if (!admin) return;
-    const body = await readBody(req);
-    try {
-      await adminDbReady;
-      await markNotificationsRead('admin:' + admin.id, body.id ? String(body.id) : null);
-      json(res, 200, { ok: true, unread: await countUnreadNotifications('admin:' + admin.id) });
-    } catch (error) { json(res, 503, { error: 'service unavailable' }); }
-  },
-
-  'POST /api/notifications/read': async (req, res) => {
-    const user = readSession(req);
-    if (!user) return json(res, 401, { error: 'not signed in' });
-    const body = await readBody(req);
-    try {
-      await adminDbReady;
-      await markNotificationsRead(user.id, body.id ? String(body.id) : null);
-      json(res, 200, { ok: true, unread: await countUnreadNotifications(user.id) });
-    } catch (error) { json(res, 503, { error: 'service unavailable' }); }
-  },
-
   'POST /api/loyalty/redeem': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
@@ -849,49 +802,6 @@ const routes = {
       });
     } else presence.delete(user.id);
     json(res, 200, { ok: true });
-  },
-
-
-  'POST /api/integrations/loyalty/events': async (req, res) => {
-    if (!webhookSecretMatches(req)) return json(res, 401, { error: 'invalid webhook secret' });
-    const body = await readBody(req);
-    const eventId = String(body.event_id || body.id || '').trim().slice(0, 200);
-    const userId = String(body.user_id || '').trim();
-    const eventType = String(body.event_type || '').trim();
-    const branchKey = String(body.branch_key || body.branch_id || '').trim().slice(0, 100) || null;
-    const occurredAt = new Date(body.occurred_at || body.timestamp || Date.now());
-    if (!eventId || !userId || !LOYALTY_EVENT_TYPES.has(eventType) || Number.isNaN(occurredAt.getTime()))
-      return json(res, 400, { error: 'event_id, user_id, valid event_type and occurred_at are required' });
-    await adminDbReady;
-    try {
-      const result = await acceptLoyaltyEvent({ eventId, userId, eventType, branchKey, occurredAt: occurredAt.toISOString(), payload: body, lang: langOf(userId) });
-      const notified = await dispatchOutbox({ send: sendPush }).catch(e => { console.error('outbox dispatch failed:', e.message); return 0; });
-      json(res, 200, { ok: true, ...result, notified });
-    } catch (error) {
-      console.error('loyalty event failed:', error.message);
-      json(res, 503, { error: 'loyalty database unavailable' });
-    }
-  },
-
-  'POST /api/integrations/access/events': async (req, res) => {
-    if (!webhookSecretMatches(req)) return json(res, 401, { error: 'invalid webhook secret' });
-    const body = await readBody(req);
-    let event;
-    try { event = normaliseAccessEvent(body); }
-    catch (error) { return json(res, 400, { error: error.message }); }
-    await integrationDbReady;
-    if (integrationDbStatus() !== 'configured') return json(res, 503, { error: 'integration database unavailable' });
-    try {
-      const result = await acceptAccessEvent(event);
-      const loyalty = result.matched && result.userId
-        ? await applyLoyaltyRules({ userId: result.userId, eventId: event.eventId, eventType: 'visit', branchKey: event.branchKey, occurredAt: event.occurredAt, lang: langOf(result.userId) })
-        : null;
-      const notified = await dispatchOutbox({ send: sendPush }).catch(e => { console.error('outbox dispatch failed:', e.message); return 0; });
-      json(res, 200, { ok: true, ...result, loyalty, notified });
-    } catch (error) {
-      console.error('access webhook failed:', error.message);
-      json(res, 503, { error: 'integration database unavailable' });
-    }
   },
 
 
@@ -1730,6 +1640,23 @@ const routes = {
     json(res, 200, { ok: true });
   }
 };
+
+/* Роут-модули (вынесены из монолита): внешние вебхуки + центр уведомлений.
+   Каждая фабрика возвращает [{ method, path, handler }] — регистрируются в общий роутер. */
+const routeModules = [
+  ...createWebhookRoutes({
+    json, readBody, webhookSecretMatches, LOYALTY_EVENT_TYPES,
+    adminDbReady, acceptLoyaltyEvent, langOf, dispatchOutbox, sendPush,
+    normaliseAccessEvent, integrationDbReady, integrationDbStatus,
+    acceptAccessEvent, applyLoyaltyRules
+  }),
+  ...createNotificationsRoutes({
+    json, readBody, readSession, requireAdminAccount,
+    adminDbReady, listNotifications, markBadgeSeen,
+    markNotificationsRead, countUnreadNotifications
+  })
+];
+for (const r of routeModules) routes[r.method + ' ' + r.path] = r.handler;
 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
