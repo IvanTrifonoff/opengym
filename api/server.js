@@ -26,6 +26,7 @@ import { collectAnalytics, athleteDetail } from './analytics.js';
 import { buildRetentionSnapshot, scheduleRetentionSnapshot } from './retention-runner.js';
 import { createWebhookRoutes } from './routes/webhook.js';
 import { createNotificationsRoutes } from './routes/notifications.js';
+import { createLoyaltyRoutes } from './routes/loyalty.js';
 
 import {
   validTime, timeInRange, bookingTransitionAllowed, validateAvailabilitySlots,
@@ -544,28 +545,6 @@ const routes = {
   // Public config the login screen needs before anyone is signed in.
   'GET /api/config': async (req, res) => json(res, 200, { invite_only: INVITE_ONLY }),
 
-  'GET /api/loyalty/wallet': async (req, res) => {
-    const user = readSession(req);
-    if (!user) return json(res, 401, { error: 'not signed in' });
-    try { json(res, 200, await getWallet(user.id)); }
-    catch (error) { console.error('wallet failed:', error.message); json(res, 503, { error: 'loyalty database unavailable' }); }
-  },
-
-  'GET /api/loyalty/rewards': async (req, res) => {
-    const user = readSession(req);
-    if (!user) return json(res, 401, { error: 'not signed in' });
-    try { json(res, 200, { rewards: await listRewards(true) }); }
-    catch (error) { console.error('rewards failed:', error.message); json(res, 503, { error: 'loyalty database unavailable' }); }
-  },
-
-  'POST /api/loyalty/redeem': async (req, res) => {
-    const user = readSession(req);
-    if (!user) return json(res, 401, { error: 'not signed in' });
-    const body = await readBody(req);
-    try { json(res, 200, { ok: true, redemption: await redeemReward({ userId: user.id, rewardId: String(body.reward_id || '') }) }); }
-    catch (error) { json(res, 400, { error: error.message }); }
-  },
-
   'GET /api/me': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
@@ -957,61 +936,6 @@ const routes = {
       });
       json(res, 200, { admin }, { 'Set-Cookie': adminSessionCookie(admin) });
     } catch (error) { json(res, 400, { error: error.message }); }
-  },
-
-  'GET /api/admin/loyalty/rewards': async (req, res) => {
-    const admin = await requireAdminAccount(req, res); if (!admin) return;
-    json(res, 200, { rewards: await listRewards(false) });
-  },
-
-  'POST /api/admin/loyalty/rewards/save': async (req, res) => {
-    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
-    const body = await readBody(req);
-    try {
-      const reward = await saveReward({ id: body.id, name: body.name, description: body.description, kind: body.kind,
-        cost: body.cost, deliveryMode: body.delivery_mode, active: body.active, stock: body.stock, createdBy: admin.id });
-      json(res, 200, { ok: true, reward });
-    } catch (error) { json(res, 400, { error: error.message }); }
-  },
-
-  'POST /api/admin/loyalty/rewards/delete': async (req, res) => {
-    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
-    try { await deleteReward(String((await readBody(req)).id || '')); json(res, 200, { ok: true }); }
-    catch (error) { json(res, 400, { error: error.message }); }
-  },
-
-  'GET /api/admin/loyalty/redemptions': async (req, res) => {
-    const admin = await requireAdminAccount(req, res); if (!admin) return;
-    try { json(res, 200, { redemptions: await listRedemptions() }); }
-    catch (error) { json(res, 503, { error: 'loyalty database unavailable' }); }
-  },
-
-  'POST /api/admin/loyalty/redemptions/update': async (req, res) => {
-    const admin = await requireAdminAccount(req, res); if (!admin) return;
-    const body = await readBody(req);
-    try { json(res, 200, { ok: true, redemption: await updateRedemption({ id: body.id, status: body.status, adminId: admin.id, note: body.note }) }); }
-    catch (error) { json(res, 400, { error: error.message }); }
-  },
-
-  'GET /api/admin/loyalty/rules': async (req, res) => {
-    const admin = await requireAdminAccount(req, res); if (!admin) return;
-    json(res, 200, { rules: await listLoyaltyRules() });
-  },
-
-  'POST /api/admin/loyalty/rules/save': async (req, res) => {
-    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
-    const body = await readBody(req);
-    try {
-      const rule = await saveLoyaltyRule({ id: body.id, name: body.name, eventType: body.event_type, enabled: body.enabled, conditions: body.conditions, actions: body.actions, limits: body.limits, createdBy: admin.id });
-      json(res, 200, { ok: true, rule });
-    } catch (error) { json(res, 400, { error: error.message }); }
-  },
-
-  'POST /api/admin/loyalty/rules/delete': async (req, res) => {
-    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
-    const body = await readBody(req);
-    try { await deleteLoyaltyRule(String(body.id || '')); json(res, 200, { ok: true }); }
-    catch (error) { json(res, 400, { error: error.message }); }
   },
 
   /* ---------- admin dashboard ---------- */
@@ -1649,6 +1573,12 @@ const routeModules = [
     adminDbReady, acceptLoyaltyEvent, langOf, dispatchOutbox, sendPush,
     normaliseAccessEvent, integrationDbReady, integrationDbStatus,
     acceptAccessEvent, applyLoyaltyRules
+  }),
+  ...createLoyaltyRoutes({
+    json, readBody, readSession, requireAdminAccount,
+    getWallet, listRewards, redeemReward,
+    saveReward, deleteReward, listRedemptions, updateRedemption,
+    listLoyaltyRules, saveLoyaltyRule, deleteLoyaltyRule
   }),
   ...createNotificationsRoutes({
     json, readBody, readSession, requireAdminAccount,
