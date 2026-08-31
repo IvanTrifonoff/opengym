@@ -26,10 +26,17 @@
   Лидерборд и TrainerProgram: Программа/Статистика) остались — это
   подсекции страницы, не навигация по разделам.
 
+### Fixes (после деплоя, «админка не отрисовалась»)
+- **AdminApp.jsx**: кнопка «Настроить loyalty» в обзоре вызывала удалённый
+  `setTab('loyalty')` → заменено на роут-переход `go('loyalty')`.
+- **AdminApp.jsx**: `tab`/`go` объявлены ДО `useEffect(…, [tab])` — иначе
+  первый рендер падал с `Cannot access 'tab' before initialization`
+  (TDZ) и срабатывал AdminBoundary «Ошибка интерфейса».
+
 ### Verified
-- Сборка frontend: ✅ (`index-FfMY07T4.js` содержит NavBar)
-- Тесты: 192 frontend green
-- Web-контейнер пересобран и отдаёт свежий бандл
+- Сборка frontend: ✅ (бандл содержит NavBar)
+- Тесты: 192 frontend + 41 api green
+- Web-контейнер пересобран, `/` → 200
 
 ## 1.2.14 — декомпозиция: записи к тренеру вынесены в роут-модуль trainer.js
 
