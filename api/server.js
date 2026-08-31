@@ -1623,7 +1623,48 @@ http.createServer(async (req, res) => {
   // Loyalty outbox dispatcher: safety net for notifications that failed on the
   // first attempt (or were queued while the API was down). Runs every 30s.
   setInterval(() => dispatchOutbox({ send: sendPush }).catch(e => console.error('outbox tick failed:', e.message)), 30000);
+
+/* Retention alerts: when the nightly snapshot shows an athlete got WORSE (active ->
+   at_risk/gone, at_risk -> gone), notify their assigned trainer through the in-app
+   notification center (and a push if the trainer is subscribed). The notification id
+   carries the date, so an athlete whose risk stays high doesn't spam the trainer daily —
+   one alert per athlete per day max, and only on a level change. */
+const LEVEL_ORDER = { active: 0, at_risk: 1, gone: 2 };
+async function notifyRetentionTrainers({ prev, next }) {
+  try {
+    const ta = await listTrainerAssignments();
+    if (!ta.length) return;
+    const byUser = new Map(ta.map(x => [x.user_id, x.trainer_id]));
+    const prevByUser = new Map((prev && prev.athletes || []).map(a => [a.id, a.level]));
+    const today = new Date().toISOString().slice(0, 10);
+    for (const a of next.athletes || []) {
+      const trainerId = byUser.get(a.id);
+      if (!trainerId) continue;
+      const prevLevel = prevByUser.get(a.id);
+      const cur = LEVEL_ORDER[a.level] != null ? LEVEL_ORDER[a.level] : 0;
+      const was = prevLevel && LEVEL_ORDER[prevLevel] != null ? LEVEL_ORDER[prevLevel] : 0;
+      if (!prevLevel || cur <= was) continue;   // only on a real downgrade
+      const label = a.level === 'gone' ? 'ушёл' : a.level === 'at_risk' ? 'в зоне риска' : 'активен';
+      const reason = (a.reasons && a.reasons.length ? a.reasons.join('; ') : 'нет данных').slice(0, 180);
+      const body = `${a.name} — ${label}. ${reason}`;
+      const id = 'ret-' + today + '-' + a.id;
+      await saveNotification({
+        id, userId: 'admin:' + trainerId,
+        title: 'Удержание: спортсмен ' + (a.level === 'gone' ? 'ушёл' : 'в зоне риска'),
+        body, payload: { kind: 'retention', athleteId: a.id, level: a.level }
+      });
+      await sendPush('admin:' + trainerId, {
+        title: 'Удержание', body, tag: 'retention', url: '/trainer/notifications'
+      }).catch(() => {});
+      console.log('[retention] alert trainer', trainerId, 'about', a.name, '->', a.level);
+    }
+  } catch (e) {
+    console.error('[retention] trainer alerts failed:', e.message);
+  }
+}
+
   // Retention: precompute the snapshot nightly (default 04:00, RETENTION_RUN_HOUR overrides).
   scheduleRetentionSnapshot({ users: db.users, stateOf: readState, dataDir: DATA,
-    hour: parseInt(process.env.RETENTION_RUN_HOUR || '4', 10) });
+    hour: parseInt(process.env.RETENTION_RUN_HOUR || '4', 10),
+    onSnapshot: notifyRetentionTrainers });
 });

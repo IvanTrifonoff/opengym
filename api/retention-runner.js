@@ -1,23 +1,27 @@
 /* api/retention-runner.js — nightly batch that precomputes the retention snapshot so the
    /admin/analytics/retention endpoint only filters a cached file (no DB/state scan at day).
    Scheduled inside server.js; hour defaults to 04:00 local and is overridable via
-   RETENTION_RUN_HOUR. Writes data/retention-snapshot.json atomically. */
+   RETENTION_RUN_HOUR. Writes data/retention-snapshot.json atomically and, when an
+   `onSnapshot` callback is supplied, hands it { prev, next } so the caller can react to
+   athletes whose risk level got worse overnight (e.g. notify their trainer). */
 import fs from 'node:fs';
 import path from 'node:path';
 import { collectRetention } from './retention.js';
 
 export async function buildRetentionSnapshot({ users, stateOf, dataDir, now = Date.now() }) {
-  const snap = await collectRetention({ users, stateOf, now });
   const file = path.join(dataDir, 'retention-snapshot.json');
+  let prev = null;
+  try { prev = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* first run */ }
+  const snap = await collectRetention({ users, stateOf, now });
   const tmp = file + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(snap, null, 2));
   fs.renameSync(tmp, file);
-  return snap;
+  return { snap, prev };
 }
 
 // Lightweight in-process scheduler: fire at the configured hour once per day. Uses a longer
 // check interval so we don't spin constantly, and never blocks the event loop.
-export function scheduleRetentionSnapshot({ users, stateOf, dataDir, hour, now = Date.now() }) {
+export function scheduleRetentionSnapshot({ users, stateOf, dataDir, hour, onSnapshot, now = Date.now() }) {
   const H = Number.isInteger(hour) ? ((hour % 24) + 24) % 24 : 4;
   let lastRunDate = null;
   const run = async () => {
@@ -25,8 +29,9 @@ export function scheduleRetentionSnapshot({ users, stateOf, dataDir, hour, now =
     if (d.getHours() === H && lastRunDate !== d.toDateString()) {
       lastRunDate = d.toDateString();
       try {
-        const snap = await buildRetentionSnapshot({ users, stateOf, dataDir, now: d.getTime() });
+        const { snap, prev } = await buildRetentionSnapshot({ users, stateOf, dataDir, now: d.getTime() });
         console.log(`[retention] snapshot rebuilt at ${d.toISOString()} (${snap.athletes.length} athletes)`);
+        if (typeof onSnapshot === 'function') await onSnapshot({ prev, next: snap, at: d.getTime() });
       } catch (e) {
         console.error('[retention] nightly rebuild failed:', e.message);
       }
