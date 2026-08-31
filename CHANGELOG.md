@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.10.2 — 2026-08-31
+
+«Постоянные клиенты»: спортсмен теперь узнаёт о закреплённых слотах.
+
+- 🔔 **On series creation** the athlete gets a notification-center entry + push:
+  «Artem! Тренер закрепил за вами слоты: Пн 18:00. Они бронируются вперёд на 8 недель —
+  эти времена больше не сможет занять другой спортсмен.» (tap → /notifications).
+- 🔕 **On series deletion** a short notice: «Постоянные тренировки отменены».
+- Idempotent ids (`rec-<series>` / `rec-del-<series>`), so re-saving the same series never
+  duplicates the notification.
+
+### Verified
+- End-to-end: created a series → row `rec-<series>` appeared for the athlete with the exact
+  Russian text; deleted it → `rec-del-<series>` row + all recurring rows removed. Tests: 192 passed.
+
 ## v1.10.1 — 2026-08-31
 
 «Постоянные клиенты»: понятные подсказки, когда время не входит в часы работы тренера.

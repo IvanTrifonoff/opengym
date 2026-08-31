@@ -1611,6 +1611,23 @@ const routes = {
       });
       if (!clean.length) return json(res, 400, { error: 'at least one day is required' });
       const r = await setRecurringSeries({ trainerId, athleteId, rules: clean });
+      const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+      const when = clean.map(x => days[x.weekday] + ' ' + x.time).join(', ');
+      try {
+        await saveNotification({
+          id: 'rec-' + r.seriesId, userId: athleteId,
+          title: 'Постоянные тренировки с тренером',
+          body: (u.name || 'Спортсмен').slice(0, 60) + '! Тренер закрепил за вами слоты: ' + when
+            + '. Они бронируются вперёд на 8 недель — эти времена больше не сможет занять другой спортсмен.',
+          payload: { kind: 'recurring', seriesId: r.seriesId }
+        });
+        await sendPush(athleteId, {
+          title: 'Постоянные тренировки с тренером',
+          body: 'Закреплены слоты: ' + when,
+          tag: 'recurring-' + r.seriesId, url: '/notifications',
+          data: { kind: 'recurring', seriesId: r.seriesId }
+        }).catch(() => {});
+      } catch (e) { console.error('recurring notify failed:', e.message); }
       json(res, 200, { ok: true, series_id: r.seriesId, created: r.created });
     } catch (error) {
       console.error('recurring set failed:', error.message);
@@ -1625,6 +1642,14 @@ const routes = {
     const trainerId = admin.role === 'trainer' ? admin.id : String(body.trainer_id || admin.id);
     try {
       const r = await deleteRecurringSeries({ trainerId, athleteId });
+      if (r.seriesId) {
+        try {
+          await saveNotification({ id: 'rec-del-' + r.seriesId, userId: athleteId,
+            title: 'Постоянные тренировки отменены',
+            body: 'Тренер убрал закреплённые за вами постоянные слоты.',
+            payload: { kind: 'recurring' } });
+        } catch (e) { console.error('recurring delete notify failed:', e.message); }
+      }
       json(res, 200, { ok: true, series_id: r.seriesId });
     } catch (error) {
       console.error('recurring delete failed:', error.message);
