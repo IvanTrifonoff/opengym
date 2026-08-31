@@ -223,6 +223,7 @@ CREATE TABLE IF NOT EXISTS recurring_skips (
 );
 ALTER TABLE coach_bookings ADD COLUMN IF NOT EXISTS series_id TEXT;
 CREATE INDEX IF NOT EXISTS coach_bookings_series_idx ON coach_bookings (series_id);
+ALTER TABLE coach_bookings ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ;
 `;
 
 export const adminDbReady = (async () => {
@@ -235,12 +236,6 @@ export const adminDbReady = (async () => {
     await pool.query(BADGE_SEEN_MIGRATION);
     await pool.query(AVAILABILITY_MIGRATION);
     await pool.query(RECURRING_MIGRATION);
-    await pool.query(OUTBOX_MIGRATION);
-    await pool.query(OUTBOX_MIGRATION);
-    await pool.query(OUTBOX_MIGRATION);
-    await pool.query(OUTBOX_MIGRATION);
-    await pool.query(OUTBOX_MIGRATION);
-    await pool.query(OUTBOX_MIGRATION);
     await pool.query(OUTBOX_MIGRATION);
   } catch (error) {
     initError = error;
@@ -1015,4 +1010,19 @@ export async function unskipRecurringDate({ trainerId, athleteId, date }) {
   await pool.query(`DELETE FROM recurring_skips WHERE series_id = $1 AND date = $2`, [seriesId, date]);
   await materializeRecurringSeries({ trainerId, seriesId });
   return { seriesId };
+}
+
+// --- Upcoming-session reminders: list confirmed bookings on a target date whose reminder
+// has not been sent yet, and mark them as reminded once pushed. ---
+export async function listDueReminders({ targetDate, limit = 300 }) {
+  await ready();
+  const r = await pool.query(
+    `SELECT id, trainer_id, athlete_id, date, time, note FROM coach_bookings
+     WHERE date = $1 AND status = 'confirmed' AND reminded_at IS NULL
+     ORDER BY time LIMIT $2`, [targetDate, limit]);
+  return r.rows;
+}
+export async function markBookingReminded({ id }) {
+  await ready();
+  await pool.query(`UPDATE coach_bookings SET reminded_at = now() WHERE id = $1`, [id]);
 }

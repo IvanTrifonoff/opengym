@@ -19,7 +19,8 @@ import {
   setTrainerAssignment, listTrainerAssignments,
   getTrainerAvailability, setTrainerAvailability, listBookings, createBooking,
   findBookingConflict, getBooking, updateBookingStatus,
-  listRecurringSeries, listRecurringSkips, listRecurringSummary, setRecurringSeries, deleteRecurringSeries, skipRecurringDate, unskipRecurringDate, rollRecurringForward
+  listRecurringSeries, listRecurringSkips, listRecurringSummary, setRecurringSeries, deleteRecurringSeries, skipRecurringDate, unskipRecurringDate, rollRecurringForward,
+  listDueReminders, markBookingReminded
 } from './admin-db.js';
 import { collectAnalytics, athleteDetail } from './analytics.js';
 import { buildRetentionSnapshot, scheduleRetentionSnapshot } from './retention-runner.js';
@@ -1881,6 +1882,40 @@ async function notifyRetentionOwner({ prev, next }) {
   }
 }
 
+/* Upcoming-session reminders: for every confirmed booking on the target date (default the
+   day after tomorrow-lead) that hasn't been reminded yet, push + notify the athlete. Covers
+   both one-off and «постоянные» (recurring) sessions. Idempotent via reminded_at. */
+async function runReminders() {
+  try {
+    const lead = Math.max(0, parseInt(process.env.REMINDER_LEAD_DAYS || '1', 10));
+    const d = new Date(); d.setDate(d.getDate() + lead);
+    const target = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const rows = await listDueReminders({ targetDate: target });
+    if (!rows.length) return;
+    const admins = await listAdmins();
+    const tName = new Map(admins.map(a => [a.id, a.name]));
+    for (const b of rows) {
+      const lang = langOf(b.athlete_id);
+      const ru = lang !== 'en';
+      const title = ru ? 'Напоминаем про тренировку' : 'Upcoming session reminder';
+      const when = b.time;
+      const who = tName.get(b.trainer_id);
+      const body = ru
+        ? 'Завтра в ' + when + (who ? ' у вас тренировка с ' + who : ' у вас тренировка с тренером') + '.'
+        : 'Tomorrow at ' + when + (who ? ' with ' + who + '.' : ' with your trainer.');
+      try {
+        await saveNotification({ id: 'rem-' + b.id, userId: b.athlete_id, title, body, payload: { kind: 'reminder', booking_id: b.id, date: b.date, time: b.time } });
+        await sendPush(b.athlete_id, { title, body, tag: 'reminder-' + b.id, url: '/notifications', data: { booking_id: b.id, time: b.time } }).catch(() => {});
+      } catch (e) { console.error('[reminder] notify failed for', b.id, e.message); }
+      await markBookingReminded({ id: b.id });
+    }
+    console.log('[reminder] sent', rows.length, 'reminders for', target);
+  } catch (e) {
+    console.error('[reminder] run failed:', e.message);
+  }
+}
+
+
 
   // Retention: precompute the snapshot nightly (default 04:00, RETENTION_RUN_HOUR overrides).
   scheduleRetentionSnapshot({ users: db.users, stateOf: readState, dataDir: DATA,
@@ -1889,4 +1924,7 @@ async function notifyRetentionOwner({ prev, next }) {
   // Roll "постоянные" booking horizons forward daily (GET endpoints also roll lazily).
   setTimeout(() => rollRecurringForward().catch(() => {}), 10000);
   setInterval(() => rollRecurringForward().catch(() => {}), 24 * 60 * 60 * 1000);
+  // Upcoming-session reminders: fire shortly after boot and every N minutes.
+  setTimeout(() => runReminders(), 15000);
+  setInterval(() => runReminders(), Math.max(5, parseInt(process.env.REMINDER_INTERVAL_MIN || '20', 10)) * 60000);
 });

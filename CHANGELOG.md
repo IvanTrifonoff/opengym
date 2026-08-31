@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.10.5 — 2026-08-31
+
+Напоминания о предстоящей тренировке (за день).
+
+- ⏰ **Upcoming-session reminders**: the night runner now pushes + notifies the athlete for
+  every confirmed booking on the target date (default lead = 1 day, `REMINDER_LEAD_DAYS`
+  overrides). Covers both one-off and «постоянные» (recurring) sessions.
+- 🔁 **Idempotent via `reminded_at`** on `coach_bookings`: each booking is reminded at most
+  once, no duplicates across boot-fires or interval runs (`REMINDER_INTERVAL_MIN`, default
+  20 min).
+- 🌍 Bilingual messages (ru/en by athlete language), tap-through to `/notifications`.
+- 🧹 Fixed `OUTBOX_MIGRATION` executed 7× at startup (now once).
+
+### Verified
+- Booking tomorrow (2026-09-01) for Artem: boot-fire sent 1 reminder, notification
+  `rem-<booking>` created, `reminded_at` stamped; second run produced no duplicates.
+  Test data cleaned afterwards. Tests: 192 passed.
+
+
 ## v1.10.4 — 2026-08-31
 
 Постоянные серии учтены в модели удержания.
