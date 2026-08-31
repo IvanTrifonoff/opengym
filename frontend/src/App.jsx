@@ -10,7 +10,10 @@ import { useWakeLock } from './lib/wakelock.js'
 import { refreshBadge } from './lib/badge.js'
 import { startFlow } from './sheets.jsx'
 import Icon from './components/Icon.jsx'
-import TabBar from './components/TabBar.jsx'
+import NavBar from './components/NavBar.jsx'
+import { t } from './lib/i18n.js'
+import { effectiveRoutine } from './lib/history.js'
+import { todayISO } from './lib/format.js'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import Modals from './components/Modals.jsx'
 import Toast from './components/Toast.jsx'
@@ -41,6 +44,7 @@ function applyPrefs(theme, accent) {
 function Shell() {
   const navigate = useNavigate()
   const loc = useLocation()
+  const cur = loc.pathname.split('/')[1] || 'home'
   const { S, user, ready } = useStore()
   const isGuest = useStore(s => s.isGuest())
   const langV = useLang()   // re-renders the whole shell when the language (pack) changes
@@ -97,7 +101,27 @@ function Shell() {
           )}
         </ErrorBoundary>
       </div>
-      <TabBar onStart={startFlow} />
+      <NavBar
+        items={[
+          { key: 'home', icon: 'house', label: t('Home'), to: '/home' },
+          { key: 'plan', icon: 'calendar', label: t('Plan'), to: '/plan' },
+          { key: 'stats', icon: 'chart', label: t('Stats'), to: '/stats' },
+          { key: 'library', icon: 'list', label: t('Exercises'), to: '/library' }
+        ]}
+        selected={cur}
+        center={{
+          icon: S.active ? 'play' : 'dumbbell',
+          label: S.active ? t('Resume') : t('Start'),
+          active: !!S.active,
+          onClick: () => {
+            if (!S.active) {
+              const r = effectiveRoutine(S, todayISO())
+              if (r && r.ex.length) { startFlow(r.id); return }
+            }
+            navigate('/workout')
+          }
+        }}
+      />
       <RestTimer />
       <Modals />
       <Toast />

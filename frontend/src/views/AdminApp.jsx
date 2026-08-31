@@ -1,7 +1,8 @@
 import { Component, useEffect, useState } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, passkeyAdminLogin, passkeyAdminRegister } from '../lib/api.js'
 import Icon from '../components/Icon.jsx'
+import NavBar from '../components/NavBar.jsx'
 import { Button, Switch } from '../components/ui.jsx'
 import { loyaltyHelpSheet } from '../components/LoyaltyHelp.jsx'
 import Analytics from './Analytics.jsx'
@@ -202,7 +203,7 @@ function Invites({ admin }) {
 
 function AdminDashboard({ admin, onLogout }) {
   const nav = useNavigate()
-  const [tab, setTab] = useState('overview'); const [staff, setStaff] = useState([]); const [rules, setRules] = useState([]); const [push, setPush] = useState(null)
+  const [sp] = useSearchParams(); const [staff, setStaff] = useState([]); const [rules, setRules] = useState([]); const [push, setPush] = useState(null)
   useEffect(() => {
     api('/api/admin/staff').then(d => setStaff(d.admins || [])).catch(() => {})
     api('/api/admin/loyalty/rules').then(d => setRules(d.rules || [])).catch(() => {})
@@ -211,6 +212,8 @@ function AdminDashboard({ admin, onLogout }) {
   const resetPush = () => api('/api/admin/push/status/reset', { method: 'POST', body: '{}' })
     .then(() => api('/api/admin/push/status').then(setPush)).catch(() => {})
   const lastPushFail = push?.stats?.failures?.length ? push.stats.failures[push.stats.failures.length - 1] : null
+  const tab = sp.get('tab') || 'overview'
+  const go = v => nav('/admin' + (v === 'overview' ? '' : '?tab=' + v))
   const pushTile = push ? (push.degraded ? 'сбои' : 'ok') : '—'
   const canEdit = admin.role === 'owner' || admin.role === 'manager'
   const tabs = [['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ['staff', 'Сотрудники'], ...(canEdit ? [['invites', 'Приглашения']] : [])]
@@ -218,7 +221,16 @@ function AdminDashboard({ admin, onLogout }) {
   return <div className="narrow" style={{ paddingBottom: 40 }}>
     <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">openGym Admin</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {admin.role}</div></div><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" onClick={() => nav('/admin/analytics')} aria-label="Аналитика"><Icon name="chart" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
     {admin.impersonated && <div className="card" style={{ borderColor: 'var(--acc)', marginBottom: 14 }}><div className="row between" style={{ gap: 8 }}><div className="small">Вы смотрите интерфейс от имени <b>{admin.name}</b> · {admin.role}</div><Button size="sm" variant="primary" onClick={back}>Вернуться</Button></div></div>}
-    <div className="seg" style={{ marginBottom: 16, '--n': tabs.length, '--i': tabs.map(([v]) => v).indexOf(tab) }}><span className="seg-sel" />{tabs.map(([v, label]) => <button key={v} className={tab === v ? 'on' : ''} onClick={() => setTab(v)}>{label}</button>)}</div>
+    <NavBar
+      selected={tab}
+      items={[
+        { key: 'overview', icon: 'house', label: 'Обзор', onClick: () => go('overview') },
+        { key: 'loyalty', icon: 'crown', label: 'Loyalty', onClick: () => go('loyalty') },
+        { key: 'rewards', icon: 'medal', label: 'Награды', onClick: () => go('rewards') },
+        { key: 'staff', icon: 'person', label: 'Сотрудники', onClick: () => go('staff') },
+        ...(canEdit ? [{ key: 'invites', icon: 'link', label: 'Приглашения', onClick: () => go('invites') }] : [])
+      ]}
+    />
     {tab === 'overview' && <><div className="tiles"><div className="tile"><div className="l">Сотрудники</div><div className="v">{staff.length || '—'}</div></div><div className="tile"><div className="l">Правила</div><div className="v">{rules.length || '—'}</div></div><div className="tile"><div className="l">Пуши</div><div className="v" style={{ fontSize: '1rem', color: push?.degraded ? 'var(--red)' : 'var(--green)' }}>{pushTile}</div></div><div className="tile"><div className="l">Роль</div><div className="v" style={{ fontSize: '1rem' }}>{admin.role}</div></div><div className="tile"><div className="l">База</div><div className="v" style={{ fontSize: '1rem', color: 'var(--green)' }}>online</div></div></div>{push?.degraded && <div className="card" style={{ borderColor: 'var(--red)', marginBottom: 12, background: 'color-mix(in srgb,var(--red) 7%,var(--bg-el))' }}><div className="row between" style={{ gap: 10 }}><div className="grow"><div style={{ fontWeight: 600, color: 'var(--red)' }}>Сбои доставки push-уведомлений</div><div className="small dim" style={{ marginTop: 3 }}>не отправлено {push.stats?.failed || 0} шт. за 24 ч{lastPushFail ? ' · последний: ' + lastPushFail.host + (lastPushFail.status ? ' · ' + lastPushFail.status : '') + (lastPushFail.error ? ' · ' + lastPushFail.error : '') : ''}{push.webhookConfigured ? '' : ' · вебхук-алерт не настроен'}</div></div>{canEdit && <Button size="sm" variant="ghost" onClick={resetPush}>Сбросить</Button>}</div></div>}<div className="card"><h2 style={{ marginTop: 0 }}>Быстрый старт</h2><p className="dim">Создайте правило «Посещение» и выдайте сотруднику invite-код. События СКУД начнут начислять баллы после привязки member_key к профилю спортсмена.</p><Button variant="primary" onClick={() => setTab('loyalty')}>Настроить loyalty</Button></div></>}
     {tab === 'loyalty' && <Loyalty canEdit={canEdit} />}
     {tab === 'rewards' && <Rewards canEdit={canEdit} />}

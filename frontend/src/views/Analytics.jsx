@@ -5,6 +5,7 @@ import { EXIDX } from '../lib/exercises.js'
 import { exName } from '../lib/i18n.js'
 import { fmtDate } from '../lib/format.js'
 import Icon from '../components/Icon.jsx'
+import NavBar from '../components/NavBar.jsx'
 import { Button } from '../components/ui.jsx'
 import LineChart from '../components/LineChart.jsx'
 import TrainerProgram from './TrainerProgram.jsx'
@@ -216,6 +217,16 @@ export default function Analytics({ admin }) {
         <div className="sub">{admin.name} · {admin.role} · {scopeLabel}</div>
       </div>
     </div>
+
+    <NavBar
+      selected="analytics"
+      items={[
+        { key: 'overview', icon: 'house', label: 'Обзор', to: '/admin' },
+        { key: 'analytics', icon: 'chart', label: 'Аналитика', to: '/admin/analytics' },
+        { key: 'rewards', icon: 'medal', label: 'Награды', to: '/admin?tab=rewards' },
+        { key: 'staff', icon: 'person', label: 'Сотрудники', to: '/admin?tab=staff' }
+      ]}
+    />
 
     {impErr && <div className="small" style={{ color: 'var(--red)', marginBottom: 10 }}>{impErr}</div>}
 

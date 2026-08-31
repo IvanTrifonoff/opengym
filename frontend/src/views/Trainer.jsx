@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api.js'
 import Icon from '../components/Icon.jsx'
+import NavBar from '../components/NavBar.jsx'
 import { Button } from '../components/ui.jsx'
 import { AthleteCard, StatusTag, daysAgo } from './Analytics.jsx'
 import TrainerProgram from './TrainerProgram.jsx'
@@ -114,11 +115,16 @@ export default function Trainer({ admin, onLogout }) {
 
     {admin.impersonated && <div className="card" style={{ borderColor: 'var(--acc)', marginBottom: 14 }}><div className="row between" style={{ gap: 8 }}><div className="small">Вы смотрите интерфейс от имени <b>{admin.name}</b> · {admin.role}</div><Button size="sm" variant="primary" onClick={back}>Вернуться</Button></div></div>}
 
-    <div className="seg" style={{ marginBottom: 16, '--n': 3, '--i': ['athletes', 'add', 'calendar'].indexOf(tab) }}>
-      <span className="seg-sel" />
-      {[['athletes', 'Спортсмены'], ['add', 'Добавить'], ['calendar', 'Календарь']].map(([v, label]) =>
-        <button key={v} className={tab === v ? 'on' : ''} style={v === 'calendar' && pendingCount > 0 ? { position: 'relative' } : undefined} onClick={() => setTab(v)}>{label}{v === 'calendar' && pendingCount > 0 && <span className="tab-badge">{pendingCount > 9 ? '9+' : pendingCount}</span>}</button>)}
-    </div>
+    <NavBar
+      selected={tab}
+      badges={{ calendar: pendingCount, notifications: unread }}
+      items={[
+        { key: 'athletes', icon: 'person', label: 'Спортсмены', onClick: () => setTab('athletes') },
+        { key: 'calendar', icon: 'calendar', label: 'Календарь', onClick: () => setTab('calendar') },
+        { key: 'add', icon: 'plus', label: 'Добавить', onClick: () => setTab('add') },
+        { key: 'notifications', icon: 'bell', label: 'Уведомления', to: '/trainer/notifications' }
+      ]}
+    />
     {error && <div className="small" style={{ color: 'var(--red)', marginBottom: 10 }}>{error}</div>}
 
     {tab === 'athletes' && <>
