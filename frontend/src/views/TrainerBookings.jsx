@@ -42,7 +42,13 @@ export default function TrainerBookings({ admin }) {
   const load = () => Promise.all([
     api('/api/admin/trainer/availability').then(d => {
       setAvailability(d.availability || [])
-      setHours((d.availability || []).length ? d.availability : [1, 2, 3, 4, 5].map(wd => ({ weekday: wd, time_start: '09:00', time_end: '18:00' })))
+      const map = {}
+      for (const a of (d.availability || [])) {
+        if (!map[a.weekday]) map[a.weekday] = []
+        map[a.weekday].push({ time_start: a.time_start, time_end: a.time_end })
+      }
+      if (!(d.availability || []).length) for (let wd = 1; wd <= 5; wd++) map[wd] = [{ time_start: '09:00', time_end: '18:00' }]
+      setHours(map)
     }),
     api('/api/admin/trainer/bookings?from=' + days[0] + '&to=' + days[days.length - 1]).then(d => setBookings(d.bookings || [])),
     api('/api/admin/analytics/athletes').then(d => setRoster(d.athletes || [])).catch(() => {})
@@ -51,7 +57,10 @@ export default function TrainerBookings({ admin }) {
 
   const saveHours = () => {
     setBusy('hours')
-    api('/api/admin/trainer/availability', { method: 'POST', body: JSON.stringify({ slots: hours.filter(h => h.time_start && h.time_end) }) })
+    const slots = []
+    for (const wd of Object.keys(hours)) for (const iv of (hours[wd] || []))
+      if (iv.time_start && iv.time_end) slots.push({ weekday: +wd, time_start: iv.time_start, time_end: iv.time_end })
+    api('/api/admin/trainer/availability', { method: 'POST', body: JSON.stringify({ slots }) })
       .then(d => { setAvailability(d.availability || []); setShowHours(false); setErr('') })
       .catch(e => setErr(e.message)).finally(() => setBusy(''))
   }
@@ -84,15 +93,25 @@ export default function TrainerBookings({ admin }) {
 
     {showHours && <div className="card" style={{ marginBottom: 12 }}>
       <div className="row between"><h3 style={{ margin: 0 }}>Часы работы</h3><button className="iconbtn" onClick={() => setShowHours(false)}><Icon name="xmark" /></button></div>
-      <p className="dim small" style={{ margin: '6px 0 10px' }}>Выходной — оставьте время пустым. Слоты создаются каждый час.</p>
-      {hours.map((h, i) => <div className="row" key={h.weekday} style={{ gap: 8, marginBottom: 6 }}>
-        <span style={{ width: 34, fontWeight: 500 }}>{DAYS[h.weekday]}</span>
-        <input type="time" className="field" style={{ flex: 1, padding: '6px 8px' }} value={h.time_start}
-          onChange={e => setHours(prev => prev.map((x, j) => j === i ? { ...x, time_start: e.target.value } : x))} />
-        <span className="dim">—</span>
-        <input type="time" className="field" style={{ flex: 1, padding: '6px 8px' }} value={h.time_end}
-          onChange={e => setHours(prev => prev.map((x, j) => j === i ? { ...x, time_end: e.target.value } : x))} />
-      </div>)}
+      <p className="dim small" style={{ margin: '6px 0 10px' }}>Рабочий день — один или несколько интервалов (например 09:00–12:00 и 16:00–21:00). День без интервалов — выходной. Слоты создаются каждый час.</p>
+      {DAYS.map((dname, wd) => {
+        const list = hours[wd] || []
+        return <div key={wd} style={{ marginBottom: 10 }}>
+          <div className="row" style={{ gap: 6, alignItems: 'center', marginBottom: 4 }}>
+            <span style={{ width: 34, fontWeight: 500 }}>{dname}</span>
+            {list.length ? <span className="small dim">рабочий</span> : <span className="small" style={{ color: 'var(--label-3)' }}>выходной</span>}
+          </div>
+          {list.map((iv, j) => <div className="row" key={j} style={{ gap: 6, marginBottom: 4 }}>
+            <input type="time" className="field" style={{ flex: 1, padding: '6px 8px' }} value={iv.time_start}
+              onChange={e => setHours(prev => ({ ...prev, [wd]: prev[wd].map((x, k) => k === j ? { ...x, time_start: e.target.value } : x) }))} />
+            <span className="dim">—</span>
+            <input type="time" className="field" style={{ flex: 1, padding: '6px 8px' }} value={iv.time_end}
+              onChange={e => setHours(prev => ({ ...prev, [wd]: prev[wd].map((x, k) => k === j ? { ...x, time_end: e.target.value } : x) }))} />
+            <button className="iconbtn" onClick={() => setHours(prev => ({ ...prev, [wd]: prev[wd].filter((x, k) => k !== j) }))} aria-label="Удалить интервал"><Icon name="xmark" /></button>
+          </div>)}
+          <button className="btn xs plain" onClick={() => setHours(prev => ({ ...prev, [wd]: [...(prev[wd] || []), { time_start: '09:00', time_end: '18:00' }] }))}>+ Интервал</button>
+        </div>
+      })}
       <Button variant="primary" size="sm" style={{ marginTop: 8 }} onClick={saveHours} disabled={busy === 'hours'}>{busy === 'hours' ? 'Сохранение…' : 'Сохранить часы'}</Button>
     </div>}
 

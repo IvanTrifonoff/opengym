@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.9.1 — 2026-08-31
+
+Fixed the trainer hours editor: the split-schedule UI (multiple intervals per day) was accidentally reverted.
+
+### What broke
+
+- Commit f9ab448 (trainer badge counter) rewrote `TrainerBookings.jsx` from an older baseline, silently dropping the split-shift editor added in 64837ed. Trainers were back to the old single-interval-per-day UI — no «+ Интервал» button, no per-day interval lists, no day-off marking beyond clearing the time fields.
+- The backend and the athlete-facing booking sheet (`CoachSheet.jsx`) never lost multi-interval support, so data written before the revert still worked — only the trainer's editor UI regressed.
+
+### Fixed
+
+- 🕐 **Split-shift editor restored** in the «Календарь → Часы работы» panel: each day shows its own interval list with «+ Интервал» / delete buttons and a рабочий/выходной marker; a day without intervals is a day off. Help text explains the pattern (e.g. 09:00–12:00 и 16:00–21:00).
+- Hours state is again grouped per weekday (`weekday → intervals[]`), `saveHours` flattens it into slots, and slot generation merges every interval of a day — exactly as in 64837ed.
+- Kept the badge-event dispatch (`trainer-bookings-changed`) and the merged `daySlots` from the later fixes.
+
+### Verified
+
+- End-to-end in headless Chrome as the trainer: set Пн to 09:00–12:00 + 16:00–21:00, saved, and the calendar showed free slots 09:00, 10:00, 16:00, 17:00, 18:00, 19:00, 20:00. Overlapping intervals are correctly rejected by server validation (no data corruption). Original schedule restored afterwards. Tests: 192 passed.
+
 ## v1.9.0 — 2026-08-31
 
 Retention analytics: why athletes leave, computed at night, shown to the gym owner and trainers.
