@@ -19,11 +19,6 @@
 - `frontend/src/views/AdminApp.jsx`: добавлены `useLang()` и инициализация
   языка `setLang(detectBrowserLang())` в корне админ-портала.
 
-### Added (в репозиторий впервые)
-- `.github/workflows/ci.yml` — CI: сборка frontend + api и автотесты на каждый
-  push/PR в `dev` (сигнал готовности, без деплоя).
-- `.github/workflows/cd.yml` — ручной CD через `workflow_dispatch`.
-
 ## 1.2.15 — единый адаптивный NavBar: навигация унифицирована для всех ролей
 
 ### Changed
