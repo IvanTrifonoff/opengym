@@ -745,3 +745,15 @@ First public release. A complete, self-hostable gym & body-weight tracker.
 **Notes**
 - Exercise media (~140 MB) is fetched from [hasaneyldrm/exercises-dataset](https://github.com/hasaneyldrm/exercises-dataset) on first run.
 - Licensed under GNU AGPL v3.0.
+
+## 1.0.6 — Redis container in compose
+
+### Added
+- `redis` service in `docker-compose.yml` (redis:7-alpine, named volume `redisdata`,
+  AOF on, `maxmemory 128mb` + `allkeys-lru`) — reserved backend for sessions,
+  cache and rate-limit. Container healthchecked; the api adopts it via `REDIS_URL`
+  incrementally, so the stack is prod-ready even before that wiring.
+
+### Changed
+- Comment on `media`: clarified that exercise media is already committed in the
+  repo, so a dead upstream dataset cannot break a fresh deploy.
