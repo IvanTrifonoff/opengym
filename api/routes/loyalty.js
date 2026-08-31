@@ -14,6 +14,7 @@ export function createLoyaltyRoutes(deps) {
   } = deps;
 
   return [
+    // Спортсмен: баланс баллов и активный стрик.
     {
       method: 'GET',
       path: '/api/loyalty/wallet',
@@ -25,6 +26,7 @@ export function createLoyaltyRoutes(deps) {
       }
     },
 
+    // Спортсмен: список доступных наград (только активные, с остатком).
     {
       method: 'GET',
       path: '/api/loyalty/rewards',
@@ -36,6 +38,8 @@ export function createLoyaltyRoutes(deps) {
       }
     },
 
+    // Спортсмен: погасить награду — транзакция списывает баллы,
+    // auto_code выдаёт код сразу, staff — заявка для выдачи тренером.
     {
       method: 'POST',
       path: '/api/loyalty/redeem',
@@ -48,6 +52,7 @@ export function createLoyaltyRoutes(deps) {
       }
     },
 
+    // Админ: все награды (включая скрытые) для управления.
     {
       method: 'GET',
       path: '/api/admin/loyalty/rewards',
@@ -57,6 +62,7 @@ export function createLoyaltyRoutes(deps) {
       }
     },
 
+    // Админ (owner/manager): создать/обновить награду.
     {
       method: 'POST',
       path: '/api/admin/loyalty/rewards/save',
@@ -71,6 +77,7 @@ export function createLoyaltyRoutes(deps) {
       }
     },
 
+    // Админ (owner/manager): удалить награду.
     {
       method: 'POST',
       path: '/api/admin/loyalty/rewards/delete',
@@ -81,6 +88,7 @@ export function createLoyaltyRoutes(deps) {
       }
     },
 
+    // Админ: все заявки на погашение (для выдачи на ресепшене).
     {
       method: 'GET',
       path: '/api/admin/loyalty/redemptions',
@@ -91,6 +99,7 @@ export function createLoyaltyRoutes(deps) {
       }
     },
 
+    // Админ: сменить статус выдачи (в т.ч. fulfilled/refunded).
     {
       method: 'POST',
       path: '/api/admin/loyalty/redemptions/update',
@@ -102,6 +111,7 @@ export function createLoyaltyRoutes(deps) {
       }
     },
 
+    // Админ: правила начисления баллов.
     {
       method: 'GET',
       path: '/api/admin/loyalty/rules',
@@ -111,6 +121,7 @@ export function createLoyaltyRoutes(deps) {
       }
     },
 
+    // Админ (owner/manager): создать/обновить правило.
     {
       method: 'POST',
       path: '/api/admin/loyalty/rules/save',
@@ -124,6 +135,7 @@ export function createLoyaltyRoutes(deps) {
       }
     },
 
+    // Админ (owner/manager): удалить правило.
     {
       method: 'POST',
       path: '/api/admin/loyalty/rules/delete',

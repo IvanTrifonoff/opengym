@@ -10,6 +10,7 @@ export function createNotificationsRoutes(deps) {
   } = deps;
 
   return [
+    // Спортсмен: свой центр уведомлений (то же, что видит тренер в /trainer).
     {
       method: 'GET',
       path: '/api/notifications',
@@ -23,6 +24,7 @@ export function createNotificationsRoutes(deps) {
       }
     },
 
+    // Пометить прочитанными: без id — все сразу, с id — одно.
     {
       method: 'POST',
       path: '/api/notifications/read',
@@ -38,6 +40,7 @@ export function createNotificationsRoutes(deps) {
       }
     },
 
+    // Сброс счётчика бейджа при открытии приложения (после просмотра).
     {
       method: 'POST',
       path: '/api/badge/seen',
@@ -52,6 +55,7 @@ export function createNotificationsRoutes(deps) {
       }
     },
 
+    // Trainer notification center: same app_notifications table, scoped to the admin session.
     {
       method: 'GET',
       path: '/api/admin/notifications',
@@ -64,6 +68,7 @@ export function createNotificationsRoutes(deps) {
       }
     },
 
+    // Пометить прочитанными уведомления тренера/админа.
     {
       method: 'POST',
       path: '/api/admin/notifications/read',

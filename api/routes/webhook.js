@@ -13,6 +13,9 @@ export function createWebhookRoutes(deps) {
   } = deps;
 
   return [
+    // Лояльность: внешние системы шлют события (visit/workout/streak/referral).
+    // Секрет в заголовке (webhookSecretMatches); баллы начисляет acceptLoyaltyEvent,
+    // после чего outbox развозит уведомления.
     {
       method: 'POST',
       path: '/api/integrations/loyalty/events',
@@ -38,6 +41,8 @@ export function createWebhookRoutes(deps) {
       }
     },
 
+    // Турникет: событие прохода сопоставляется с участником (normaliseAccessEvent),
+    // визит дополнительно прогоняется через loyalty-правила.
     {
       method: 'POST',
       path: '/api/integrations/access/events',

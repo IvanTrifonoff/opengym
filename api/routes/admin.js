@@ -1,8 +1,13 @@
-// Admin domain: /api/admin/* — auth, impersonation, staff, users, analytics,
-// retention, trainer calendar (bookings/availability/recurring), integrations, invites.
-// Factory pattern: createAdminRoutes(deps) returns [{ method, path, handler }] entries
-// that server.js registers into the shared router. All behaviour is a 1:1 import from
-// the monolith — nothing here was rewritten.
+// api/routes/admin.js — админ-панель: все роуты /api/admin/*.
+//
+// Фабрика: принимает зависимости и возвращает [{ method, path, handler }].
+// Вынесено из монолита server.js — поведение идентично (импорт, не копия).
+// Контуры:
+//   - auth/impersonation: passkey-вход, «войти как» (owner), восстановление сессии
+//   - staff/users: инвайты/регистрация сотрудников, список и блокировка спортсменов
+//   - analytics: KPI, спортсмены (drill-down), лидерборд, тренеры, удержание
+//   - trainer calendar: брони, статусы, часы работы, постоянные клиенты
+//   - integrations/invites: привязка турникета, коды приглашений
 export function createAdminRoutes(deps) {
   const {
     json, readBody,
@@ -82,8 +87,6 @@ export function createAdminRoutes(deps) {
   } },
   { method: 'POST', path: '/api/admin/auth/logout', handler: async (req, res) => json(res, 200, { ok: true }, { 'Set-Cookie': [clearAdminCookie, clearOrigCookie] }) },
 
-  // Owner-only: sign in as any athlete (fresh `gymsid`) or as staff (`impersonate:`
-  // session; the original admin session is parked in `adminsid_orig` to restore).
   // Owner-only: sign in as any athlete (a fresh `gymsid` cookie — the owner's admin session is
   // untouched) or as any staff account (`adminsid` is replaced by an `impersonate:` session; the
   // original session is parked in `adminsid_orig` so it can be restored). The impersonated staff
