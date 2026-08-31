@@ -31,6 +31,8 @@ export function createAdminRoutes(deps) {
   } = deps;
 
   return [
+
+  /* ---------- push monitor: статус доставки + алерты ---------- */
   { method: 'GET', path: '/api/admin/push/status', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     json(res, 200, {
@@ -45,6 +47,8 @@ export function createAdminRoutes(deps) {
     pushStats.failures = []; pushStats.lastFailedAt = 0; pushStats.lastAlertAt = 0; pushStats.recoverySent = false;
     json(res, 200, { ok: true });
   } },
+
+  /* ---------- admin auth (passkey) ---------- */
   { method: 'POST', path: '/api/admin/auth/options', handler: async (req, res) => adminAuthOptions(req, res) },
   { method: 'POST', path: '/api/admin/auth/verify', handler: async (req, res) => {
     const body = await readBody(req);
@@ -77,6 +81,13 @@ export function createAdminRoutes(deps) {
     }
   } },
   { method: 'POST', path: '/api/admin/auth/logout', handler: async (req, res) => json(res, 200, { ok: true }, { 'Set-Cookie': [clearAdminCookie, clearOrigCookie] }) },
+
+  // Owner-only: sign in as any athlete (fresh `gymsid`) or as staff (`impersonate:`
+  // session; the original admin session is parked in `adminsid_orig` to restore).
+  // Owner-only: sign in as any athlete (a fresh `gymsid` cookie — the owner's admin session is
+  // untouched) or as any staff account (`adminsid` is replaced by an `impersonate:` session; the
+  // original session is parked in `adminsid_orig` so it can be restored). The impersonated staff
+  // account behaves exactly as if they signed in themselves.
   { method: 'POST', path: '/api/admin/impersonate', handler: async (req, res) => {
     const owner = await requireAdminAccount(req, res, ['owner']); if (!owner) return;
     const body = await readBody(req);
@@ -103,6 +114,8 @@ export function createAdminRoutes(deps) {
       json(res, 200, { ok: true, kind, redirect: target.role === 'trainer' ? '/trainer' : '/admin', target: { name: target.name, role: target.role } }, headers);
     } catch (error) { json(res, 503, { error: error.message }); }
   } },
+  // Restore the owner's own session after impersonating a staff account. Allowed only while an
+  // `impersonate:` session is active — a normal staff session can't "go back" (no privilege gain).
   { method: 'POST', path: '/api/admin/impersonate/back', handler: async (req, res) => {
     const p = adminSessionPayload(req);
     if (!p) return json(res, 401, { error: 'admin sign-in required' });
@@ -120,6 +133,8 @@ export function createAdminRoutes(deps) {
       json(res, 200, { ok: true, redirect: '/admin' }, { 'Set-Cookie': [adminSessionCookie({ id }), clearOrigCookie] });
     } catch (error) { json(res, 503, { error: error.message }); }
   } },
+
+  /* ---------- staff: invite / register / update ---------- */
   { method: 'POST', path: '/api/admin/staff/invite', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
     const body = await readBody(req);
@@ -182,6 +197,9 @@ export function createAdminRoutes(deps) {
       json(res, 200, { admin }, { 'Set-Cookie': adminSessionCookie(admin) });
     } catch (error) { json(res, 400, { error: error.message }); }
   } },
+
+  /* ---------- users dashboard ---------- */
+  // One row per user, cheap enough for a personal instance (reads each state file once).
   { method: 'GET', path: '/api/admin/users', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     const users = db.users.map(u => {
@@ -200,6 +218,7 @@ export function createAdminRoutes(deps) {
     });
     json(res, 200, { users, invite_only: INVITE_ONLY, now: Date.now() });
   } },
+  // Drill-down: full workout history + body-weight log for one user.
   { method: 'GET', path: '/api/admin/user', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     const id = new URL(req.url, 'http://x').searchParams.get('id');
@@ -226,6 +245,10 @@ export function createAdminRoutes(deps) {
     saveDb();
     json(res, 200, { ok: true, id: u.id, disabled: u.disabled });
   } },
+
+  /* ---------- analytics: athlete stats, discipline, leaderboard, retention ---------- */
+  // Analytics respect the caller's scope: owner=network, manager=branch, trainer=own athletes.
+  // Overview: KPI tiles. Every admin role can read it (operator sees the same numbers).
   { method: 'GET', path: '/api/admin/analytics/overview', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     try {
@@ -236,6 +259,8 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'analytics unavailable' });
     }
   } },
+  // Athlete table: one row per athlete, scoped to the caller. Frontend renders statuses
+  // for an operator and full rows for everyone else.
   { method: 'GET', path: '/api/admin/analytics/athletes', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     try {
@@ -268,6 +293,8 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'analytics unavailable' });
     }
   } },
+  // Drill-down: one athlete. Owner/manager (branch-scoped), trainer (own athletes only).
+  // Operator has no drill-down.
   { method: 'GET', path: '/api/admin/analytics/athlete', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const id = new URL(req.url, 'http://x').searchParams.get('id');
@@ -282,6 +309,7 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'analytics unavailable' });
     }
   } },
+  // Leaderboard: points / volume / streak. Owner + manager only.
   { method: 'GET', path: '/api/admin/analytics/leaderboard', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
     try {
@@ -292,6 +320,7 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'analytics unavailable' });
     }
   } },
+  // Trainer list for the assignment picker. Owner + manager only.
   { method: 'GET', path: '/api/admin/analytics/trainers', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
     try {
@@ -302,6 +331,8 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'analytics unavailable' });
     }
   } },
+  // Retention ("Удержание"): serves the nightly precomputed snapshot, filtered by role.
+  // No live DB/state scan at request time — the heavy work runs once at night.
   { method: 'GET', path: '/api/admin/analytics/retention', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     try {
@@ -343,6 +374,8 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'retention unavailable' });
     }
   } },
+  // Assign (or unassign) an athlete to a trainer. Owner/manager pick any trainer;
+  // a trainer can only manage their own roster (trainer_id is forced to self).
   { method: 'POST', path: '/api/admin/analytics/assign', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const body = await readBody(req);
@@ -365,6 +398,7 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'analytics unavailable' });
     }
   } },
+  // Athlete search for the trainer portal ("add an existing athlete").
   { method: 'GET', path: '/api/admin/analytics/users', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const q = String(new URL(req.url, 'http://x').searchParams.get('q') || '').trim().toLowerCase();
@@ -384,6 +418,9 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'analytics unavailable' });
     }
   } },
+
+  /* ---------- trainer portal (admin side): athlete program ---------- */
+  // View an athlete's training program + workout history (for per-exercise stats).
   { method: 'GET', path: '/api/admin/trainer/athlete/program', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const id = String(new URL(req.url, 'http://x').searchParams.get('id') || '');
@@ -400,6 +437,9 @@ export function createAdminRoutes(deps) {
       workouts: S.workouts || []
     });
   } },
+  // Save a trainer's edits to the athlete's routines. Merges only `routines` into
+  // the athlete's state — workouts and everything else stay untouched, so a stale
+  // trainer copy can never clobber the athlete's logs. Sanitised server-side.
   { method: 'PUT', path: '/api/admin/trainer/athlete/program', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const id = String(new URL(req.url, 'http://x').searchParams.get('id') || '');
@@ -431,6 +471,9 @@ export function createAdminRoutes(deps) {
     atomicWrite(stateFile(id), JSON.stringify(S));
     json(res, 200, { ok: true, routines });
   } },
+
+  /* ---------- trainer calendar: bookings ---------- */
+  // Bookings in a range: trainer sees their own; owner/manager see everyone.
   { method: 'GET', path: '/api/admin/trainer/bookings', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const from = String(new URL(req.url, 'http://x').searchParams.get('from') || '');
@@ -452,6 +495,7 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'service unavailable' });
     }
   } },
+  // Change a booking's status (confirm / reject / cancel / done).
   { method: 'POST', path: '/api/admin/trainer/bookings/status', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const body = await readBody(req);
@@ -497,6 +541,7 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'service unavailable' });
     }
   } },
+  // Trainer creates a session directly (status = confirmed).
   { method: 'POST', path: '/api/admin/trainer/bookings', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const body = await readBody(req);
@@ -523,6 +568,9 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'service unavailable' });
     }
   } },
+
+  /* ---------- trainer calendar: working hours ---------- */
+  // Trainer edits their own; owner/manager can set any trainer's.
   { method: 'GET', path: '/api/admin/trainer/availability', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     try {
@@ -547,6 +595,10 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'service unavailable' });
     }
   } },
+
+  /* ---------- trainer calendar: recurring («постоянные») slots ---------- */
+  // Fixed weekly slots reserved for a regular athlete, materialized forward so
+  // they lock automatically and can't be taken by others.
   { method: 'GET', path: '/api/admin/trainer/recurring', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     try {
@@ -677,6 +729,8 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: error.message });
     }
   } },
+
+  /* ---------- integrations: access-control bindings ---------- */
   { method: 'GET', path: '/api/admin/integrations/access/bindings', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     try {
@@ -705,6 +759,8 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'integration database unavailable' });
     }
   } },
+
+  /* ---------- invites ---------- */
   { method: 'GET', path: '/api/admin/invites', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     // resolve usedBy uid → name for display
