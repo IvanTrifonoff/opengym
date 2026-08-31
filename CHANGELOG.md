@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.2.11 — декомпозиция: админ-панель вынесена в роут-модуль
+
+### Changed
+- `server.js` (-692 строки, 1727→1035): все 41 хендлера `/api/admin/*` вынесены
+  в `api/routes/admin.js` — фабрика `createAdminRoutes(deps)`. Домены: passkey-вход
+  и выход, имперсонация (owner), сотрудники (invite/register/update), пользователи,
+  аналитика (overview/athletes/athlete/leaderboard/trainers/retention/assign/users),
+  календарь тренера (брони, статусы, часы работы, постоянные клиенты с skip/unskip),
+  интеграции турникета (bindings/bind), инвайты.
+- Поведение идентично — импорт, не копия; зависимости передаются через `deps`.
+
+### Verified
+- Синтаксис всех роут-модулей; health 200; смоук: 41 admin-роут из модуля
+  (без сессии → 401, logout/options → 200); неизвестный роут → 404.
+- Тесты: 233 green (192 frontend + 41 api с postgres).
+
 ## 1.2.10 — локализация названий упражнений в статистике + фикс Dockerfile
 
 ### Changed
