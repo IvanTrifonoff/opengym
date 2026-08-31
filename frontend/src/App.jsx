@@ -4,7 +4,7 @@ import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { bindUI } from './components/ui.jsx'
 import { ACCENTS } from './lib/format.js'
-import { setLang, useLang } from './lib/i18n.js'
+import { setLang, detectBrowserLang, useLang } from './lib/i18n.js'
 import { setNav } from './lib/nav.js'
 import { useWakeLock } from './lib/wakelock.js'
 import { refreshBadge } from './lib/badge.js'
@@ -46,8 +46,10 @@ function Shell() {
   const langV = useLang()   // re-renders the whole shell when the language (pack) changes
   useEffect(() => { setNav(navigate) }, [navigate])
   useEffect(() => { applyPrefs(S.theme, S.accent) }, [S.theme, S.accent])
-  useEffect(() => { setLang(S.lang || 'en') }, [S.lang])
-  useEffect(() => { document.documentElement.lang = S.lang || 'en' }, [langV, S.lang])
+  // Default language comes from the browser (this fork's primary is Russian), unless the
+  // profile has an explicit choice. Empty S.lang means "not chosen yet".
+  useEffect(() => { setLang(S.lang || detectBrowserLang()) }, [S.lang])
+  useEffect(() => { document.documentElement.lang = S.lang || detectBrowserLang() }, [langV, S.lang])
   // every tab/route change starts at the top of the page
   useEffect(() => { window.scrollTo(0, 0) }, [loc.pathname])
   // app icon badge: recompute on boot and whenever the app comes back to the foreground

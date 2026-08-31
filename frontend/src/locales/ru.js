@@ -226,6 +226,10 @@ export default {
   'Continue without account': 'Продолжить без аккаунта',
   'Passkeys use {0} — no passwords.': 'Ключи доступа используют {0} — без паролей.',
   'Each profile keeps its own plan, workouts & body weight.': 'У каждого профиля свой план, тренировки и вес тела.',
+
+  'Trainer': 'Тренер',
+  'Gym manager': 'Управление залом',
+  'Staff:': 'Сотрудники:',
   'Account': 'Аккаунт',
   'Signed in with passkey — data syncs to this profile.': 'Вход по ключу доступа — данные синхронизируются с этим профилем.',
   'Sign out?': 'Выйти?',

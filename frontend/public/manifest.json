@@ -1,7 +1,7 @@
 {
-  "name": "openGym",
-  "short_name": "openGym",
-  "description": "Personal gym & body weight tracker",
+  "name": "ИмпульС",
+  "short_name": "ИмпульС",
+  "description": "Тренировки и вес тела — сеть залов",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

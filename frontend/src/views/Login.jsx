@@ -1,12 +1,14 @@
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
-import { webauthnOK, passkeyLogin, passkeyRegister, api, BIO } from '../lib/api.js'
+import { webauthnOK, passkeyLogin, passkeyRegister, api, BIO, IS_APPLE, IS_ANDROID } from '../lib/api.js'
 import { hasData } from '../store/useStore.js'
 import { t } from '../lib/i18n.js'
 import { DEMO, REPO } from '../lib/demo.js'
 import { useState, useRef, useEffect } from 'react'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
+
+export const APP_NAME = 'ИмпульС'
 
 function RegisterSheet({ close }) {
   const { setUser, pushState, pullState } = useStore()
@@ -42,6 +44,44 @@ function RegisterSheet({ close }) {
   </>
 }
 
+// PWA install call-to-action, browser-aware:
+//  - Chrome/Edge (Android & desktop) fire `beforeinstallprompt` → we offer a real "Install" button.
+//  - iOS Safari / macOS Safari have no install prompt → we show the manual "Add to Home Screen" hint.
+//  - When the app is already installed / running standalone, nothing is shown.
+function InstallCard() {
+  const [prompt, setPrompt] = useState(null)
+  const [hidden, setHidden] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches)
+  useEffect(() => {
+    const onBip = e => { e.preventDefault(); setPrompt(e) }
+    const onInstalled = () => { setPrompt(null); setHidden(true) }
+    window.addEventListener('beforeinstallprompt', onBip)
+    window.addEventListener('appinstalled', onInstalled)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBip)
+      window.removeEventListener('appinstalled', onInstalled)
+    }
+  }, [])
+  if (hidden) return null
+  const install = async () => {
+    if (!prompt) return
+    prompt.prompt()
+    await prompt.userChoice.catch(() => {})
+    setPrompt(null)
+  }
+  return (
+    <div className="card" style={{ marginTop: 18, textAlign: 'left' }}>
+      {prompt
+        ? <Button variant="primary" className="w-full" icon="download" onClick={install}>{t('Install the app to your Home Screen')}</Button>
+        : IS_APPLE || IS_ANDROID
+          ? <div className="small dim" style={{ lineHeight: 1.5 }}>
+            {IS_ANDROID ? t('In Chrome: ⋮ menu → Add to Home screen') : t('In Safari: Share → Add to Home Screen')}
+            {' — '}{t('to install openGym as a full-screen app.')}
+          </div>
+          : null}
+    </div>
+  )
+}
+
 export default function Login() {
   const { setUser, pullState, setGuest } = useStore()
   const signIn = async () => {
@@ -50,7 +90,7 @@ export default function Login() {
   }
   const head = <>
     <div style={{ fontSize: 54, display: 'flex', justifyContent: 'center', color: 'var(--acc)' }}><Icon name="dumbbell" /></div>
-    <h1 style={{ fontSize: 34, fontWeight: 700, letterSpacing: '-.028em', margin: '10px 0 4px' }}>openGym</h1>
+    <h1 style={{ fontSize: 34, fontWeight: 700, letterSpacing: '-.028em', margin: '10px 0 4px' }}>{APP_NAME}</h1>
   </>
   const wrap = { display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: '78vh', textAlign: 'center' }
 
@@ -81,6 +121,14 @@ export default function Login() {
       </> : <div className="card small muted" style={{ textAlign: 'left' }}>{t("This browser doesn't support passkeys — you can still use openGym locally on this device.")}</div>}
       <Button variant="ghost" className="dim" onClick={() => setGuest(true)}>{t('Continue without account')}</Button>
       <div className="dim small" style={{ marginTop: 26, lineHeight: 1.5 }}>{t('Passkeys use {0} — no passwords.', BIO)}<br />{t('Each profile keeps its own plan, workouts & body weight.')}</div>
+
+      <InstallCard />
+
+      <div className="row" style={{ gap: 10, marginTop: 22, justifyContent: 'center', alignItems: 'center' }}>
+        <span className="dim small">{t('Staff:')}</span>
+        <Button size="sm" icon="figureStrength" onClick={() => { location.href = '/trainer' }}>{t('Trainer')}</Button>
+        <Button size="sm" icon="house" onClick={() => { location.href = '/admin' }}>{t('Gym manager')}</Button>
+      </div>
     </div>
   )
 }

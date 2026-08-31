@@ -20,6 +20,18 @@ const DATE_LOCALES = {
   pl: 'pl-PL', tr: 'tr-TR', ru: 'ru-RU', zh: 'zh-CN', ko: 'ko-KR', hi: 'hi-IN'
 }
 
+// Resolve the user's preferred UI language from the browser, picking a supported one.
+// `ru` is the primary target for this fork, so it's the fallback when the browser offers
+// nothing we ship, or when the first-preference order is ambiguous.
+export function detectBrowserLang() {
+  if (typeof navigator === 'undefined') return 'ru'
+  const prefs = (navigator.languages && navigator.languages.length
+    ? navigator.languages
+    : [navigator.language || 'ru']).map(l => String(l || '').split('-')[0].toLowerCase())
+  for (const p of prefs) if (LANGS[p]) return p
+  return 'ru'
+}
+
 const localePacks = import.meta.glob('../locales/*.js')
 const instrPacks = import.meta.glob('../instr/*.js')
 const namePacks = import.meta.glob('../names/*.js')
