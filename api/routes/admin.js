@@ -38,6 +38,7 @@ export function createAdminRoutes(deps) {
   return [
 
   /* ---------- push monitor: статус доставки + алерты ---------- */
+  // Монитор доставки пушей: счётчики sent/failed, деградация за 24ч, есть ли webhook-алерт.
   { method: 'GET', path: '/api/admin/push/status', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     json(res, 200, {
@@ -46,6 +47,7 @@ export function createAdminRoutes(deps) {
       webhookConfigured: !!PUSH_ALERT_WEBHOOK
     });
   } },
+  // Owner/manager: сбросить счётчики доставки (после разбора алерта).
   { method: 'POST', path: '/api/admin/push/status/reset', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
     pushStats.sent = 0; pushStats.failed = 0; pushStats.expired = 0;
@@ -55,6 +57,7 @@ export function createAdminRoutes(deps) {
 
   /* ---------- admin auth (passkey) ---------- */
   { method: 'POST', path: '/api/admin/auth/options', handler: async (req, res) => adminAuthOptions(req, res) },
+  // Завершение passkey-входа: проверка подписи WebAuthn, выдача админ-сессии (cookie adminsid).
   { method: 'POST', path: '/api/admin/auth/verify', handler: async (req, res) => {
     const body = await readBody(req);
     const challenge = takeChallenge(body.cid);
@@ -78,6 +81,7 @@ export function createAdminRoutes(deps) {
     if (credential.disabled) return json(res, 403, { error: 'admin account disabled' });
     json(res, 200, { admin: { id: credential.admin_id, name: credential.name, role: credential.role } }, { 'Set-Cookie': adminSessionCookie({ id: credential.admin_id }) });
   } },
+  // Текущая админ-сессия (с флагом impersonated — «вошёл как» чужой аккаунт).
   { method: 'GET', path: '/api/admin/auth/me', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res);
     if (admin) {
@@ -85,6 +89,7 @@ export function createAdminRoutes(deps) {
       json(res, 200, { admin: { ...admin, impersonated: !!(p && p.kind === 'impersonate') } });
     }
   } },
+  // Выход: сброс adminsid и adminsid_orig (оба cookie).
   { method: 'POST', path: '/api/admin/auth/logout', handler: async (req, res) => json(res, 200, { ok: true }, { 'Set-Cookie': [clearAdminCookie, clearOrigCookie] }) },
 
   // Owner-only: sign in as any athlete (a fresh `gymsid` cookie — the owner's admin session is
@@ -138,6 +143,7 @@ export function createAdminRoutes(deps) {
   } },
 
   /* ---------- staff: invite / register / update ---------- */
+  // Owner/manager: создать инвайт-код для нового сотрудника (с ролью).
   { method: 'POST', path: '/api/admin/staff/invite', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
     const body = await readBody(req);
@@ -146,10 +152,12 @@ export function createAdminRoutes(deps) {
       json(res, 200, { ok: true, invite });
     } catch (error) { json(res, 400, { error: error.message }); }
   } },
+  // Список сотрудников (админ-аккаунты с ролями owner/manager/trainer/operator).
   { method: 'GET', path: '/api/admin/staff', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     json(res, 200, { admins: await listAdmins() });
   } },
+  // Owner: сменить роль / отключить сотрудника (нельзя отключить самого себя).
   { method: 'POST', path: '/api/admin/staff/update', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner']); if (!admin) return;
     const body = await readBody(req);
@@ -160,6 +168,7 @@ export function createAdminRoutes(deps) {
       json(res, 200, { ok: true, admin: updated });
     } catch (error) { json(res, 400, { error: error.message }); }
   } },
+  // Начало регистрации сотрудника по инвайт-коду: генерация WebAuthn-челленджа.
   { method: 'POST', path: '/api/admin/staff/register/options', handler: async (req, res) => {
     const body = await readBody(req);
     const rawCode = String(body.code || '').trim().toUpperCase();
@@ -178,6 +187,7 @@ export function createAdminRoutes(deps) {
     const cid = putChallenge({ challenge: options.challenge, adminRegister: true, adminId: id, inviteCode: invite.code, name: invite.name, role: invite.role });
     json(res, 200, { cid, options });
   } },
+  // Завершение регистрации: погашение кода, создание passkey-аккаунта, авто-вход.
   { method: 'POST', path: '/api/admin/staff/register/verify', handler: async (req, res) => {
     const body = await readBody(req);
     const challenge = takeChallenge(body.cid);
@@ -237,6 +247,7 @@ export function createAdminRoutes(deps) {
       workouts: (S.workouts || []).slice().reverse()   // newest first for display
     });
   } },
+  // Заблокировать/разблокировать спортсмена (админа блокировать нельзя).
   { method: 'POST', path: '/api/admin/user/disable', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     const body = await readBody(req);
@@ -584,6 +595,7 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'service unavailable' });
     }
   } },
+  // Записать часы работы (может быть разрывной график: 9-12 и 16-21 в один день).
   { method: 'POST', path: '/api/admin/trainer/availability', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const body = await readBody(req);
@@ -624,6 +636,8 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'recurring unavailable' });
     }
   } },
+  // Создать «постоянные» слоты: бронируются вперёд и блокируются от чужих записей.
+  // Проверяет попадание в часы работы и возвращает конфликты с подсказкой свободного окна.
   { method: 'POST', path: '/api/admin/trainer/recurring', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const body = await readBody(req);
@@ -681,6 +695,7 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'service unavailable' });
     }
   } },
+  // Удалить серию постоянных слотов (спортсмен получает уведомление).
   { method: 'POST', path: '/api/admin/trainer/recurring/delete', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const body = await readBody(req);
@@ -702,6 +717,7 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'service unavailable' });
     }
   } },
+  // Отменить один конкретный день (например, на отпуск) — серия продолжается дальше.
   { method: 'POST', path: '/api/admin/trainer/recurring/skip', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const body = await readBody(req);
@@ -717,6 +733,7 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: error.message });
     }
   } },
+  // Вернуть пропущенный день обратно в серию.
   { method: 'POST', path: '/api/admin/trainer/recurring/unskip', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const body = await readBody(req);
@@ -734,6 +751,7 @@ export function createAdminRoutes(deps) {
   } },
 
   /* ---------- integrations: access-control bindings ---------- */
+  // Список привязок внешних участников (турникет/CRM) к спортсменам.
   { method: 'GET', path: '/api/admin/integrations/access/bindings', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     try {
@@ -745,6 +763,7 @@ export function createAdminRoutes(deps) {
       json(res, 503, { error: 'integration database unavailable' });
     }
   } },
+  // Owner/manager: привязать внешнего участника (турникет/CRM) к спортсмену приложения.
   { method: 'POST', path: '/api/admin/integrations/access/bind', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
     const body = await readBody(req);
@@ -764,6 +783,7 @@ export function createAdminRoutes(deps) {
   } },
 
   /* ---------- invites ---------- */
+  // Все инвайт-коды: не использован / кем использован, режим short.
   { method: 'GET', path: '/api/admin/invites', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     // resolve usedBy uid → name for display
@@ -772,6 +792,8 @@ export function createAdminRoutes(deps) {
     }));
     json(res, 200, { invites, invite_only: INVITE_ONLY });
   } },
+  // Создать инвайт-код для регистрации. short:true — короткий код для диктовки по телефону.
+  // Тренер может создать код, привязывающий новичка сразу к себе (trainerId).
   { method: 'POST', path: '/api/admin/invites/new', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'trainer']); if (!admin) return;
     const body = await readBody(req);
@@ -799,6 +821,7 @@ export function createAdminRoutes(deps) {
     saveDb();
     json(res, 200, { invite });
   } },
+  // Отозвать неиспользованный инвайт-код (использованный отозвать нельзя).
   { method: 'POST', path: '/api/admin/invites/revoke', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     const body = await readBody(req);

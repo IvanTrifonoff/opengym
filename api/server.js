@@ -418,6 +418,7 @@ async function adminAuthOptions(req, res) {
 
 /* ---------- routes ---------- */
 const routes = {
+  // Liveness-проба (используется docker healthcheck и мониторингом).
   'GET /api/health': async (req, res) => json(res, 200, { ok: true, users: db.users.length }),
 
   /* ---------- trainer booking (athlete side) ---------- */
@@ -546,12 +547,15 @@ const routes = {
   // Public config the login screen needs before anyone is signed in.
   'GET /api/config': async (req, res) => json(res, 200, { invite_only: INVITE_ONLY }),
 
+  // Текущий спортсмен: id/name/admin — для восстановления UI после перезагрузки.
   'GET /api/me': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
     json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) } });
   },
 
+  // Регистрация (passkey): шаг 1 — проверить инвайт-код (если invite_only),
+  // сгенерировать WebAuthn-челлендж. Спортсмен создаётся только в verify.
   'POST /api/register/options': async (req, res) => {
     const body = await readBody(req);
     const name = String(body.name || '').trim().slice(0, 40);
@@ -571,6 +575,8 @@ const routes = {
     json(res, 200, { cid, options });
   },
 
+  // Регистрация (passkey): шаг 2 — проверить подпись, создать аккаунт,
+  // погасить инвайт-код, выдать сессию (cookie gymsid).
   'POST /api/register/verify': async (req, res) => {
     const body = await readBody(req);
     const c = takeChallenge(body.cid);
@@ -611,6 +617,7 @@ const routes = {
     json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) } }, { 'Set-Cookie': sessionCookie(user) });
   },
 
+  // Вход (passkey): шаг 1 — WebAuthn-челлендж.
   'POST /api/login/options': async (req, res) => {
     const options = await generateAuthenticationOptions({
       rpID: RP_ID, userVerification: 'preferred', allowCredentials: []
@@ -619,6 +626,7 @@ const routes = {
     json(res, 200, { cid, options });
   },
 
+  // Вход (passkey): шаг 2 — проверить подпись по сохранённому credential, выдать сессию.
   'POST /api/login/verify': async (req, res) => {
     const body = await readBody(req);
     const c = takeChallenge(body.cid);
@@ -650,6 +658,7 @@ const routes = {
     json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) } }, { 'Set-Cookie': sessionCookie(user) });
   },
 
+  // Выход: очистить свою сессию (обычный logout, в отличие от logout/all).
   'POST /api/logout': async (req, res) => json(res, 200, { ok: true }, { 'Set-Cookie': clearCookie }),
 
   // "Sign out everywhere" — bumps this user's session version, which invalidates every cookie
@@ -664,6 +673,7 @@ const routes = {
     json(res, 200, { ok: true }, { 'Set-Cookie': clearCookie });
   },
 
+  // Полное состояние спортсмена (state-файл): тренировки, план, настройки.
   'GET /api/data': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
@@ -673,6 +683,8 @@ const routes = {
     } catch { json(res, 200, { state: null }); }
   },
 
+  // Сохранить состояние спортсмена целиком. Ключ `active` (идущая тренировка)
+  // намеренно удаляется — активную тренировку не переносим между устройствами.
   'PUT /api/data': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
@@ -683,8 +695,10 @@ const routes = {
     json(res, 200, { ok: true, ts: body.state._ts || null });
   },
 
+  // VAPID public key: браузер берёт его перед подпиской на пуши.
   'GET /api/push/public-key': async (req, res) => json(res, 200, { key: vapid.publicKey }),
 
+  // Сохранить Web Push-подписку для спортсмена (gymsid) или тренера (adminsid).
   'POST /api/push/subscribe': async (req, res) => {
     // Athlete session (gymsid) or admin/trainer session (adminsid) — trainers subscribe
     // from the portal so they can get push alerts about new booking requests.
@@ -701,6 +715,7 @@ const routes = {
     json(res, 200, { ok: true });
   },
 
+  // Удалить подписку по endpoint.
   'POST /api/push/unsubscribe': async (req, res) => {
     const user = readSession(req);
     const adminId = user ? null : adminSessionId(req);
@@ -712,6 +727,7 @@ const routes = {
     json(res, 200, { ok: true });
   },
 
+  // Отправить тестовое уведомление на все подписки текущего пользователя.
   'POST /api/push/test': async (req, res) => {
     const user = readSession(req);
     const adminId = user ? null : adminSessionId(req);
@@ -719,6 +735,7 @@ const routes = {
     await sendPush(user ? user.id : 'admin:' + adminId, { title: 'openGym', body: 'Test notification ✅ — this is what alerts look like.', tag: 'test' });
     json(res, 200, { ok: true });
   },
+  // Диагностика пушей: свои подписки (хост), общее число, статистика доставки.
   'GET /api/push/health': async (req, res) => {
     const user = readSession(req);
     const adminId = user ? null : adminSessionId(req);
@@ -736,6 +753,7 @@ const routes = {
 
 
 
+  // Таймер отдыха между подходами: сервер пришлёт пуш, когда время выйдет.
   'POST /api/push/rest-timer': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
@@ -746,6 +764,7 @@ const routes = {
     json(res, 200, { ok: true });
   },
 
+  // Отменить активный таймер отдыха.
   'POST /api/push/rest-timer/cancel': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
