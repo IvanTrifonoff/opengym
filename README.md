@@ -83,6 +83,52 @@ as a home-screen app, passkey sign-in, offline support, sync across your phone a
 - 📦 **Yours to keep** — one-tap JSON export/import, guest mode, **no telemetry**
 - 📱 **Standalone Android app** — the whole tracker as a sideloadable APK: no account, no server, data on the phone, native workout reminders ([download](https://opengym.duarte-santos.ch))
 
+
+### Gym network edition
+
+*The features above are the self-hosted athlete tracker. This fork stacks a network layer on top
+of the same app — roles, loyalty, trainers and notifications — so a chain of gyms can run it as
+its own product.*
+
+**Gym network (admin)**
+- 🛂 **Staff roles with separate logins** — owner / manager / trainer / operator, each with its
+  own passkey account and a dedicated `/admin` panel. Register staff via invite-code links, and
+  invite athletes with short one-time codes.
+- 🔎 **Analytics across the whole network** — a read-only `/admin/analytics` module scoped by
+  role: the owner sees every club, a manager only their branch, a trainer only their assigned
+  athletes. KPI tiles, athlete status chips (active / at-risk / gone / new), weekly activity,
+  best lifts, and a per-athlete drill-down with a points ledger and rewards.
+- 🕵️ **"Войти как"** — the owner can view the interface exactly as any athlete or staff member
+  sees it, with an "acting as …" banner and one-tap return. No nested impersonation.
+
+**Loyalty engine**
+- 🎁 **A loyalty program you configure, not code** — events → rules → rewards with per-period
+  limits, stored as data and applied without touching code. Rewards can be redeemed by staff
+  confirmation or auto-generated codes, backed by an immutable points ledger.
+- 👛 **Athlete wallet** — balance, rewards and history inside Settings; when points land the
+  athlete gets a localized push notification ("+15 баллов — Ежедневное посещение").
+- 🔌 **Access-control webhooks** — SCUD/turnstile and loyalty events reach the engine through
+  idempotent endpoints guarded by a shared secret, so door/access systems can drive the same rules.
+
+**Trainer portal**
+- 🏋️ **A `/trainer` portal for trainers** — their own athletes (assign via invite or search),
+  plus **view and edit** athletes' training programs: create programs, add exercises, edit
+  sets × reps × weight, and read per-exercise progress (best weight, sets and weights by date).
+- 📅 **Trainer calendar** — configurable working hours (including non-contiguous intervals per
+  day and rest days) and athlete **booking requests with confirmation**. A "Мой тренер" card on
+  the athlete's Home opens a booking modal; conflicts and out-of-hours bookings are rejected cleanly.
+
+**Notifications, end to end**
+- 📬 **A shared notification center** — unread lists for athletes and trainers, with the
+  install-icon badge counting unread notifications plus pending rewards and bookings, and a
+  badge that resets once you've looked.
+- 🔔 **Real delivery** — points notifications, trainer alerts on new booking requests, and
+  athlete alerts when a booking is confirmed/declined — all pushed through web-push/VAPID with a
+  loyalty outbox, sent/failed counters, and an optional delivery-failure webhook.
+- 🧭 **Built-in help everywhere** — guides in the loyalty builder, trainer portal and athlete
+  wallet, plus an admin `/admin/help` FAQ.
+
+*Translated from the `dev` history; see [CHANGELOG.md](CHANGELOG.md) v1.2.5…v1.8.1.*
 ## Quick start (self-host)
 
 You need [Docker](https://docs.docker.com/get-docker/) with Compose.
