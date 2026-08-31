@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.10.1 — 2026-08-31
+
+«Постоянные клиенты»: понятные подсказки, когда время не входит в часы работы тренера.
+
+### Before
+Choosing a recurring slot outside the trainer's working hours just showed a raw English
+message («recurring time outside working hours») with no idea which day/time was the problem
+or what hours are actually available — the trainer had to guess.
+
+### Now
+- ✅ **Live hints inside the form.** Each weekday row shows its status as you pick a time:
+  «✓ в работе», «✗ вне часов — доступно 09:00–18:00», or «✗ нет часов в этот день (выходной)»
+  — computed from the trainer's actual (incl. split-shift) working hours.
+- 🚫 **Save is blocked while any picked slot is outside hours**, with a plain-Russian summary:
+  «Не получится сохранить: эти дни/время не входят в рабочие часы (Чт 18:00, Пт 18:00, Сб 18:00)».
+- 💡 **Guidance line** in the form: adjust working hours («Часы работы») or pick another time.
+- 🔁 **Structured backend error** as a fallback: `400` returns `error` + `details[]` (per-day
+  `available` intervals), and the API client now exposes the full body on thrown errors
+  (`e.data`) so any view can use it.
+
+### Verified
+- Backend: requesting rules {Пн 18:00 ✓, Сб 18:00, Чт 08:00} returns all conflicts with
+  per-day `available` (day-off → empty, outside-hours → «09:00–18:00»).
+- Frontend (headless Chrome as trainer): Вт/Ср 18:00 → «✓ в работе», Чт/Пт 18:00 → «✗ вне
+  часов — доступно 09:00–18:00», Сб → «✗ выходной»; save disabled; summary shown. Tests: 192 passed.
+
 ## v1.10.0 — 2026-08-31
 
 Recurring trainer bookings («постоянные клиенты»): fixed weekly slots locked for regular athletes.

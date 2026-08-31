@@ -86,11 +86,17 @@ export default function TrainerBookings({ admin }) {
   }
   const saveRecur = () => {
     const rules = (recurForm.rules || []).filter(r => r.time)
-    if (!recurForm.athlete || !rules.length) return
+    if (saveRecurBlocked || !rules.length) return
     setBusy('recur')
     api('/api/admin/trainer/recurring', { method: 'POST', body: JSON.stringify({ athlete_id: recurForm.athlete, rules }) })
       .then(() => { setShowRecur(false); setRecurForm({ athlete: '', rules: [] }); load() })
-      .catch(e => setErr(e.message)).finally(() => setBusy(''))
+      .catch(e => {
+        const det = e.data && e.data.details
+        setErr(det && det.length
+          ? 'Постоянное время не совпадает с вашими часами работы:\n'
+            + det.map(d => DAYS[d.weekday] + ' ' + d.time + ' — ' + (d.available && d.available.length ? 'доступно: ' + d.available.join(', ') : 'этот день выходной')).join('\n')
+          : e.message)
+      }).finally(() => setBusy(''))
   }
   const delRecur = athleteId => {
     if (!window.confirm('Удалить постоянную серию этого клиента? Все будущие повторяющиеся записи будут убраны.')) return
@@ -106,6 +112,20 @@ export default function TrainerBookings({ admin }) {
     api('/api/admin/trainer/recurring/unskip', { method: 'POST', body: JSON.stringify({ athlete_id: athleteId, date }) })
       .then(load).catch(e => setErr(e.message))
   }
+
+  // Helpers for the «Постоянные клиенты» hints: a recurring slot must sit inside the
+  // trainer's working hours for that weekday, otherwise the save is blocked with an explanation.
+  const availFor = wd => (availability || []).filter(a => a.weekday === wd)
+  const ruleOK = (wd, tm) => !!tm && availFor(wd).some(a => tm >= a.time_start && tm < a.time_end)
+  const ruleHint = (wd, tm) => {
+    if (!tm) return { ok: true, label: 'выходной', color: 'var(--label-3)' }
+    const open = availFor(wd)
+    if (open.some(a => tm >= a.time_start && tm < a.time_end)) return { ok: true, label: '✓ в работе', color: 'var(--green)' }
+    if (!open.length) return { ok: false, label: '✗ нет часов в этот день (выходной)', color: 'var(--red)' }
+    return { ok: false, label: '✗ вне часов — доступно ' + open.map(a => a.time_start + '–' + a.time_end).join(', '), color: 'var(--red)' }
+  }
+  const recurConflicts = (recurForm.rules || []).filter(r => r.time && !ruleOK(r.weekday, r.time))
+  const saveRecurBlocked = !recurForm.athlete || recurConflicts.length > 0
 
   const wd = new Date(selDay + 'T12:00:00').getDay()
   const slots = daySlots(availability, wd)
@@ -167,13 +187,23 @@ export default function TrainerBookings({ admin }) {
           {roster.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
       </div>
-      {(recurForm.rules || []).map(rl => <div className="row" key={rl.weekday} style={{ gap: 8, marginBottom: 5 }}>
-        <span style={{ width: 34, fontWeight: 500 }}>{DAYS[rl.weekday]}</span>
-        <input type="time" className="field" style={{ flex: 1, padding: '6px 8px' }} value={rl.time}
-          onChange={e => setRecurForm(f => ({ ...f, rules: f.rules.map(x => x.weekday === rl.weekday ? { ...x, time: e.target.value } : x) }))} />
-        <span className="small dim">{rl.time ? 'постоянн.' : 'выходной'}</span>
-      </div>)}
-      <Button variant="primary" size="sm" style={{ marginTop: 8 }} onClick={saveRecur} disabled={busy === 'recur' || !recurForm.athlete}>{busy === 'recur' ? 'Сохранение…' : 'Сохранить серию'}</Button>
+      <div className="dim small" style={{ margin: '0 0 8px' }}>Время должно входить в ваши часы работы. Если день — выходной или времени нет, выберите другой интервал либо откройте «Часы работы» и добавьте время для этого дня.</div>
+      <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid var(--line)', borderRadius: 10, padding: 8, marginBottom: 8 }}>
+        {(recurForm.rules || []).map(rl => {
+          const h = ruleHint(rl.weekday, rl.time)
+          return <div className="row" key={rl.weekday} style={{ gap: 8, marginBottom: 5 }}>
+            <span style={{ width: 34, fontWeight: 500 }}>{DAYS[rl.weekday]}</span>
+            <input type="time" className="field" style={{ flex: 1, padding: '6px 8px' }} value={rl.time}
+              onChange={e => setRecurForm(f => ({ ...f, rules: f.rules.map(x => x.weekday === rl.weekday ? { ...x, time: e.target.value } : x) }))} />
+            <span className="small" style={{ color: h.color, minWidth: 0, flex: 1, textAlign: 'right' }}>{h.label}</span>
+          </div>
+        })}
+      </div>
+      {recurConflicts.length > 0 && <div className="small" style={{ color: 'var(--red)', marginBottom: 6 }}>
+        Не получится сохранить: эти дни/время не входят в рабочие часы
+        ({recurConflicts.map(c => DAYS[c.weekday] + ' ' + c.time).join(', ')}).
+      </div>}
+      <Button variant="primary" size="sm" style={{ marginTop: 8 }} onClick={saveRecur} disabled={busy === 'recur' || saveRecurBlocked}>{busy === 'recur' ? 'Сохранение…' : 'Сохранить серию'}</Button>
     </div>}
 
     {pending.length > 0 && <div className="card" style={{ marginBottom: 12 }}>

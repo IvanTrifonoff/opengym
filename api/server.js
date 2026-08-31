@@ -1590,15 +1590,25 @@ const routes = {
         return json(res, 403, { error: 'no access to this athlete' });
       const avail = await getTrainerAvailability(trainerId);
       const clean = [];
+      const conflicts = [];
       for (const rl of rules) {
         const wd = Math.max(0, Math.min(6, +rl.weekday || 0));
         const tm = String(rl.time || '').slice(0, 5);
         if (!/^\d{2}:\d{2}$/.test(tm)) continue;
-        if (!avail.some(a => a.weekday === wd && tm >= a.time_start && tm < a.time_end))
-          return json(res, 400, { error: 'recurring time outside working hours' });
+        if (!avail.some(a => a.weekday === wd && tm >= a.time_start && tm < a.time_end)) {
+          conflicts.push({ weekday: wd, time: tm });
+          continue;
+        }
         if (clean.some(c => c.weekday === wd && c.time === tm)) continue;
         clean.push({ weekday: wd, time: tm });
       }
+      if (conflicts.length) return json(res, 400, {
+        error: 'Постоянное время не входит в часы работы',
+        details: conflicts.map(c => ({
+          weekday: c.weekday, time: c.time,
+          available: avail.filter(a => a.weekday === c.weekday).map(a => a.time_start + '\u2013' + a.time_end)
+        }))
+      });
       if (!clean.length) return json(res, 400, { error: 'at least one day is required' });
       const r = await setRecurringSeries({ trainerId, athleteId, rules: clean });
       json(res, 200, { ok: true, series_id: r.seriesId, created: r.created });
