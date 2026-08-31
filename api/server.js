@@ -25,6 +25,11 @@ import {
 import { collectAnalytics, athleteDetail } from './analytics.js';
 import { buildRetentionSnapshot, scheduleRetentionSnapshot } from './retention-runner.js';
 
+import {
+  validTime, timeInRange, bookingTransitionAllowed, validateAvailabilitySlots,
+  effectiveRoutineId, nextHour, daySlots, userNow, normaliseAccessEvent
+} from './logic.js';
+
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
 const RP_ID = process.env.RP_ID || 'localhost';
@@ -175,25 +180,8 @@ function cancelRestTimer(userId) {
 
 // "Workout planned today" reminder — one per user per day, at their chosen time.
 // Duplicated (not imported) from frontend/src/lib/history.js effectiveRoutineId — tiny pure helper, not worth sharing across the two runtimes.
-function effectiveRoutineId(S, iso) {
-  const ov = S.dayPlan?.[iso];
-  if (ov === 'rest') return null;
-  if (ov && S.routines?.some(r => r.id === ov)) return ov;
-  const wd = new Date(iso + 'T12:00:00').getDay();
-  return S.week?.[wd] || null;
-}
 // Computes "now" in an arbitrary IANA zone (e.g. "Europe/Lisbon") instead of the server's own —
 // each user's reminder fires by their own clock, wherever they and their phone actually are.
-function userNow(tz) {
-  try {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: tz, hour12: false,
-      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
-    }).formatToParts(new Date());
-    const g = t => parts.find(p => p.type === t)?.value;
-    return { date: `${g('year')}-${g('month')}-${g('day')}`, hhmm: `${g('hour')}:${g('minute')}` };
-  } catch { return null; } // unknown/invalid tz string — skip this user rather than guess
-}
 setInterval(() => {
   for (const user of db.users) {
     if (!db.subs.some(s => s.userId === user.id)) continue;
@@ -337,27 +325,6 @@ async function requireProgramAccess(admin, userId) {
   return false;
 }
 
-const timeInRange = (t, start, end) => t >= start && t < end;
-const validTime = t => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t));
-const BOOKING_TRANSITIONS = {
-  pending: new Set(['confirmed', 'rejected', 'cancelled']),
-  confirmed: new Set(['cancelled', 'done']),
-  rejected: new Set(), cancelled: new Set(), done: new Set()
-};
-function bookingTransitionAllowed(from, to) { return from === to || !!BOOKING_TRANSITIONS[from]?.has(to); }
-function validateAvailabilitySlots(slots) {
-  if (!Array.isArray(slots) || slots.length > 14) throw new Error('invalid availability');
-  const seen = new Set();
-  for (const s of slots) {
-    const weekday = Number(s.weekday);
-    const start = String(s.time_start || ''); const end = String(s.time_end || '');
-    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6 || !validTime(start) || !validTime(end) || start >= end) throw new Error('invalid availability interval');
-    const key = weekday + ':' + start + '-' + end;
-    if (seen.has(key)) throw new Error('duplicate availability interval');
-    seen.add(key);
-  }
-  for (const a of slots) for (const b of slots) if (a !== b && Number(a.weekday) === Number(b.weekday) && String(a.time_start) < String(b.time_end) && String(b.time_start) < String(a.time_end)) throw new Error('overlapping availability intervals');
-}
 function bookingNotification(booking, admin, status) {
   const lang = langOf(booking.athlete_id);
   const who = admin?.name ? admin.name + ' · ' : '';
@@ -365,17 +332,6 @@ function bookingNotification(booking, admin, status) {
   const text = { confirmed: {en:'Trainer confirmed your session: ',ru:'Тренер подтвердил запись: '}, rejected:{en:'Trainer declined your request: ',ru:'Тренер отклонил заявку: '}, cancelled:{en:'Your session was cancelled: ',ru:'Запись отменена: '}, done:{en:'Session completed: ',ru:'Тренировка отмечена выполненной: '} }[status];
   const body = who + (text?.[lang] || text?.en || '') + when;
   return { title: lang === 'ru' ? 'Запись к тренеру' : 'Trainer booking', body };
-}
-function nextHour(t) { const [h, m] = t.split(':').map(Number); return String(h + 1).padStart(2, '0') + ':00'; }
-function daySlots(availability, weekday) {
-  // Split shifts: merge every interval for this weekday (e.g. 09-12 and 16-21).
-  const out = [];
-  for (const a of (availability || [])) {
-    if (a.weekday !== weekday) continue;
-    let t = a.time_start;
-    while (t < a.time_end) { if (!out.includes(t)) out.push(t); t = nextHour(t); }
-  }
-  return out.sort();
 }
 function localToday() {
   const d = new Date();
@@ -447,22 +403,6 @@ function webhookSecretMatches(req) {
   return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
 }
 
-function normaliseAccessEvent(body) {
-  const eventId = String(body.event_id || body.id || '').trim().slice(0, 200);
-  const memberKey = String(
-    body.member_key || body.external_member_id || body.card_id || body.athlete_id || ''
-  ).trim().slice(0, 200);
-  const branchKey = String(body.branch_key || body.branch_id || body.club_id || '').trim().slice(0, 100) || null;
-  const directionValue = String(body.direction || body.type || 'in').trim().toLowerCase();
-  const direction = ['out', 'exit', 'leave', 'checkout'].includes(directionValue) ? 'out'
-    : ['unknown', 'test'].includes(directionValue) ? 'unknown' : 'in';
-  const rawDate = body.occurred_at || body.timestamp || body.time || Date.now();
-  const occurredAt = new Date(rawDate);
-  if (!eventId) throw new Error('event_id is required');
-  if (!memberKey) throw new Error('member_key is required');
-  if (Number.isNaN(occurredAt.getTime())) throw new Error('occurred_at is invalid');
-  return { eventId, memberKey, branchKey, direction, occurredAt: occurredAt.toISOString(), payload: body };
-}
 
 
 async function adminAuthOptions(req, res) {

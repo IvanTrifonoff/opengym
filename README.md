@@ -129,6 +129,13 @@ its own product.*
   wallet, plus an admin `/admin/help` FAQ.
 
 *Translated from the `dev` history; see [CHANGELOG.md](CHANGELOG.md) v1.2.5…v1.8.1.*
+## Docs
+
+- [TESTING.md](TESTING.md) — тесты проекта и как их запускать (карта, интеграционные с postgres, CI/CD)
+- [VERSIONING.md](VERSIONING.md) — версионность (семвер, git-tag, релизный цикл)
+- [DEPLOY.md](DEPLOY.md) — разворачивание прод-стека на новой VPS
+- [CHANGELOG.md](CHANGELOG.md) — журнал версий
+
 ## Quick start (self-host)
 
 You need [Docker](https://docs.docker.com/get-docker/) with Compose.
