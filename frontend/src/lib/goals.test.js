@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { goalProg, sortGoals, bestRepsFor } from './goals.js'
+import { goalProg, sortGoals, bestRepsFor, goalTargetInUnit } from './goals.js'
 
 // state спортсмена: жим лёжа 100 кг одной тренировкой, присед 140 кг, подтягивания 12 повторов
 const S = { workouts: [
@@ -68,5 +68,25 @@ describe('sortGoals', () => {
   it('пустой список — пустой', () => {
     expect(sortGoals(S, [])).toEqual([])
     expect(sortGoals(S, null)).toEqual([])
+  })
+})
+
+describe('goalTargetInUnit (единицы цели → текущие)', () => {
+  it('та же единица — без изменений', () => {
+    expect(goalTargetInUnit({ w: 100, unit: 'kg' }, 'kg')).toBe(100)
+    expect(goalTargetInUnit({ w: 200, unit: 'lb' }, 'lb')).toBe(200)
+  })
+  it('kg → lb умножает (100 кг ≈ 220.5 lb)', () => {
+    expect(goalTargetInUnit({ w: 100, unit: 'kg' }, 'lb')).toBe(220.5)
+  })
+  it('lb → kg делит (220 lb ≈ 99.8 кг)', () => {
+    expect(goalTargetInUnit({ w: 220, unit: 'lb' }, 'kg')).toBe(99.8)
+  })
+  it('без unit у цели — вес как есть', () => {
+    expect(goalTargetInUnit({ w: 100 }, 'kg')).toBe(100)
+  })
+  it('reps-цель и пустая цель — null (линия веса не рисуется)', () => {
+    expect(goalTargetInUnit({ exId: 'pullup', reps: 15 }, 'kg')).toBeNull()
+    expect(goalTargetInUnit(null, 'kg')).toBeNull()
   })
 })

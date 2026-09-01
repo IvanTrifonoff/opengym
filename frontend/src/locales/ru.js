@@ -184,6 +184,7 @@ export default {
   'Exercise progress': 'Прогресс упражнений',
   'Top speed per workout': 'Максимальная скорость за тренировку',
   'Best set weight per workout': 'Лучший вес за тренировку',
+  'Best reps per workout': 'Лучшие повторения за тренировку',
   'Finish your first workout to see progress curves here.': 'Заверши первую тренировку, чтобы увидеть здесь кривые прогресса.',
   'Recent workouts': 'Недавние тренировки',
   'Less time': 'Меньше',

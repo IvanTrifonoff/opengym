@@ -42,3 +42,18 @@ export function sortGoals(S, goals) {
     return db.pct - da.pct
   })
 }
+
+// Целевой вес цели в единицах пользователя на текущий момент. Цель могла быть создана
+// в кг, а юзер потом переключился на фунты и обратно — для линии цели на графике (и
+// подписей) вес надо привести к S.unit. Для bodyweight-целей (повторения) линии веса
+// нет — возвращаем null. Округление до 0.1 как при вводе веса.
+const LB_PER_KG = 0.45359237
+export function goalTargetInUnit(goal, unit) {
+  if (!goal || goal.reps != null) return null
+  const w = Number(goal.w) || 0
+  if (!goal.unit || !unit || goal.unit === unit) return w
+  // Сначала приводим к кг, потом в целевую единицу — так направления конвертации
+  // не перепутать (lb→kg — умножение, kg→lb — деление).
+  const kg = goal.unit === 'lb' ? w * LB_PER_KG : w
+  return Math.round((unit === 'lb' ? kg / LB_PER_KG : kg) * 10) / 10
+}

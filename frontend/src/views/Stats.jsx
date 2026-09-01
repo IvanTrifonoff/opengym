@@ -5,6 +5,7 @@ import { EXIDX } from '../lib/exercises.js'
 import { lastBW, streakWeeks, setLabel, modeOf, effortOf } from '../lib/history.js'
 import { fmtNum, fmtDate, fmtVol, todayISO, weekKey } from '../lib/format.js'
 import { t, exName } from '../lib/i18n.js'
+import { goalProg, goalTargetInUnit } from '../lib/goals.js'
 import { bwSheet, goalSheet, calendarSheet, workoutDetailSheet, WorkoutRow, bwDeltaColor } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Heatmap from '../components/Heatmap.jsx'
@@ -161,8 +162,14 @@ export default function Stats() {
   })() : 'reps'
   const curCardio = curMode === 'cardio'
   const curTimed = curMode === 'time'
-  const metric = s => curCardio ? (s.speed || 0) : curTimed ? (s.sec || 0) : (s.w || 0)
-  const exUnit = curCardio ? 'km/h' : curTimed ? 's' : S.unit
+  // Цель для текущего упражнения. Весовая — рисуем линию цели на кривых «Лучший подход»
+  // и «Расч. 1ПМ» (обе в единицах юзера). Цель в повторениях (bodyweight-упражнение) —
+  // на оси веса бессмысленна, поэтому кривая «Лучший подход» строится по повторениям,
+  // и линия цели ложится на ту же ось.
+  const exGoal = (S.goals || []).find(g => g.exId === curEx) || null
+  const goalReps = !!(exGoal && exGoal.reps != null)
+  const metric = s => curCardio ? (s.speed || 0) : curTimed ? (s.sec || 0) : goalReps ? (s.r || 0) : (s.w || 0)
+  const exUnit = curCardio ? 'km/h' : curTimed ? 's' : goalReps ? t('reps') : S.unit
   let exPts = [], exList = [], exBest = 0
   if (curEx) {
     S.workouts.forEach(w => {
@@ -184,6 +191,10 @@ export default function Stats() {
   const effPts = exPts.map((p, i) => (exRir[i] == null ? null : { t: p.t, y: toScale(kind, exRir[i]), d: p.d })).filter(Boolean)
   const onE1 = showE1 && exMetric === 'e1rm'
   const onEff = showEff && exMetric === 'effort'
+  // Линия цели на графике (как у веса тела): весовая цель — в единицах юзера, на «Лучший
+  // подход» и «Расч. 1ПМ»; цель в повторениях — на кривую повторений. На графике усилия
+  // (RIR) другая шкала — линию не рисуем.
+  const goalLine = exGoal ? (onEff ? null : goalReps ? exGoal.reps : goalTargetInUnit(exGoal, S.unit)) : null
   const topPts = exPts.map((p, i) => ({
     t: p.t, y: p.y, d: p.d,
     // 0 RIR (nothing left) is a full dot, 4+ a faint one; unrated sessions keep the plain line.
@@ -238,12 +249,21 @@ export default function Stats() {
           <div className="chart">
             {onEff
               ? <LineChart points={effPts} h={150} unit={hd} color="var(--yellow)" invert={kind === 'rir'} />
-              : <LineChart points={onE1 ? e1Pts.map(p => ({ t: p.t, y: p.y, d: p.d })) : topPts} h={150} unit={exUnit} color="var(--blue)" />}
+              : <LineChart points={onE1 ? e1Pts.map(p => ({ t: p.t, y: p.y, d: p.d })) : topPts} h={150} unit={exUnit} color="var(--blue)" goal={goalLine} />}
           </div>
+          {exGoal && (() => { const gp = goalProg(S, exGoal); const target = goalReps ? exGoal.reps : goalTargetInUnit(exGoal, S.unit); const unit = goalReps ? t('reps') : S.unit; return <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--sep)' }}>
+            <div className="row between small">
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 14 }}>🎯</span><b>{t('Goal')}:</b>&nbsp;{fmtNum(target)}&nbsp;{unit}</span>
+              <span style={{ fontWeight: 700, color: gp.done ? 'var(--acc)' : 'inherit' }}>{gp.done ? t('reached!') : gp.pct + '%'}</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 3, background: 'var(--surface)', overflow: 'hidden', marginTop: 6 }}>
+              <i style={{ display: 'block', height: '100%', borderRadius: 3, background: gp.done ? 'var(--acc)' : 'var(--accent)', width: Math.max(3, gp.pct) + '%' }} />
+            </div>
+          </div> })()}
           <div style={{ marginTop: 8 }}>{exList.map((p, i) => <div key={i} className="row between small" style={{ padding: '6px 0', borderBottom: 'var(--hair) solid var(--sep)' }}>
             <span className="muted">{fmtDate(p.d, true)}</span><span>{p.sets.map(s => setLabel(curEx, s, p.target)).join('  ')}</span></div>)}</div>
           <div className="small dim" style={{ marginTop: 8 }}>
-            {onEff ? t('Average effort per workout') : onE1 ? t('Estimated 1RM per workout') : curCardio ? t('Top speed per workout') : curTimed ? t('Longest hold per workout') : t('Best set weight per workout')}
+            {onEff ? t('Average effort per workout') : onE1 ? t('Estimated 1RM per workout') : curCardio ? t('Top speed per workout') : curTimed ? t('Longest hold per workout') : goalReps ? t('Best reps per workout') : t('Best set weight per workout')}
             {onEff ? '' : <> · {t('Best:')}{' '}<b className="accent">{fmtNum(onE1 ? e1Best.est : exBest)} {onE1 ? S.unit : exUnit}</b></>}
           </div>
           {onE1 && <div className="small dim" style={{ marginTop: 4 }}>
