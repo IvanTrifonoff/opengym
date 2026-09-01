@@ -144,6 +144,17 @@ CREATE TABLE IF NOT EXISTS app_notifications (
 );
 CREATE INDEX IF NOT EXISTS app_notifications_user_idx ON app_notifications (user_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS promo_leads (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  contact TEXT NOT NULL,
+  gym TEXT NOT NULL DEFAULT '',
+  message TEXT NOT NULL DEFAULT '',
+  plan TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS promo_leads_created_idx ON promo_leads (created_at DESC);
+
 CREATE TABLE IF NOT EXISTS trainer_assignments (
   user_id TEXT PRIMARY KEY,
   trainer_id TEXT NOT NULL,
@@ -1046,3 +1057,25 @@ export async function markBookingReminded({ id }) {
   await ready();
   await pool.query(`UPDATE coach_bookings SET reminded_at = now() WHERE id = $1`, [id]);
 }
+// --- Promo: заявки с публичной страницы (gym.trfnv.ru/promo). ---
+// Лёгкая таблица-журнал: храним сырую заявку, чтобы ничего не терялось.
+export async function insertLead({ id, name, contact, gym = '', message = '', plan = '' }) {
+  await ready();
+  await pool.query(
+    `INSERT INTO promo_leads (id, name, contact, gym, message, plan)
+     VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`,
+    [id, String(name).slice(0, 120), String(contact).slice(0, 200),
+     String(gym).slice(0, 200), String(message).slice(0, 2000), String(plan).slice(0, 80)]
+  );
+}
+
+// Идентификатор владельца (owner) — первому созданному владельцу идут уведомления
+// о новых заявках с промо-страницы (админка trfnv).
+export async function findOwnerId() {
+  await ready();
+  const r = await pool.query(
+    `SELECT id FROM admin_users WHERE role = 'owner' ORDER BY created_at LIMIT 1`
+  );
+  return r.rows[0] ? r.rows[0].id : null;
+}
+

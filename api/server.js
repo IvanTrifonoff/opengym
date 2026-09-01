@@ -20,7 +20,8 @@ import {
   getTrainerAvailability, setTrainerAvailability, listBookings, createBooking,
   findBookingConflict, getBooking, updateBookingStatus,
   listRecurringSeries, listRecurringSkips, listRecurringSummary, setRecurringSeries, deleteRecurringSeries, skipRecurringDate, unskipRecurringDate, rollRecurringForward,
-  listDueReminders, markBookingReminded
+  listDueReminders, markBookingReminded,
+  insertLead, findOwnerId
 } from './admin-db.js';
 import { collectAnalytics, athleteDetail } from './analytics.js';
 import { buildRetentionSnapshot, scheduleRetentionSnapshot } from './retention-runner.js';
@@ -29,6 +30,7 @@ import { createNotificationsRoutes } from './routes/notifications.js';
 import { createLoyaltyRoutes } from './routes/loyalty.js';
 import { createAdminRoutes } from './routes/admin.js';
 import { createTrainerRoutes } from './routes/trainer.js';
+import { createLeadsRoutes } from './routes/leads.js';
 import { replaceAthleteMetrics, backfillAthleteMetrics } from './metrics.js';
 
 import {
@@ -759,6 +761,10 @@ const routeModules = [
     json, readBody, readSession, requireAdminAccount,
     adminDbReady, listNotifications, markBadgeSeen,
     markNotificationsRead, countUnreadNotifications
+  }),
+  ...createLeadsRoutes({
+    json, readBody, adminDbReady,
+    insertLead, findOwnerId, saveNotification, sendPush
   })
 ];
 for (const r of routeModules) routes[r.method + ' ' + r.path] = r.handler;

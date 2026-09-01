@@ -21,7 +21,8 @@ const {
   adminDbReady, setTrainerAvailability, getTrainerAvailability, createBooking,
   findBookingConflict, updateBookingStatus, getBooking, createAdminInvite,
   getAdminInvite, acceptLoyaltyEvent, getWallet, roleAllowed, recurHorizonDays,
-  setTrainerAssignment, listTrainerAssignments, saveNotification
+  setTrainerAssignment, listTrainerAssignments, saveNotification,
+  insertLead, findOwnerId
 } = db;
 
 const T = (Date.now() % 1e6).toString(36) + Math.random().toString(36).slice(2, 6);
@@ -163,5 +164,50 @@ test('уведомления: saveNotification идемпотентен по id 
     assert.equal(second, 0, 'повтор не создаёт дубль — вызывающий не шлёт повторный push');
   } finally {
     await pool.query('DELETE FROM app_notifications WHERE id=$1', [id]);
+  }
+});
+
+
+/* ---- промо-заявки с сайта (тарифы / КП) ---- */
+test('промо-заявки: insertLead + findOwnerId + уведомление владельцу идемпотентно', async (t) => {
+  if (!needDb(t)) return;
+  try {
+    const ownerId = await findOwnerId();
+    assert.ok(ownerId, 'в БД есть владелец (роль owner)');
+
+    const leadId = 'lead_' + T;
+    await insertLead({
+      id: leadId, name: 'Тест', contact: 'test@example.com',
+      gym: 'Тест-зал', message: 'хочу КП', plan: 'Индивидуально'
+    });
+    const rows = await (await pool.query('SELECT * FROM promo_leads WHERE id = $1', [leadId])).rows;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].name, 'Тест');
+    assert.equal(rows[0].plan, 'Индивидуально');
+
+    // повторная вставка того же id — не дублирует журнал
+    await insertLead({ id: leadId, name: 'Тест', contact: 'x' });
+    const again = await (await pool.query('SELECT count(*)::int AS n FROM promo_leads WHERE id = $1', [leadId])).rows;
+    assert.equal(again[0].n, 1, 'дубликат заявки не создаётся');
+
+    // уведомление владельцу — идемпотентно (ровно одна запись)
+    const notifId = 'promo-' + leadId;
+    const first = await saveNotification({
+      id: notifId, userId: ownerId, title: 'Новый запрос с сайта', body: 'тест', payload: { kind: 'promo_lead' }
+    });
+    const second = await saveNotification({
+      id: notifId, userId: ownerId, title: 'Новый запрос с сайта', body: 'тест', payload: { kind: 'promo_lead' }
+    });
+    assert.equal(first, 1, 'первая запись создана');
+    assert.equal(second, 0, 'повторная — ON CONFLICT DO NOTHING');
+    const notifs = await (await pool.query('SELECT count(*)::int AS n FROM app_notifications WHERE id = $1', [notifId])).rows;
+    assert.equal(notifs[0].n, 1, 'в центре уведомлений ровно одна');
+
+    // подчистка
+    await pool.query('DELETE FROM app_notifications WHERE id = $1', [notifId]);
+    await pool.query('DELETE FROM promo_leads WHERE id = $1', [leadId]);
+  } catch (e) {
+    try { await pool.query('DELETE FROM promo_leads WHERE id = $1', ['lead_' + T]); } catch {}
+    throw e;
   }
 });
