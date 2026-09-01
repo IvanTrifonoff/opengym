@@ -15,3 +15,5 @@ api/node_modules/
 backup.sh
 *.bak-*
 frontend/dist/
+
+backups/
