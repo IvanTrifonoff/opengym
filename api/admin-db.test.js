@@ -22,7 +22,8 @@ const {
   findBookingConflict, updateBookingStatus, getBooking, createAdminInvite,
   getAdminInvite, acceptLoyaltyEvent, getWallet, roleAllowed, recurHorizonDays,
   setTrainerAssignment, listTrainerAssignments, saveNotification,
-  insertLead, findOwnerId
+  insertLead, findOwnerId, getSetting, setSetting, deleteSetting,
+  listLeads, markLeadsViewed, countUnreadLeads
 } = db;
 
 const T = (Date.now() % 1e6).toString(36) + Math.random().toString(36).slice(2, 6);
@@ -212,6 +213,39 @@ test('промо-заявки: insertLead + findOwnerId + уведомление
     await pool.query('DELETE FROM promo_leads WHERE id = $1', [leadId]);
   } catch (e) {
     try { await pool.query('DELETE FROM promo_leads WHERE id = $1', ['lead_' + T]); } catch {}
+    throw e;
+  }
+});
+
+
+test('промо: настройки (СБП QR) + прочитанность заявок', async (t) => {
+  if (!needDb(t)) return;
+  try {
+    // настройки ключ-значение
+    await setSetting('test_key_' + T, 'data:image/png;base64,AAAA');
+    assert.equal(await getSetting('test_key_' + T), 'data:image/png;base64,AAAA');
+    await setSetting('test_key_' + T, 'v2');
+    assert.equal(await getSetting('test_key_' + T), 'v2', 'перезапись');
+    await deleteSetting('test_key_' + T);
+    assert.equal(await getSetting('test_key_' + T), null, 'удаление');
+
+    // заявка: непрочитана -> список -> прочитана (счётчики — относительно фона БД)
+    const before = await countUnreadLeads();
+    const lid = 'lead2_' + T;
+    await insertLead({ id: lid, name: 'Чтение', contact: 'c@x.ru', plan: 'Старт' });
+    assert.equal(await countUnreadLeads(), before + 1, '+1 непрочитанная');
+    let list = await listLeads();
+    const row = list.find(x => x.id === lid);
+    assert.ok(row && !row.viewed, 'в списке с viewed:false');
+    await markLeadsViewed();
+    assert.equal(await countUnreadLeads(), before, 'после просмотра — как было');
+    list = await listLeads();
+    assert.ok(list.find(x => x.id === lid).viewed, 'теперь viewed:true');
+
+    await pool.query('DELETE FROM promo_leads WHERE id = $1', [lid]);
+  } catch (e) {
+    try { await pool.query('DELETE FROM promo_leads WHERE id = $1', ['lead2_' + T]); } catch {}
+    try { await deleteSetting('test_key_' + T); } catch {}
     throw e;
   }
 });

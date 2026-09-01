@@ -10,6 +10,7 @@ import Analytics from './Analytics.jsx'
 import Trainer from './Trainer.jsx'
 import TrainerNotifications from './TrainerNotifications.jsx'
 import AdminHelp from './AdminHelp.jsx'
+import AdminLeads from './AdminLeads.jsx'
 import Modals from '../components/Modals.jsx'
 import Toast from '../components/Toast.jsx'
 
@@ -206,11 +207,15 @@ function AdminDashboard({ admin, onLogout }) {
   const nav = useNavigate()
   const [sp] = useSearchParams(); const [staff, setStaff] = useState([]); const [rules, setRules] = useState([]); const [push, setPush] = useState(null)
   const [unread, setUnread] = useState(0)
+  const [leadUnread, setLeadUnread] = useState(0)
   const tab = sp.get('tab') || 'overview'
   const go = v => nav('/admin' + (v === 'overview' ? '' : '?tab=' + v))
   // Непрочитанные уведомления (заявки с сайта, заказы тарифов, статусы) — бейдж на колокольчике.
-  const refreshUnread = () => api('/api/admin/notifications')
-    .then(d => setUnread((d.notifications || []).filter(n => !n.read).length)).catch(() => {})
+  const refreshUnread = () => {
+    api('/api/admin/notifications')
+      .then(d => setUnread((d.notifications || []).filter(n => !n.read).length)).catch(() => {})
+    api('/api/admin/leads').then(d => setLeadUnread(d.unread || 0)).catch(() => {})
+  }
   useEffect(() => {
     refreshUnread()
     const t = setInterval(refreshUnread, 60000)
@@ -226,19 +231,23 @@ function AdminDashboard({ admin, onLogout }) {
   const lastPushFail = push?.stats?.failures?.length ? push.stats.failures[push.stats.failures.length - 1] : null
   const pushTile = push ? (push.degraded ? 'сбои' : 'ok') : '—'
   const canEdit = admin.role === 'owner' || admin.role === 'manager'
-  const tabs = [['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ['staff', 'Сотрудники'], ...(canEdit ? [['invites', 'Приглашения']] : [])]
+  const tabs = [['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ['staff', 'Сотрудники'], ...(canEdit ? [['invites', 'Приглашения'], ['leads', 'Заявки']] : [])]
   const back = () => api('/api/admin/impersonate/back', { method: 'POST', body: '{}' }).then(d => { location.href = d.redirect || '/admin' }).catch(() => {})
   return <div className="narrow" style={{ paddingBottom: 40 }}>
     <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">ИмпульС</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {admin.role}</div></div><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" style={{ position: 'relative' }} onClick={() => nav('/admin/notifications')} aria-label="Уведомления"><Icon name="bell" />{unread > 0 && <span className="notif-badge">{unread > 9 ? '9+' : unread}</span>}</button><button className="iconbtn" onClick={() => nav('/admin/analytics')} aria-label="Аналитика"><Icon name="chart" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
     {admin.impersonated && <div className="card" style={{ borderColor: 'var(--acc)', marginBottom: 14 }}><div className="row between" style={{ gap: 8 }}><div className="small">Вы смотрите интерфейс от имени <b>{admin.name}</b> · {admin.role}</div><Button size="sm" variant="primary" onClick={back}>Вернуться</Button></div></div>}
     <NavBar
       selected={tab}
+      badges={{ leads: leadUnread }}
       items={[
         { key: 'overview', icon: 'house', label: 'Обзор', onClick: () => go('overview') },
         { key: 'loyalty', icon: 'crown', label: 'Loyalty', onClick: () => go('loyalty') },
         { key: 'rewards', icon: 'medal', label: 'Награды', onClick: () => go('rewards') },
         { key: 'staff', icon: 'person', label: 'Сотрудники', onClick: () => go('staff') },
-        ...(canEdit ? [{ key: 'invites', icon: 'link', label: 'Приглашения', onClick: () => go('invites') }] : [])
+        ...(canEdit ? [
+          { key: 'invites', icon: 'link', label: 'Приглашения', onClick: () => go('invites') },
+          { key: 'leads', icon: 'clipboard', label: 'Заявки', onClick: () => go('leads') }
+        ] : [])
       ]}
     />
     {tab === 'overview' && <><div className="tiles"><div className="tile"><div className="l">Сотрудники</div><div className="v">{staff.length || '—'}</div></div><div className="tile"><div className="l">Правила</div><div className="v">{rules.length || '—'}</div></div><div className="tile"><div className="l">Пуши</div><div className="v" style={{ fontSize: '1rem', color: push?.degraded ? 'var(--red)' : 'var(--green)' }}>{pushTile}</div></div><div className="tile"><div className="l">Роль</div><div className="v" style={{ fontSize: '1rem' }}>{admin.role}</div></div><div className="tile"><div className="l">База</div><div className="v" style={{ fontSize: '1rem', color: 'var(--green)' }}>online</div></div></div>{push?.degraded && <div className="card" style={{ borderColor: 'var(--red)', marginBottom: 12, background: 'color-mix(in srgb,var(--red) 7%,var(--bg-el))' }}><div className="row between" style={{ gap: 10 }}><div className="grow"><div style={{ fontWeight: 600, color: 'var(--red)' }}>Сбои доставки push-уведомлений</div><div className="small dim" style={{ marginTop: 3 }}>не отправлено {push.stats?.failed || 0} шт. за 24 ч{lastPushFail ? ' · последний: ' + lastPushFail.host + (lastPushFail.status ? ' · ' + lastPushFail.status : '') + (lastPushFail.error ? ' · ' + lastPushFail.error : '') : ''}{push.webhookConfigured ? '' : ' · вебхук-алерт не настроен'}</div></div>{canEdit && <Button size="sm" variant="ghost" onClick={resetPush}>Сбросить</Button>}</div></div>}<div className="card"><h2 style={{ marginTop: 0 }}>Быстрый старт</h2><p className="dim">Создайте правило «Посещение» и выдайте сотруднику invite-код. События СКУД начнут начислять баллы после привязки member_key к профилю спортсмена.</p><Button variant="primary" onClick={() => go('loyalty')}>Настроить loyalty</Button></div></>}
@@ -246,6 +255,7 @@ function AdminDashboard({ admin, onLogout }) {
     {tab === 'rewards' && <Rewards canEdit={canEdit} />}
     {tab === 'staff' && <Staff admin={admin} />}
     {tab === 'invites' && <Invites admin={admin} />}
+    {tab === 'leads' && <AdminLeads onViewed={n => setLeadUnread(n)} />}
   </div>
 }
 

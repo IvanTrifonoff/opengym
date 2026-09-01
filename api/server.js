@@ -21,7 +21,8 @@ import {
   findBookingConflict, getBooking, updateBookingStatus,
   listRecurringSeries, listRecurringSkips, listRecurringSummary, setRecurringSeries, deleteRecurringSeries, skipRecurringDate, unskipRecurringDate, rollRecurringForward,
   listDueReminders, markBookingReminded,
-  insertLead, findOwnerId
+  insertLead, findOwnerId, getSetting, setSetting, deleteSetting,
+  listLeads, markLeadsViewed, countUnreadLeads
 } from './admin-db.js';
 import { collectAnalytics, athleteDetail } from './analytics.js';
 import { buildRetentionSnapshot, scheduleRetentionSnapshot } from './retention-runner.js';
@@ -764,7 +765,9 @@ const routeModules = [
   }),
   ...createLeadsRoutes({
     json, readBody, adminDbReady,
-    insertLead, findOwnerId, saveNotification, sendPush
+    insertLead, findOwnerId, saveNotification, sendPush,
+    requireAdminAccount, getSetting, setSetting, deleteSetting,
+    listLeads, markLeadsViewed, countUnreadLeads
   })
 ];
 for (const r of routeModules) routes[r.method + ' ' + r.path] = r.handler;

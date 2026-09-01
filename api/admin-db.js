@@ -154,6 +154,13 @@ CREATE TABLE IF NOT EXISTS promo_leads (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS promo_leads_created_idx ON promo_leads (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE promo_leads ADD COLUMN IF NOT EXISTS viewed_at TIMESTAMPTZ;
 ALTER TABLE promo_leads ADD COLUMN IF NOT EXISTS company TEXT NOT NULL DEFAULT '';
 ALTER TABLE promo_leads ADD COLUMN IF NOT EXISTS inn TEXT NOT NULL DEFAULT '';
 ALTER TABLE promo_leads ADD COLUMN IF NOT EXISTS payment TEXT NOT NULL DEFAULT '';
@@ -1081,5 +1088,41 @@ export async function findOwnerId() {
     `SELECT id FROM admin_users WHERE role = 'owner' ORDER BY created_at LIMIT 1`
   );
   return r.rows[0] ? r.rows[0].id : null;
+}
+// --- Ключ-значение настройки (СБП QR для /pricing, далее — любые). ---
+export async function getSetting(key) {
+  await ready();
+  const r = await pool.query('SELECT value FROM app_settings WHERE key = $1', [key]);
+  return r.rows[0] ? r.rows[0].value : null;
+}
+export async function setSetting(key, value) {
+  await ready();
+  await pool.query(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    [key, String(value).slice(0, 400000)]
+  );
+}
+export async function deleteSetting(key) {
+  await ready();
+  await pool.query('DELETE FROM app_settings WHERE key = $1', [key]);
+}
+
+// --- Заявки с сайта: список + «прочитано» (бейдж непрочитанного в админке). ---
+export async function listLeads({ limit = 100 } = {}) {
+  await ready();
+  const r = await pool.query(
+    `SELECT id, name, contact, gym, message, plan, company, inn, payment, viewed_at, created_at
+     FROM promo_leads ORDER BY created_at DESC LIMIT $1`, [limit]);
+  return r.rows.map(row => ({ ...row, viewed: !!row.viewed_at }));
+}
+export async function countUnreadLeads() {
+  await ready();
+  const r = await pool.query('SELECT count(*)::int AS n FROM promo_leads WHERE viewed_at IS NULL');
+  return r.rows[0].n;
+}
+export async function markLeadsViewed() {
+  await ready();
+  await pool.query(`UPDATE promo_leads SET viewed_at = COALESCE(viewed_at, now()) WHERE viewed_at IS NULL`);
 }
 

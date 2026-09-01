@@ -9,7 +9,9 @@
 // Фабрика: принимает зависимости и возвращает [{ method, path, handler }].
 export function createLeadsRoutes(deps) {
   const {
-    json, readBody, adminDbReady, insertLead, findOwnerId, saveNotification, sendPush
+    json, readBody, adminDbReady, insertLead, findOwnerId, saveNotification, sendPush,
+    requireAdminAccount, getSetting, setSetting, deleteSetting,
+    listLeads, markLeadsViewed, countUnreadLeads
   } = deps;
 
   // Простейший per-IP лимит: не больше 5 заявок с одного адреса в час.
@@ -88,6 +90,88 @@ export function createLeadsRoutes(deps) {
           console.error('lead save failed:', error.message);
           json(res, 503, { error: 'service unavailable' });
         }
+      }
+    },
+
+    // Публичный СБП-QR (показывается в модалке оплаты на /pricing). Без авторизации:
+    // data-URL картинки или ссылка на изображение. Пусто — клиент видит
+    // «пришлём ссылку на контакт».
+    {
+      method: 'GET',
+      path: '/api/sbp-qr',
+      handler: async (req, res) => {
+        try {
+          await adminDbReady;
+          json(res, 200, { qr: await getSetting('sbp_qr') });
+        } catch (error) { json(res, 503, { error: 'service unavailable' }); }
+      }
+    },
+
+    // Админ: список заявок с сайта (владелец/менеджер) + счётчик непрочитанного.
+    {
+      method: 'GET',
+      path: '/api/admin/leads',
+      handler: async (req, res) => {
+        const admin = await requireAdminAccount(req, res, ['owner', 'manager']);
+        if (!admin) return;
+        try {
+          await adminDbReady;
+          json(res, 200, { leads: await listLeads(), unread: await countUnreadLeads() });
+        } catch (error) { json(res, 503, { error: 'service unavailable' }); }
+      }
+    },
+
+    // Админ: отметить все заявки прочитанными (открыл вкладку «Заявки»).
+    {
+      method: 'POST',
+      path: '/api/admin/leads/viewed',
+      handler: async (req, res) => {
+        const admin = await requireAdminAccount(req, res, ['owner', 'manager']);
+        if (!admin) return;
+        try {
+          await adminDbReady;
+          await markLeadsViewed();
+          json(res, 200, { ok: true, unread: await countUnreadLeads() });
+        } catch (error) { json(res, 503, { error: 'service unavailable' }); }
+      }
+    },
+
+    // Админ: сохранить СБП-QR (data-URL или ссылка). Ограничение ~250 КБ.
+    {
+      method: 'POST',
+      path: '/api/admin/sbp-qr',
+      handler: async (req, res) => {
+        const admin = await requireAdminAccount(req, res, ['owner', 'manager']);
+        if (!admin) return;
+        let body = {};
+        try { body = await readBody(req); } catch { /* validation below */ }
+        const qr = String(body.qr || '').trim();
+        const b64body = qr.indexOf(',') >= 0 ? qr.slice(qr.indexOf(',') + 1) : ''
+        const okDataUrl = /^data:image\/[a-z+]+;base64,/i.test(qr) && qr.length <= 260000 && /^[a-z0-9+/=]+$/i.test(b64body) && b64body.length > 32
+        const okUrl = /^https?:\/\//.test(qr) && qr.length <= 1000;
+        if (!okDataUrl && !okUrl) {
+          return json(res, 400, { error: 'qr must be a data:image URL or http(s) link (max 250KB)' });
+        }
+        try {
+          await adminDbReady;
+          await setSetting('sbp_qr', qr);
+          json(res, 200, { ok: true });
+        } catch (error) { json(res, 503, { error: 'service unavailable' }); }
+      }
+    },
+
+    // Админ: удалить СБП-QR.
+    {
+      method: 'DELETE',
+      path: '/api/admin/sbp-qr',
+      handler: async (req, res) => {
+        const admin = await requireAdminAccount(req, res, ['owner', 'manager']);
+        if (!admin) return;
+        try {
+          await adminDbReady;
+          await deleteSetting('sbp_qr');
+          json(res, 200, { ok: true });
+        } catch (error) { json(res, 503, { error: 'service unavailable' }); }
       }
     }
   ];

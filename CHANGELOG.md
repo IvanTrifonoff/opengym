@@ -1,3 +1,30 @@
+## v1.2.35 — (2026-09-01) — СБП-QR в админке + вкладка «Заявки» с бейджами
+- frontend/src/views/AdminLeads.jsx (НОВОЕ): вкладка «Заявки» панели
+  управления (владелец/менеджер). Две части:
+  · «Оплата по СБП — QR-код»: загрузка PNG/JPEG (до 250 КБ) или вставка
+    ссылки на картинку; превью и удаление. QR хранится в app_settings и
+    показывается прямо в модалке «Оформить тариф» на /pricing — клиент
+    сканирует и платит сразу, не дожидаясь ответа.
+  · Список заявок с сайта (promo_leads): имя, зал, контакт, тариф, способ
+    оплаты, компания/ИНН, сообщение, дата; непрочитанные подсвечены бейджем
+    «новое», при открытии вкладки помечаются прочитанными (бейдж сбрасывается).
+- frontend/src/views/AdminApp.jsx: вкладка «Заявки» в NavBar с бейджем
+  непрочитанных (опрос /api/admin/leads раз в минуту, как колокольчик).
+- frontend/public/pricing.html: модалка оплаты при выборе «СБП» запрашивает
+  /api/sbp-qr и показывает QR-код (если загружен) — иначе прежний фолбэк
+  «пришлём ссылку на контакт».
+- api/admin-db.js: таблица app_settings (key-value) + getSetting/setSetting/
+  deleteSetting; promo_leads + колонка viewed_at; listLeads/markLeadsViewed/
+  countUnreadLeads.
+- api/routes/leads.js: GET /api/sbp-qr (публично), GET /api/admin/leads,
+  POST /api/admin/leads/viewed, POST/DELETE /api/admin/sbp-qr (owner/manager,
+  валидация data-URL/ссылки ≤250 КБ).
+- api/admin-db.test.js: тест настроек (set/get/delete) и прочитанности заявок
+  (счётчики относительно фона БД).
+- Проверен полный цикл: POST /api/lead → заявка в promo_leads (unread) →
+  уведомление владельцу в центр + бейдж → markLeadsViewed сбрасывает →
+  GET /api/sbp-qr отдаёт сохранённый QR. api 13/13, frontend 206/206.
+
 ## v1.2.34 — (2026-09-01) — страница /pricing, оплата СБП/счёт, колокольчик владельца
 - frontend/public/pricing.html (НОВОЕ, gym.trfnv.ru/pricing): отдельная страница
   тарифов в стиле промо — 4 карточки (Старт 4 990 ₽/мес, Сеть 9 990 ₽/мес,
