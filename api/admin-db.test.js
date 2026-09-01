@@ -11,6 +11,8 @@
 // повторные прогоны чисты и не задевают другие данные.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { pool } from './access-db.js';
+import { replaceAthleteMetrics, backfillAthleteMetrics } from './metrics.js';
 
 const USE_DB = !!process.env.DATABASE_URL;
 
@@ -110,4 +112,43 @@ test('назначение тренера: set/unset', async (t) => {
     assert.equal(a.trainer_id, trainer); // функция возвращает snake_case-строки
     assert.ok((await listTrainerAssignments()).some(x => x.user_id === UID && x.trainer_id === trainer));
   } finally { await setTrainerAssignment({ userId: UID, trainerId: null }); }
+});
+/* ---- интеграционные тесты: тренировочные метрики (athlete_metrics) ---- */
+test('метрики: replace перезаписывает дни и удаляет пропавшие', async (t) => {
+  if (!needDb(t)) return;
+  const uid = 'mtr_' + T;
+  await replaceAthleteMetrics(uid, { workouts: [
+    { d: '2026-08-01', entries: [{ sets: [{ w: 60, r: 10, done: true }] }] },
+    { d: '2026-08-02', entries: [{ sets: [{ w: 70, r: 8, done: true }] }] }
+  ] });
+  const one = await pool.query('SELECT * FROM athlete_metrics WHERE user_id=$1 ORDER BY day', [uid]);
+  assert.equal(one.rows.length, 2);
+  assert.equal(one.rows[0].volume, 600);
+  assert.equal(one.rows[0].sets, 1);
+  // повторный replace: день изменён, 08-02 пропал, 08-03 добавлен
+  await replaceAthleteMetrics(uid, { workouts: [
+    { d: '2026-08-01', entries: [{ sets: [{ w: 80, r: 10, done: true }] }] },
+    { d: '2026-08-03', entries: [{ sets: [{ w: 90, r: 5, done: true }] }] }
+  ] });
+  const two = await pool.query('SELECT * FROM athlete_metrics WHERE user_id=$1 ORDER BY day', [uid]);
+  assert.deepEqual(two.rows.map(r => r.day.toISOString().slice(0, 10)), ['2026-08-01', '2026-08-03']);
+  assert.equal(two.rows[0].volume, 800);
+  // replace пустым state стирает всё
+  await replaceAthleteMetrics(uid, null);
+  const none = await pool.query('SELECT * FROM athlete_metrics WHERE user_id=$1', [uid]);
+  assert.equal(none.rows.length, 0);
+  await pool.query('DELETE FROM athlete_metrics WHERE user_id=$1', [uid]);
+});
+
+test('метрики: backfill по users из state-файлов', async (t) => {
+  if (!needDb(t)) return;
+  const uid = 'mtr_' + T + 'b';
+  const users = [{ id: uid }, { id: 'mtr_nostate_' + T, admin: true }];
+  const stateOf = id => id === uid ? { workouts: [{ d: '2026-08-10', entries: [{ sets: [{ w: 40, r: 12, done: true }] }] }] } : null;
+  const silent = { log() {}, error() {} };
+  await backfillAthleteMetrics({ users, stateOf, log: silent });
+  const rows = await pool.query('SELECT * FROM athlete_metrics WHERE user_id=$1', [uid]);
+  assert.equal(rows.rows.length, 1);
+  assert.equal(rows.rows[0].volume, 480);
+  await pool.query('DELETE FROM athlete_metrics WHERE user_id=$1', [uid]);
 });

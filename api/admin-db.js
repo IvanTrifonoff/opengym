@@ -226,6 +226,23 @@ CREATE INDEX IF NOT EXISTS coach_bookings_series_idx ON coach_bookings (series_i
 ALTER TABLE coach_bookings ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ;
 `;
 
+// Тренировочные метрики спортсменов, денормализованные по дням. Полная история
+// живёт в per-user JSON-файлах (data/state-*.json), а сюда после каждой
+// сохранённой тренировки пишутся агрегаты дня — чтобы аналитика (обзор/список/
+// лидерборд) считала одним SQL GROUP BY, а не читала N файлов с диска.
+const METRICS_MIGRATION = `
+CREATE TABLE IF NOT EXISTS athlete_metrics (
+  user_id TEXT NOT NULL,
+  day DATE NOT NULL,
+  workouts INTEGER NOT NULL DEFAULT 0,
+  volume DOUBLE PRECISION NOT NULL DEFAULT 0,
+  sets INTEGER NOT NULL DEFAULT 0,
+  exercises INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day)
+);
+CREATE INDEX IF NOT EXISTS athlete_metrics_user_day_idx ON athlete_metrics (user_id, day DESC);
+`;
+
 export const adminDbReady = (async () => {
   await integrationDbReady;
   if (!pool) return;
@@ -236,6 +253,7 @@ export const adminDbReady = (async () => {
     await pool.query(BADGE_SEEN_MIGRATION);
     await pool.query(AVAILABILITY_MIGRATION);
     await pool.query(RECURRING_MIGRATION);
+    await pool.query(METRICS_MIGRATION);
     await pool.query(OUTBOX_MIGRATION);
   } catch (error) {
     initError = error;

@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.2.19 — аналитика на SQL: тренировочные метрики в PostgreSQL вместо чтения N файлов
+
+### Changed
+- **Архитектура аналитики**: обзор / список спортсменов / лидерборд больше НЕ
+  читают и не парсят state-файл каждого спортсмена с диска (N синхронных
+  `readFileSync` на каждый запрос). Тренировочные агрегаты перенесены в таблицу
+  `athlete_metrics` (`user_id, day, workouts, volume, sets, exercises`) и
+  считаются одним SQL `GROUP BY` в `pgAggregates()`.
+- `athleteRow()` в `api/analytics.js` берёт workouts/volume/streak/тренд из
+  метрик; state-файл читается только в drill-down одного спортсмена (1 файл —
+  дёшево) и только ради unit + веса тела.
+
+### Added
+- `api/metrics.js`: `metricsFromState` (state → агрегаты по дням),
+  `replaceAthleteMetrics` (DELETE + batch INSERT в транзакции),
+  `backfillAthleteMetrics` (разовый пересчёт по всем users).
+- Заполнение метрик: автоматически после каждого `PUT /api/data` (сбой БД не
+  роняет сохранение) + backfill при старте api (лог: «metrics backfill done»).
+- `docs/analytics-metrics.md` — архитектура данных для будущих агентов.
+- Тесты: unit `metricsFromState` / `streakFromWeeks` + интеграционные
+  `replace` / `backfill` — **api 51/51** (было 43).
+
+### Fixed
+- `api/Dockerfile`: в COPY добавлен `metrics.js` (модуль попадал в образ).
+
+### Note
+- Вес тела, лучшие веса и недельный график drill-down остались в state-файлах
+  (1 файл на спортсмена — приемлемо). Единицы в метриках не хранятся — в
+  списке/лидерборде `kg` по умолчанию.
+- Бекап перед миграцией: git-tag `backup-before-metrics-20260901` +
+  `backups/opengym-pre-metrics-20260901.dump`.
+
 ## 1.2.18 — аналитика: «Объём 30д» → «Тоннаж 30д» с трендом к прошлому периоду
 
 ### Changed

@@ -40,8 +40,11 @@ export function setsDone(w) {
   (w.entries || []).forEach(e => (e.sets || []).forEach(s => { if (s.done) n++; }));
   return n;
 }
-export function streakWeeks(workouts, now = Date.now()) {
-  const weeks = new Set((workouts || []).map(w => weekKeyOf(w.d)));
+// Серия недель с тренировками подряд (считая текущую). Принимает ключи недель
+// ISO-формата 'YYYY-WW' — из SQL (to_char(date_trunc('week', day), 'IYYY-IW'))
+// или из workouts через streakWeeks. Чистая функция — тестируется.
+export function streakFromWeeks(weekKeys, now = Date.now()) {
+  const weeks = new Set(weekKeys);
   if (!weeks.size) return 0;
   let streak = 0;
   const cur = new Date(now);
@@ -52,15 +55,18 @@ export function streakWeeks(workouts, now = Date.now()) {
   }
   return streak;
 }
+export function streakWeeks(workouts, now = Date.now()) {
+  return streakFromWeeks((workouts || []).map(w => weekKeyOf(w.d)), now);
+}
 
 /* ---------- PG aggregates (all users at once, one query each) ---------- */
 async function pgAggregates(now) {
-  const empty = { visitsByUser: new Map(), pointsByUser: new Map(), ledgerByUser: new Map(), redemptionsByUser: new Map(), achByUser: new Map(), trainerByUser: new Map(), branchByUser: new Map() };
+  const empty = { visitsByUser: new Map(), pointsByUser: new Map(), ledgerByUser: new Map(), redemptionsByUser: new Map(), achByUser: new Map(), trainerByUser: new Map(), branchByUser: new Map(), metricsByUser: new Map(), metrics30ByUser: new Map(), metricsPrevByUser: new Map(), weekKeysByUser: new Map() };
   await integrationDbReady;
   if (!pool) return empty;
   const mapOf = rows => rows.reduce((m, r) => { m.set(r.user_id, r); return m; }, new Map());
   try {
-    const [v, acc, ld, rd, ac, ta, bd] = await Promise.all([
+    const [v, acc, ld, rd, ac, ta, bd, m, m30, mp, wk] = await Promise.all([
       pool.query(
         `SELECT user_id, count(*)::int AS n, max(occurred_at) AS last,
                 count(*) FILTER (WHERE occurred_at > $1)::int AS n30,
@@ -82,7 +88,12 @@ async function pgAggregates(now) {
       ),
       pool.query('SELECT user_id, count(*)::int AS n FROM loyalty_achievements GROUP BY user_id'),
       pool.query('SELECT user_id, trainer_id FROM trainer_assignments'),
-      pool.query('SELECT user_id, branch_key FROM external_member_bindings')
+      pool.query('SELECT user_id, branch_key FROM external_member_bindings'),
+      // athlete_metrics: тренировочные агрегаты одним GROUP BY вместо чтения N файлов state
+      pool.query('SELECT user_id, COALESCE(sum(workouts)::int, 0) AS w, COALESCE(sum(volume), 0) AS vol, max(day)::text AS last_day FROM athlete_metrics GROUP BY user_id'),
+      pool.query('SELECT user_id, COALESCE(sum(workouts)::int, 0) AS w30, COALESCE(sum(volume), 0) AS vol30 FROM athlete_metrics WHERE day >= $1 GROUP BY user_id', [new Date(now - 30 * DAY)]),
+      pool.query('SELECT user_id, COALESCE(sum(volume), 0) AS vol_prev FROM athlete_metrics WHERE day >= $1 AND day < $2 GROUP BY user_id', [new Date(now - 60 * DAY), new Date(now - 30 * DAY)]),
+      pool.query("SELECT user_id, to_char(date_trunc('week', day), 'IYYY-IW') AS wk FROM athlete_metrics WHERE workouts > 0 GROUP BY user_id, wk")
     ]);
     return {
       visitsByUser: mapOf(v.rows),
@@ -91,7 +102,11 @@ async function pgAggregates(now) {
       redemptionsByUser: mapOf(rd.rows),
       achByUser: mapOf(ac.rows),
       trainerByUser: ta.rows.reduce((m, r) => { m.set(r.user_id, r.trainer_id); return m; }, new Map()),
-      branchByUser: mapOf(bd.rows)
+      branchByUser: mapOf(bd.rows),
+      metricsByUser: mapOf(m.rows),
+      metrics30ByUser: mapOf(m30.rows),
+      metricsPrevByUser: mapOf(mp.rows),
+      weekKeysByUser: wk.rows.reduce((map, r) => { const set = map.get(r.user_id) || new Set(); set.add(r.wk); map.set(r.user_id, set); return map; }, new Map())
     };
   } catch (error) {
     console.error('analytics aggregates failed:', error.message);
@@ -100,19 +115,22 @@ async function pgAggregates(now) {
 }
 
 /* ---------- one athlete row ---------- */
-function athleteRow(u, S, pg, now) {
-  const workouts = S ? (S.workouts || []) : [];
+// Тренировочные агрегаты берутся из таблицы athlete_metrics (SQL GROUP BY),
+// а не из state-файла — обзор/список/лидерборд не читают N файлов с диска.
+// S передаётся только для drill-down (unit, вес тела) — в списке его нет,
+// поэтому bw/bwDelta30 там null (фронт их в списке не показывает).
+function athleteRow(u, pg, now, S) {
+  const m = pg.metricsByUser.get(u.id) || {};
+  const m30 = pg.metrics30ByUser.get(u.id) || {};
+  const mp = pg.metricsPrevByUser.get(u.id) || {};
+  const weekKeys = pg.weekKeysByUser.get(u.id);
   const unit = (S && S.unit) || 'kg';
-  const lastW = workouts.length ? workouts[workouts.length - 1] : null;
-  const lastWorkout = lastW ? tsOf(lastW.d) : null;
-  const cut30 = now - 30 * DAY;
-  const workouts30 = workouts.filter(w => tsOf(w.d) >= cut30).length;
-  const volume = (S ? S.workouts || [] : []).reduce((v, w) => v + workoutVolume(w), 0);
-  const volume30 = (S ? S.workouts || [] : []).filter(w => tsOf(w.d) >= cut30).reduce((v, w) => v + workoutVolume(w), 0);
-  const cut60 = now - 60 * DAY;
-  const volume30Prev = (S ? S.workouts || [] : [])
-    .filter(w => { const t = tsOf(w.d); return t != null && t >= cut60 && t < cut30; })
-    .reduce((v, w) => v + workoutVolume(w), 0);
+  const lastWorkout = m.last_day ? tsOf(String(m.last_day) + 'T12:00:00') : null;
+  const workouts = m.w || 0;
+  const workouts30 = m30.w30 || 0;
+  const volume = m.vol || 0;
+  const volume30 = m30.vol30 || 0;
+  const volume30Prev = mp.vol_prev || 0;
   const vis = pg.visitsByUser.get(u.id);
   const ld = pg.ledgerByUser.get(u.id);
   const points = pg.pointsByUser.get(u.id);
@@ -129,9 +147,9 @@ function athleteRow(u, S, pg, now) {
     branch,
     trainerId: pg.trainerByUser.get(u.id) || null,
     visits: vis ? vis.n : 0, visits30: vis ? vis.n30 : 0, lastVisit,
-    workouts: workouts.length, workouts30, lastWorkout,
+    workouts, workouts30, lastWorkout,
     volume: round1(volume), volume30: round1(volume30), volume30Prev: round1(volume30Prev),
-    streak: streakWeeks(workouts, now),
+    streak: streakFromWeeks(weekKeys || [], now),
     freq: round1(freqN / (30 / 7)),
     lastActivity,
     points: points ? points.balance : 0,
@@ -165,11 +183,11 @@ export function filterAthletes(rows, scope) {
 }
 
 /* ---------- main collector ---------- */
-export async function collectAnalytics({ users, stateOf, scope, now = Date.now() }) {
+export async function collectAnalytics({ users, scope, now = Date.now() }) {
   const pg = await pgAggregates(now);
   const all = users
     .filter(u => !u.admin)                       // staff accounts live in the admin DB, not here
-    .map(u => athleteRow(u, stateOf(u.id) || {}, pg, now))
+    .map(u => athleteRow(u, pg, now))
     .filter(Boolean);
   const athletes = filterAthletes(all, scope).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
@@ -211,11 +229,11 @@ export async function collectAnalytics({ users, stateOf, scope, now = Date.now()
 /* ---------- drill-down: one athlete ---------- */
 export async function athleteDetail({ user, stateOf, scope, now = Date.now() }) {
   const pg = await pgAggregates(now);
-  const row = athleteRow(user, stateOf(user.id) || {}, pg, now);
+  const S = stateOf(user.id) || {};
+  const row = athleteRow(user, pg, now, S);
   if (!canSeeAthlete(scope, row)) {
     const err = new Error('no access to this athlete'); err.status = 403; throw err;
   }
-  const S = stateOf(user.id) || {};
   const workouts = S.workouts || [];
   const unit = S.unit || 'kg';
 

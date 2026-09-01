@@ -266,7 +266,7 @@ export function createAdminRoutes(deps) {
   { method: 'GET', path: '/api/admin/analytics/overview', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     try {
-      const { summary } = await collectAnalytics({ users: db.users, stateOf: readState, scope: analyticsScope(admin) });
+      const { summary } = await collectAnalytics({ users: db.users, scope: analyticsScope(admin) });
       json(res, 200, { summary, scope: analyticsScope(admin) });
     } catch (error) {
       console.error('analytics overview failed:', error.message);
@@ -278,7 +278,7 @@ export function createAdminRoutes(deps) {
   { method: 'GET', path: '/api/admin/analytics/athletes', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     try {
-      const { athletes } = await collectAnalytics({ users: db.users, stateOf: readState, scope: analyticsScope(admin) });
+      const { athletes } = await collectAnalytics({ users: db.users, scope: analyticsScope(admin) });
       // mark clients that have locked recurring («постоянные») slots, with a short schedule summary
       try {
         const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
@@ -327,7 +327,7 @@ export function createAdminRoutes(deps) {
   { method: 'GET', path: '/api/admin/analytics/leaderboard', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
     try {
-      const { leaderboard } = await collectAnalytics({ users: db.users, stateOf: readState, scope: analyticsScope(admin) });
+      const { leaderboard } = await collectAnalytics({ users: db.users, scope: analyticsScope(admin) });
       json(res, 200, leaderboard);
     } catch (error) {
       console.error('analytics leaderboard failed:', error.message);

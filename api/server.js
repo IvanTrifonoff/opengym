@@ -29,6 +29,7 @@ import { createNotificationsRoutes } from './routes/notifications.js';
 import { createLoyaltyRoutes } from './routes/loyalty.js';
 import { createAdminRoutes } from './routes/admin.js';
 import { createTrainerRoutes } from './routes/trainer.js';
+import { replaceAthleteMetrics, backfillAthleteMetrics } from './metrics.js';
 
 import {
   validTime, timeInRange, bookingTransitionAllowed, validateAvailabilitySlots,
@@ -570,6 +571,10 @@ const routes = {
     if (!body.state || typeof body.state !== 'object') return json(res, 400, { error: 'state required' });
     delete body.state.active;              // in-progress workouts stay device-local
     atomicWrite(stateFile(user.id), JSON.stringify(body.state));
+    // Инкрементальные метрики для аналитики (athlete_metrics) — пересчитываются
+    // из сохранённого state; сбой БД не должен ронять сохранение данных.
+    try { await replaceAthleteMetrics(user.id, body.state); }
+    catch (e) { console.error('metrics update failed for ' + user.id + ':', e.message); }
     json(res, 200, { ok: true, ts: body.state._ts || null });
   },
 
@@ -852,6 +857,10 @@ async function runReminders() {
 
 
   // Retention: precompute the snapshot nightly (default 04:00, RETENTION_RUN_HOUR overrides).
+  // Backfill метрик при старте: пересчитать athlete_metrics из всех state-файлов
+  // (страховка для пользователей, сохранявшихся до появления таблицы).
+  adminDbReady.then(() => backfillAthleteMetrics({ users: db.users, stateOf: readState }))
+    .catch(e => console.error('metrics backfill failed:', e.message));
   scheduleRetentionSnapshot({ users: db.users, stateOf: readState, dataDir: DATA,
     hour: parseInt(process.env.RETENTION_RUN_HOUR || '4', 10),
     onSnapshot: async d => { await notifyRetentionTrainers(d); await notifyRetentionOwner(d); } });

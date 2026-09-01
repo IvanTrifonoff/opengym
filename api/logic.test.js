@@ -7,6 +7,8 @@ import {
   effectiveRoutineId, nextHour, daySlots, userNow, normaliseAccessEvent
 } from './logic.js';
 import { trendPct, workoutVolume } from './analytics.js';
+import { metricsFromState } from './metrics.js';
+import { streakFromWeeks } from './analytics.js';
 
 /* ---------- validTime ---------- */
 test('validTime: принимает корректные 24ч форматы', () => {
@@ -217,4 +219,52 @@ test('объём тренировки: вес×повторения только
   assert.equal(workoutVolume(w), 100 * 10 * 2 + 30 * 15); // 2450
   assert.equal(workoutVolume({ entries: [] }), 0);
   assert.equal(workoutVolume({}), 0);
+});
+
+/* ---------- метрики тренировок (athlete_metrics) ---------- */
+test('метрики из state: агрегаты по дням (объём = вес×повторения)', () => {
+  const S = { workouts: [
+    { d: '2026-08-31', entries: [
+      { sets: [{ w: 100, r: 10, done: true }, { w: 100, r: 10, done: true }, { w: 100, r: 10, done: false }] },
+      { sets: [{ w: 30, r: 15, done: true }] }
+    ] },
+    { d: '2026-08-31', entries: [] },   // вторая тренировка в тот же день
+    { d: '2026-09-01', entries: [{ sets: [{ w: 50, r: 8, done: true }] }] }
+  ]};
+  const m = metricsFromState(S);
+  assert.equal(m.length, 2);
+  const d31 = m.find(x => x.day === '2026-08-31');
+  assert.equal(d31.workouts, 2);
+  assert.equal(d31.volume, 100 * 10 * 2 + 30 * 15); // 2450
+  assert.equal(d31.sets, 3);
+  assert.equal(d31.exercises, 2);
+  const d01 = m.find(x => x.day === '2026-09-01');
+  assert.equal(d01.workouts, 1);
+  assert.equal(d01.volume, 400);
+  assert.equal(d01.sets, 1);
+  assert.equal(d01.exercises, 1);
+});
+test('метрики из state: пустой state — пустой список', () => {
+  assert.deepEqual(metricsFromState({}), []);
+  assert.deepEqual(metricsFromState(null), []);
+  assert.deepEqual(metricsFromState({ workouts: [{ d: 'x', entries: [] }] }), []);
+});
+
+/* ---------- серия недель из ключей (SQL) ---------- */
+function wkKey(dateStr) {
+  const dt = new Date(dateStr + 'T12:00:00');
+  const day = (dt.getDay() + 6) % 7;
+  dt.setDate(dt.getDate() - day + 3);
+  const jan4 = new Date(dt.getFullYear(), 0, 4);
+  const week = 1 + Math.round(((dt - jan4) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
+  return dt.getFullYear() + '-' + week;
+}
+test('серия недель: подряд 3, пауза обрывает, давно не было = 0, пусто = 0', () => {
+  const now = Date.now();
+  const k = n => wkKey(new Date(now - n * 7 * 86400000).toISOString().slice(0, 10));
+  assert.equal(streakFromWeeks([k(0), k(1), k(2)], now), 3);
+  assert.equal(streakFromWeeks([k(0), k(2)], now), 1);   // пропуск на прошлой неделе
+  assert.equal(streakFromWeeks([k(5)], now), 0);          // тренировка 5 недель назад — серия 0
+  assert.equal(streakFromWeeks([], now), 0);
+  assert.equal(streakFromWeeks(null, now), 0);
 });
