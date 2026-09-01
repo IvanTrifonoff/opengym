@@ -80,7 +80,7 @@ export default function AdminHelp() {
     <div className="hdr">
       <button className="iconbtn" onClick={() => nav('/admin')} aria-label="Назад"><Icon name="chevronLeft" /></button>
       <div style={{ flex: 1 }}>
-        <div className="small dim">openGym Admin</div>
+        <div className="small dim">ИмпульС</div>
         <h1 style={{ margin: 0 }}>Справка</h1>
         <div className="sub">Вопросы и ответы по всей системе</div>
       </div>

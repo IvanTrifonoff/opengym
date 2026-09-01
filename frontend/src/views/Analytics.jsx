@@ -212,7 +212,7 @@ export default function Analytics({ admin }) {
     <div className="hdr">
       <button className="iconbtn" onClick={() => nav('/admin')} aria-label="Назад"><Icon name="chevronLeft" /></button>
       <div style={{ flex: 1 }}>
-        <div className="small dim">openGym Admin</div>
+        <div className="small dim">ИмпульС</div>
         <h1 style={{ margin: 0 }}>Аналитика</h1>
         <div className="sub">{admin.name} · {admin.role} · {scopeLabel}</div>
       </div>

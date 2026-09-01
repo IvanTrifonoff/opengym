@@ -41,7 +41,7 @@ function AdminLogin({ onLogin }) {
   return <div className="narrow" style={{ paddingTop: '18vh' }}>
     <div className="card" style={{ textAlign: 'center', padding: '28px 22px' }}>
       <div style={{ color: 'var(--acc)', fontSize: 36, marginBottom: 8 }}><Icon name="wrench" /></div>
-      <h1 style={{ margin: 0 }}>openGym Admin</h1>
+      <h1 style={{ margin: 0 }}>ИмпульС</h1>
       <p className="dim" style={{ margin: '8px 0 22px' }}>Управление сетью, сотрудниками и программой лояльности</p>
       <Button variant="primary" onClick={login} disabled={busy}>{busy ? 'Ожидание passkey…' : 'Войти как сотрудник'}</Button>
       <ErrorLine error={error} />
@@ -220,7 +220,7 @@ function AdminDashboard({ admin, onLogout }) {
   const tabs = [['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ['staff', 'Сотрудники'], ...(canEdit ? [['invites', 'Приглашения']] : [])]
   const back = () => api('/api/admin/impersonate/back', { method: 'POST', body: '{}' }).then(d => { location.href = d.redirect || '/admin' }).catch(() => {})
   return <div className="narrow" style={{ paddingBottom: 40 }}>
-    <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">openGym Admin</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {admin.role}</div></div><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" onClick={() => nav('/admin/analytics')} aria-label="Аналитика"><Icon name="chart" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
+    <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">ИмпульС</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {admin.role}</div></div><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" onClick={() => nav('/admin/analytics')} aria-label="Аналитика"><Icon name="chart" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
     {admin.impersonated && <div className="card" style={{ borderColor: 'var(--acc)', marginBottom: 14 }}><div className="row between" style={{ gap: 8 }}><div className="small">Вы смотрите интерфейс от имени <b>{admin.name}</b> · {admin.role}</div><Button size="sm" variant="primary" onClick={back}>Вернуться</Button></div></div>}
     <NavBar
       selected={tab}

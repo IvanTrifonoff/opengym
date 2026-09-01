@@ -57,7 +57,7 @@ export default function Notifications() {
         <div key={n.id} className={'card' + (n.read ? '' : ' unread')} style={{ marginBottom: 10 }}>
           <div className="row between">
             <div style={{ minWidth: 0 }}>
-              <div className="lbl2">{n.title === 'openGym' ? t('openGym') : n.title}</div>
+              <div className="lbl2">{(n.title === 'ИмпульС' || n.title === 'openGym') ? t('impulseGym') : n.title}</div>
               <div className="ttl" style={{ fontSize: 15, lineHeight: 1.4 }}>{n.body}</div>
             </div>
             <span className="small muted" style={{ whiteSpace: 'nowrap', marginLeft: 10 }}>{fmtWhen(n.created_at)}</span>
