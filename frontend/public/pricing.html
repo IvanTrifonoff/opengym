@@ -395,7 +395,7 @@
       <div class="r">
         <a href="/promo">Возможности</a>
         <a href="https://gym.trfnv.ru">Демо-клуб</a>
-        <a href="mailto:hello@gym.trfnv.ru">hello@gym.trfnv.ru</a>
+        <a href="mailto:ivan@trfnv.ru">ivan@trfnv.ru</a>
       </div>
     </div>
   </div>
@@ -483,7 +483,7 @@
       document.getElementById('pay-body').innerHTML = '<div style="text-align:center;padding:14px 6px 8px"><div style="font-size:38px">✅</div><div class="ttl" style="font-size:17px;margin-top:8px">Заявка на оплату отправлена</div><div class="lead-s" style="margin:8px 0 0">Пришлём счёт или QR-код на указанный контакт в течение рабочего дня.</div><button class="btn ghost" type="button" style="margin-top:14px" onclick="closePay()">Закрыть</button></div>'
     } catch (err) {
       status.className = 'pay-status pay-err'
-      status.textContent = 'Не удалось отправить — попробуйте ещё раз или напишите на hello@gym.trfnv.ru'
+      status.textContent = 'Не удалось отправить — попробуйте ещё раз или напишите на ivan@trfnv.ru'
       btn.disabled = false
     }
   }
@@ -502,7 +502,7 @@
         body: JSON.stringify(body)
       })
       if (!r.ok) {
-        var msg = 'Не удалось отправить — попробуйте ещё раз или напишите на hello@gym.trfnv.ru'
+        var msg = 'Не удалось отправить — попробуйте ещё раз или напишите на ivan@trfnv.ru'
         try { var er = await r.json(); if (er && er.error === 'name and contact are required') msg = 'Заполните имя и контакт — они обязательны.' } catch (_) {}
         throw new Error(msg)
       }

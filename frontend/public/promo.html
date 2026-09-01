@@ -659,7 +659,7 @@
     <h2 class="sec-t">Ваши клиенты уже готовы к этому приложению.<br>Осталось — вы</h2>
     <p class="sec-l">Каждый месяц без системы удержания — это абонементы, которые вы не продлили, и клиенты, которых увёл конкурент. Начните с бесплатной демонстрации: покажем систему на реальном клубе и посчитаем окупаемость для вашего зала.</p>
     <div class="cta-row">
-      <a class="btn primary" href="mailto:hello@gym.trfnv.ru?subject=Демо%20ИмпульС%20для%20моего%20клуба">Записаться на демо</a>
+      <a class="btn primary" href="mailto:ivan@trfnv.ru?subject=Демо%20ИмпульС%20для%20моего%20клуба">Записаться на демо</a>
       <a class="btn tinted" href="#lead-form" onclick="pickPlan('Индивидуально')">Получить КП за 24 часа</a>
     </div>
     <div class="cta-note">Ответим в течение рабочего дня · Расскажем, как это работает именно в вашем случае</div>
@@ -673,7 +673,7 @@
       <div>© 2026 ИмпульС — платформа лояльности и приложение для фитнес-клубов</div>
       <div class="r">
         <a href="https://gym.trfnv.ru">Демо-клуб</a>
-        <a href="mailto:hello@gym.trfnv.ru">hello@gym.trfnv.ru</a>
+        <a href="mailto:ivan@trfnv.ru">ivan@trfnv.ru</a>
       </div>
     </div>
   </div>
@@ -701,7 +701,7 @@
         body: JSON.stringify(body)
       });
       if (!r.ok) {
-        var msg = 'Не удалось отправить — попробуйте ещё раз или напишите на hello@gym.trfnv.ru'
+        var msg = 'Не удалось отправить — попробуйте ещё раз или напишите на ivan@trfnv.ru'
         try { var er = await r.json(); if (er && er.error === 'name and contact are required') msg = 'Заполните имя и контакт — они обязательны.' } catch (_) {}
         throw new Error(msg)
       }

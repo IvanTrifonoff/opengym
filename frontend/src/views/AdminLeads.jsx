@@ -12,6 +12,22 @@ import { api } from '../lib/api.js'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 
+// Быстрый ответ из карточки заявки: распознаём в поле «Контакт» email,
+// telegram-юзернейм (@name / t.me/name) и телефон — и подставляем рабочие
+// ссылки (mailto / t.me / tel), чтобы отвечать в один тап.
+function contactActions(contact) {
+  const tokens = (contact || '').split(/[\s,;]+/).filter(Boolean)
+  const out = []
+  for (const tok of tokens) {
+    const tg = tok.match(/^@([a-zA-Z0-9_]{3,})$/) || tok.match(/t\.me\/([a-zA-Z0-9_]{3,})/)
+    if (tg) { out.push({ icon: 'send', label: 'Telegram', href: 'https://t.me/' + tg[1] }); continue }
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(tok)) { out.push({ icon: 'mail', label: 'Написать', href: 'mailto:' + tok }); continue }
+    const ph = tok.replace(/[\s()-]/g, '')
+    if (/^\+?\d{7,15}$/.test(ph)) { out.push({ icon: 'phone', label: 'Позвонить', href: 'tel:' + ph }) }
+  }
+  return out
+}
+
 function fmtWhen(iso) {
   const d = new Date(iso)
   const now = new Date()
@@ -112,6 +128,13 @@ export default function AdminLeads({ onViewed }) {
                 {l.company ? '\n' + l.company + (l.inn ? ' · ИНН ' + l.inn : '') : ''}
                 {l.message ? '\n' + l.message : ''}
               </div>
+              {contactActions(l.contact).length > 0 && (
+                <div className="row" style={{ gap: 8, marginTop: 8 }}>
+                  {contactActions(l.contact).map(a => (
+                    <a key={a.href} href={a.href} className="btn xs tinted" style={{ textDecoration: 'none' }}><Icon name={a.icon} />{a.label}</a>
+                  ))}
+                </div>
+              )}
             </div>
             <span className="small muted" style={{ whiteSpace: 'nowrap', marginLeft: 8 }}>{fmtWhen(l.created_at)}</span>
           </div>
