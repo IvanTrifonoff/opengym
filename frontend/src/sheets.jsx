@@ -9,6 +9,8 @@ import { t, instrFor, ensureInstr, getLang, INSTR_LANGS, exName } from './lib/i1
 import { nav } from './lib/nav.js'
 import { starterRoutines } from './lib/starter.js'
 import Media, { Thumb } from './components/Media.jsx'
+import GoalPoster from './components/GoalPoster.jsx'
+import { goalProg, sortGoals } from './lib/goals.js'
 import Stepper from './components/Stepper.jsx'
 import Icon from './components/Icon.jsx'
 import { Button, Slider, Switch, Segmented, SelectRow, Row } from './components/ui.jsx'
@@ -224,7 +226,7 @@ export function importFromApp(file, onDone) {
   rd.readAsText(file)
 }
 
-/* ============================ target weight ============================ */
+/* ============================ goals (body weight + per-exercise) ============================ */
 export function bwDeltaColor(delta, currentW) {
   if (!delta) return 'var(--label-2)'
   if (!S().targetW) return 'var(--label)'
@@ -234,19 +236,78 @@ export function bwDeltaColor(delta, currentW) {
 function GoalSheet({ close }) {
   const st = S()
   const bw = lastBW(st)
+  const [tab, setTab] = useState('body')
+  const [phase, setPhase] = useState('list')          // list | poster
+  const [goal, setGoal] = useState(null)              // цель, для которой рисуем постер
+  const [pick, setPick] = useState(null)              // выбранное упражнение → ввод веса
   const [v, setV] = useState(st.targetW || (bw ? bw.w : 70))
+  const name = (useStore.getState().user || {}).name || ''
+  const goals = sortGoals(st, st.goals || [])
+
+  const addFlow = () => exercisePicker(ex => { setPick(ex); setV(bestWeightFor(st, ex.id) || 40) })
+  const saveGoal = () => {
+    const n = Math.round((v || 0) * 10) / 10
+    if (!n || n <= 0) { toast(t('Enter a valid weight')); return }
+    const g = { id: uid(), exId: pick.id, w: n, unit: st.unit, createdAt: Date.now() }
+    update(s => { s.goals = [...(s.goals || []), g] })
+    setGoal(g); setPhase('poster'); setPick(null)
+    toast(t('Goal set: {0}', exName(EXIDX[pick.id]) + ' → ' + fmtNum(n) + ' ' + st.unit))
+  }
+  const openGoal = g => { setGoal(g); setPhase('poster') }
+  const removeGoal = g => { update(s => { s.goals = (s.goals || []).filter(x => x.id !== g.id) }); toast(t('Goal removed')) }
+
   return <>
-    <h3>{t('Target weight')}</h3>
-    <div className="muted small">{t('Your goal is drawn as a line through the weight charts, and gains/losses are colored by whether they move toward it.')}</div>
-    <WeightInput value={v} setValue={setV} unit={st.unit} />
-    <div style={{ height: 14 }} />
-    <Button variant="primary" onClick={() => {
-      const n = Math.round((v || 0) * 10) / 10
-      if (!n || n <= 0) { toast(t('Enter a valid weight')); return }
-      update(s => { s.targetW = n }); close()
-      const b = lastBW(S()); toast(t('Goal set: {0}', fmtNum(n) + ' ' + st.unit) + (b ? ' (' + t('{0} to go', fmtNum(Math.abs(n - b.w))) + ')' : ''))
-    }}>{t('Save goal')}</Button>
-    {st.targetW && <><div style={{ height: 8 }} /><Button variant="danger" onClick={() => { update(s => { s.targetW = null }); close(); toast(t('Goal removed')) }}>{t('Remove goal')}</Button></>}
+    <div className="seg" style={{ marginBottom: 12, '--n': 2, '--i': tab === 'body' ? 0 : 1 }}>
+      <span className="seg-sel" />
+      <button className={tab === 'body' ? 'on' : ''} onClick={() => setTab('body')}>{t('Body weight')}</button>
+      <button className={tab === 'ex' ? 'on' : ''} onClick={() => setTab('ex')}>{t('Exercise goals')}</button>
+    </div>
+
+    {phase === 'poster' && goal
+      ? <GoalPoster S={st} goal={goal} userName={name} onDone={() => setPhase('list')} />
+      : tab === 'body'
+        ? <>
+            <h3>{t('Target weight')}</h3>
+            <div className="muted small">{t('Your goal is drawn as a line through the weight charts, and gains/losses are colored by whether they move toward it.')}</div>
+            <WeightInput value={v} setValue={setV} unit={st.unit} />
+            <div style={{ height: 14 }} />
+            <Button variant="primary" onClick={() => {
+              const n = Math.round((v || 0) * 10) / 10
+              if (!n || n <= 0) { toast(t('Enter a valid weight')); return }
+              update(s => { s.targetW = n }); close()
+              const b = lastBW(S()); toast(t('Goal set: {0}', fmtNum(n) + ' ' + st.unit) + (b ? ' (' + t('{0} to go', fmtNum(Math.abs(n - b.w))) + ')' : ''))
+            }}>{t('Save goal')}</Button>
+            {st.targetW && <><div style={{ height: 8 }} /><Button variant="danger" onClick={() => { update(s => { s.targetW = null }); close(); toast(t('Goal removed')) }}>{t('Remove goal')}</Button></>}
+          </>
+        : <>
+            <h3>{t('Exercise goals')}</h3>
+            <div className="muted small">{t('Set a weight goal per exercise — e.g. bench press 120 kg. Progress is tracked from your best logged weight.')}</div>
+            {!goals.length
+              ? <div className="muted small" style={{ margin: '12px 0' }}>{t('No exercise goals yet — add your first one!')}</div>
+              : <div className="list" style={{ marginTop: 10 }}>{goals.map(g => {
+                  const ex = EXIDX[g.exId]
+                  const p = goalProg(st, g)
+                  return <div className="item" key={g.id} onClick={() => openGoal(g)} style={{ cursor: 'pointer' }}>
+                    <div className="grow">
+                      <div className="tt">{exName(ex) || g.exId} {p.done && <span className="tag" style={{ color: 'var(--acc)', borderColor: 'var(--acc)55', marginLeft: 6 }}>{t('reached!')}</span>}</div>
+                      <div className="ss">{fmtNum(p.cur)} → {fmtNum(g.w)} {g.unit} · {p.pct}%</div>
+                      <div style={{ height: 5 }} />
+                      <div style={{ height: 6, borderRadius: 3, background: 'var(--surface-2)', overflow: 'hidden' }}>
+                        <i style={{ display: 'block', height: '100%', borderRadius: 3, background: p.done ? 'var(--acc)' : 'var(--accent)', width: Math.max(3, p.pct) + '%' }} />
+                      </div>
+                    </div>
+                    <button className="btn xs plain" onClick={e => { e.stopPropagation(); removeGoal(g) }}>{t('Remove')}</button>
+                  </div>
+                })}</div>}
+            <div style={{ height: 10 }} />
+            {pick ? <>
+              <WeightInput value={v} setValue={setV} unit={st.unit} />
+              <div style={{ height: 10 }} />
+            </> : null}
+            <Button variant="primary" icon="plus" onClick={pick ? saveGoal : addFlow}>{pick ? t('Save goal') : t('Add goal')}</Button>
+            {pick && <div style={{ height: 8 }} />}
+            {pick && <Button variant="ghost" onClick={() => setPick(null)}>{t('Cancel')}</Button>}
+          </>}
   </>
 }
 export const goalSheet = () => ui().openSheet(close => <GoalSheet close={close} />)
