@@ -178,6 +178,13 @@
   details[open] summary::after{transform:rotate(225deg) translateY(-1px)}
   details .a{padding:0 16px 16px;color:var(--label-2);font-size:14.5px;line-height:1.45}
 
+  /* phone screenshots */
+  .shots{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:6px}
+  @media (min-width:700px){.shots{grid-template-columns:repeat(5,1fr)}}
+  .shot{border-radius:18px;overflow:hidden;border:1px solid var(--sep-op);background:var(--bg-el);box-shadow:0 10px 26px rgba(0,0,0,.38)}
+  .shot img{display:block;width:100%;height:auto}
+  .shot .cap{padding:8px 10px 10px;font-size:12px;line-height:1.3;color:var(--label-2);letter-spacing:-.006em}
+
   /* final cta */
   #cta{text-align:center;padding:72px 0}
   #cta .sec-t{font-size:clamp(30px,4.5vw,40px)}
@@ -296,6 +303,19 @@
         <p>Face ID / Touch ID (технология passkey) или пинкод, выданный залом. Никаких паролей, которые забывают, и SMS, за которые платит клуб.</p>
       </div>
     </div>
+    <div class="sec-k" style="margin-top:34px">Так выглядит в приложении спортсмена</div>
+    <div class="shots">
+      <div class="shot"><img src="promo/athlete-home.jpg" alt="Главная: план недели и тренер" loading="lazy"><div class="cap">Главная: план недели, тренер, вес тела</div></div>
+      <div class="shot"><img src="promo/athlete-stats.jpg" alt="Статистика: объём по неделям" loading="lazy"><div class="cap">Прогресс: объём и вес тела по неделям</div></div>
+      <div class="shot"><img src="promo/athlete-muscles.jpg" alt="Баланс мышц" loading="lazy"><div class="cap">Баланс нагрузки по группам мышц</div></div>
+      <div class="shot"><img src="promo/athlete-goals.jpg" alt="Цели по упражнениям" loading="lazy"><div class="cap">Цели по упражнениям — например, жим 100 кг</div></div>
+      <div class="shot"><img src="promo/athlete-loyalty.jpg" alt="Лояльность: баллы и награды" loading="lazy"><div class="cap">Баллы и каталог наград</div></div>
+      <div class="shot"><img src="promo/athlete-ledger.jpg" alt="История баллов" loading="lazy"><div class="cap">Прозрачная история начислений</div></div>
+      <div class="shot"><img src="promo/athlete-booking.jpg" alt="Запись к тренеру" loading="lazy"><div class="cap">Запись к тренеру с подтверждением</div></div>
+      <div class="shot"><img src="promo/athlete-poster.jpg" alt="Постер цели" loading="lazy"><div class="cap">Постер цели — им делятся в соцсетях</div></div>
+      <div class="shot"><img src="promo/athlete-goal-done.jpg" alt="Цель достигнута" loading="lazy"><div class="cap">Поздравление при достижении цели</div></div>
+      <div class="shot"><img src="promo/athlete-notif.jpg" alt="Уведомления" loading="lazy"><div class="cap">Push-уведомления и события</div></div>
+    </div>
   </section>
 
   <section class="alt" id="trainer">
@@ -347,6 +367,13 @@
         <h3>Инструкция внутри</h3>
         <p>Встроенная справка по порталу: как добавить спортсмена, составить программу, настроить расписание. Обучать сотрудников — проще.</p>
       </div>
+    </div>
+    <div class="sec-k" style="margin-top:34px">Так выглядит портал тренера</div>
+    <div class="shots">
+      <div class="shot"><img src="promo/trainer-athletes.jpg" alt="Свои спортсмены" loading="lazy"><div class="cap">Свои спортсмены со статусами</div></div>
+      <div class="shot"><img src="promo/trainer-calendar.jpg" alt="Календарь тренера" loading="lazy"><div class="cap">Календарь, часы работы и записи</div></div>
+      <div class="shot"><img src="promo/trainer-requests.jpg" alt="Заявки на подтверждение" loading="lazy"><div class="cap">Подтверждение или отказ заявки</div></div>
+      <div class="shot"><img src="promo/trainer-notif.jpg" alt="Уведомления тренера" loading="lazy"><div class="cap">Уведомления: заявки и удержание</div></div>
     </div>
   </section>
 
@@ -436,6 +463,12 @@
         <h3>Данные на вашем сервере</h3>
         <p>Система разворачивается на вашей инфраструктуре: данные и резервные копии принадлежат вам. Мы их не берём и не передаём третьим лицам.</p>
       </div>
+    </div>
+    <div class="sec-k" style="margin-top:34px">Так выглядит аналитика владельца</div>
+    <div class="shots">
+      <div class="shot"><img src="promo/owner-retention.jpg" alt="Удержание: воронка" loading="lazy"><div class="cap">Воронка удержания по клубу</div></div>
+      <div class="shot"><img src="promo/owner-retention-detail.jpg" alt="Удержание: причины ухода" loading="lazy"><div class="cap">Причины ухода конкретного клиента</div></div>
+      <div class="shot"><img src="promo/owner-athlete-card.jpg" alt="Карточка спортсмена" loading="lazy"><div class="cap">Карточка спортсмена в аналитике</div></div>
     </div>
   </section>
 
