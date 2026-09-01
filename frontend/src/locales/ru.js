@@ -663,4 +663,7 @@ export default {
   'Train · Set goals · Achieve': 'Тренируйся · Ставь цели · Достигай',
   'reps': 'повторений',
   'Enter a valid reps': 'Введи корректное число повторений',
+  'Share the win': 'Поделиться победой',
+  'Maybe later': 'Позже',
+  'You set “{0}” — {1} {2} — and you hit it! Set the next one and keep moving.': 'Цель «{0}» — {1} {2} — достигнута! Поставь следующую и двигайся дальше.',
 };

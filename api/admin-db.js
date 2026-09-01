@@ -756,11 +756,13 @@ export async function markNotificationsRead(userId, id) {
 
 export async function saveNotification({ id, userId, title, body, payload = {} }) {
   await ready();
-  await pool.query(
+  const r = await pool.query(
     `INSERT INTO app_notifications (id, user_id, title, body, payload)
      VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
     [id, userId, String(title || 'openGym').slice(0, 200), String(body).slice(0, 300), JSON.stringify(payload)]
   );
+  // 1 — запись создана, 0 — уже была (вызывающий решает, дублировать ли push)
+  return r.rowCount;
 }
 
 export async function countUnreadNotifications(userId) {

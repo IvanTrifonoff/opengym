@@ -254,8 +254,8 @@ function GoalSheet({ close }) {
     const n = Math.round((v || 0) * 10) / 10
     if (!n || n <= 0) { toast(bw ? t('Enter a valid reps') : t('Enter a valid weight')); return }
     const g = bw
-      ? { id: uid(), exId: pick.id, reps: Math.round(n), createdAt: Date.now() }
-      : { id: uid(), exId: pick.id, w: n, unit: st.unit, createdAt: Date.now() }
+      ? { id: uid(), exId: pick.id, reps: Math.round(n), label: exName(EXIDX[pick.id]), createdAt: Date.now() }
+      : { id: uid(), exId: pick.id, w: n, unit: st.unit, label: exName(EXIDX[pick.id]), createdAt: Date.now() }
     update(s => { s.goals = [...(s.goals || []), g] })
     setGoal(g); setPhase('poster'); setPick(null)
     toast(t('Goal set: {0}', exName(EXIDX[pick.id]) + ' → ' + fmtNum(bw ? g.reps : g.w) + ' ' + (bw ? t('reps') : st.unit)))
@@ -320,6 +320,41 @@ function GoalSheet({ close }) {
   </>
 }
 export const goalSheet = () => ui().openSheet(close => <GoalSheet close={close} />)
+
+/* ============================ goal reached celebration ============================ */
+// Мгновенная награда: спортсмен только что побил цель (или открыл приложение с
+// достигнутой целью) — праздничный лист с постером для соцсетей. reachedAt
+// ставится сразу (не спамить повторами); пуш + центр уведомлений досылает
+// сервер при синхронизации (PUT /api/data), idempotent по 'goal-<id>'.
+function GoalReachedSheet({ goal, close }) {
+  const st = S()
+  const ex = EXIDX[goal.exId]
+  const byReps = goal.reps != null
+  const name = (useStore.getState().user || {}).name || ''
+  const [phase, setPhase] = useState('congrats')
+  return <>
+    {phase === 'poster'
+      ? <GoalPoster S={st} goal={goal} userName={name} onDone={() => setPhase('congrats')} />
+      : <>
+        <div style={{ textAlign: 'center', fontSize: 62, marginTop: 4 }}>🏆</div>
+        <h2 style={{ textAlign: 'center', margin: '6px 0' }}>{t('Goal reached!')}</h2>
+        <div className="muted small" style={{ textAlign: 'center', marginBottom: 16, lineHeight: 1.5 }}>
+          {t('You set “{0}” — {1} {2} — and you hit it! Set the next one and keep moving.', exName(ex), fmtNum(byReps ? goal.reps : goal.w), byReps ? t('reps') : goal.unit)}
+        </div>
+        <Button variant="primary" icon="share" onClick={() => setPhase('poster')}>{t('Share the win')}</Button>
+        <div style={{ height: 8 }} />
+        <Button onClick={() => { close(); goalSheet() }}>{t('Set a new goal')}</Button>
+        <div style={{ height: 8 }} />
+        <Button variant="ghost" onClick={close}>{t('Maybe later')}</Button>
+      </>}
+  </>
+}
+export function celebrateReachedGoals(st) {
+  const g = ((st && st.goals) || []).find(x => !x.reachedAt && x.exId && goalProg(st, x).done)
+  if (!g) return
+  update(s => { s.goals = (s.goals || []).map(x => x.id === g.id ? { ...x, reachedAt: Date.now() } : x) })
+  ui().openSheet(close => <GoalReachedSheet goal={g} close={close} />, { kind: 'center' })
+}
 
 /* ============================ exercise detail ============================ */
 // Estimated 1RM for one exercise (issue #18): what the log already implies, plus a calculator
@@ -1037,6 +1072,7 @@ function doFinishWorkout() {
     s.active = null
   })
   useUI.getState().stopRest()
+  celebrateReachedGoals(S())
   beep(snd(), 880, 0.15); beep(snd(), 1100, 0.15, 0.18); beep(snd(), 1320, 0.3, 0.36)
   ui().openSheet(close => <FinishSummary w={w} prs={prs} e1prs={e1prs} close={close} />, { kind: 'center', locked: true })
 }

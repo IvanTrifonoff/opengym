@@ -135,6 +135,32 @@ async function maybePushRecovery() {
   } catch (e) { console.error('push recovery webhook failed:', e.message); }
 }
 
+// Уведомления о достигнутых целях по упражнениям: для каждой цели, у которой
+// фронт проставил reachedAt, доставляем ОДИНАКОВОЕ уведомление в центр
+// (app_notifications, id 'goal-<goalId>' — ON CONFLICT DO NOTHING) и один push.
+// rowCount=0 у saveNotification означает «уже уведомляли» — push не дублируем.
+async function notifyReachedGoals(user, S) {
+  const goals = ((S && S.goals) || []).filter(g => g && g.reachedAt)
+  if (!goals.length) return
+  const lang = langOf(user.id)
+  const ru = lang === 'ru'
+  for (const g of goals) {
+    const byReps = g.reps != null
+    const target = byReps ? g.reps : g.w
+    const unit = byReps ? (ru ? 'повторений' : 'reps') : (g.unit || 'kg')
+    const label = g.label || ''
+    const title = ru ? 'Цель достигнута! 🏆' : 'Goal reached! 🏆'
+    const body = ru
+      ? `Поздравляем${user.name ? ' ' + user.name : ''}! Цель${label ? ' «' + label + '»' : ''} — ${target} ${unit} — достигнута. Поставь следующую и двигайся дальше!`
+      : `Congrats${user.name ? ', ' + user.name : ''}! Your goal${label ? ' "' + label + '"' : ''} — ${target} ${unit} — is reached. Set a new one and keep going!`
+    try {
+      const created = await saveNotification({ id: 'goal-' + g.id, userId: user.id, title, body, payload: { kind: 'goal', goal_id: g.id } })
+      if (!created) continue            // уже уведомляли — не шлём второй пуш
+      await sendPush(user.id, { title, body, tag: 'goal-' + g.id, url: '/home' })
+    } catch (e) { console.error('goal notify failed for ' + user.id + ':', e.message) }
+  }
+}
+
 async function sendPush(userId, payload) {
   // Ensure push payload includes navigation URL for the service worker
   if (!payload.url) payload.url = '/notifications';
@@ -580,6 +606,8 @@ const routes = {
     // из сохранённого state; сбой БД не должен ронять сохранение данных.
     try { await replaceAthleteMetrics(user.id, body.state); }
     catch (e) { console.error('metrics update failed for ' + user.id + ':', e.message); }
+    // Достигнутые цели (reachedAt проставил фронт) → пуш + центр уведомлений.
+    notifyReachedGoals(user, body.state).catch(e => console.error('goal notify:', e.message));
     json(res, 200, { ok: true, ts: body.state._ts });
   },
 

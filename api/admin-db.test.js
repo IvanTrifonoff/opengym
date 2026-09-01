@@ -21,7 +21,7 @@ const {
   adminDbReady, setTrainerAvailability, getTrainerAvailability, createBooking,
   findBookingConflict, updateBookingStatus, getBooking, createAdminInvite,
   getAdminInvite, acceptLoyaltyEvent, getWallet, roleAllowed, recurHorizonDays,
-  setTrainerAssignment, listTrainerAssignments
+  setTrainerAssignment, listTrainerAssignments, saveNotification
 } = db;
 
 const T = (Date.now() % 1e6).toString(36) + Math.random().toString(36).slice(2, 6);
@@ -151,4 +151,17 @@ test('метрики: backfill по users из state-файлов', async (t) =>
   assert.equal(rows.rows.length, 1);
   assert.equal(rows.rows[0].volume, 480);
   await pool.query('DELETE FROM athlete_metrics WHERE user_id=$1', [uid]);
+});
+
+test('уведомления: saveNotification идемпотентен по id (rowCount 1, затем 0)', async (t) => {
+  if (!needDb(t)) return;
+  const id = 'notif_' + T;
+  try {
+    const first = await saveNotification({ id, userId: 'u_notif_' + T, title: 'a', body: 'b' });
+    assert.equal(first, 1, 'первая вставка создаёт запись');
+    const second = await saveNotification({ id, userId: 'u_notif_' + T, title: 'a', body: 'b' });
+    assert.equal(second, 0, 'повтор не создаёт дубль — вызывающий не шлёт повторный push');
+  } finally {
+    await pool.query('DELETE FROM app_notifications WHERE id=$1', [id]);
+  }
 });

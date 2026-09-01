@@ -5,7 +5,7 @@ import { useStore } from '../store/useStore.js'
 import { effectiveRoutine, effectiveRoutineId, streakWeeks, lastBW, setsDoneActive } from '../lib/history.js'
 import { fmtNum, fmtDate, todayISO, isoOf, weekKey, DAYS } from '../lib/format.js'
 import { t, dateLocale } from '../lib/i18n.js'
-import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, loadStarterPlan, bwDeltaColor } from '../sheets.jsx'
+import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, loadStarterPlan, bwDeltaColor, celebrateReachedGoals } from '../sheets.jsx'
 import { openCoachSheet } from '../components/CoachSheet.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
@@ -15,6 +15,8 @@ import { refreshBadge } from '../lib/badge.js'
 
 // Home = what to do now + a quick glance. Deep charts & history live in Stats.
 export default function Home() {
+  // Достигнутая цель без праздника (например, приложение закрыли сразу после финиша) — показать при открытии.
+  useEffect(() => { setTimeout(() => celebrateReachedGoals(S()), 600) }, [])
   const nav = useNavigate()
   const S = useStore(s => s.S)
   const user = useStore(s => s.user)
