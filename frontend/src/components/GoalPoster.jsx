@@ -9,9 +9,9 @@ import { Button } from './ui.jsx'
 /* GoalPoster — постер цели 1080×1350 (портрет Instagram 4:5), рисуется на устройстве
    после сохранения цели по упражнению. Спортсмен жмёт «Поделиться» (нативный share с
    PNG) или «Скачать».
-   Дизайн осознанно минимальный: логотип, имя, название упражнения, целевая цифра и
-   полоса прогресса — ничего лишнего (раньше тут были слоган, дата и текст прогресса,
-   постер был перегружен). Шрифты — Russo One (цифры/заголовок) и Oswald (подписи),
+   Дизайн осознанно минимальный: логотип, имя, название упражнения, целевая цифра,
+   полоса прогресса и CTA «установи бесплатно» — ничего лишнего (раньше тут были
+   слоган, дата и текст прогресса, постер был перегружен). Шрифты — Russo One (цифры/заголовок) и Oswald (подписи),
    оба с кириллицей. Все размеры подбираются автоматически по ширине текста, поэтому
    длинные названия упражнений и большие числа всегда влезают. */
 
@@ -53,7 +53,7 @@ function fitPx(ctx, txt, weight, fam, base, maxW, min = 36) {
 
 // Чистый отрисовщик — отдельная функция, чтобы легко переиспользовать/тестировать.
 export function drawGoalPoster(canvas, o) {
-  const { title, name, weight, unit, cur, pct, done, dateLabel, slogan, url, labels = {} } = o
+  const { title, name, weight, unit, cur, pct, done, dateLabel, slogan, url, cta, labels = {} } = o
   const ctx = canvas.getContext('2d')
   canvas.width = W; canvas.height = H
   const cx = W / 2
@@ -146,6 +146,17 @@ export function drawGoalPoster(canvas, o) {
     ctx.stroke()
   }
 
+  // CTA: «установи бесплатно и присоединяйся к челленджу» — призыв между полосой
+  // прогресса и ссылкой (QR не рисуем — постера это перегружало). Переносится на
+  // 2 строки и ужимается, если не влезает.
+  if (cta) {
+    const cPx = fitPx(ctx, cta, 600, BODY, 38, 880, 26)
+    ctx.font = `600 ${cPx}px ${BODY}`
+    const cLines = wrap(ctx, cta, 880).slice(0, 2)
+    ctx.fillStyle = INK
+    cLines.forEach((l, i) => ctx.fillText(l, cx, barY + 158 + i * 54))
+  }
+
   // низ: ссылка — единственный футер
   ctx.fillStyle = ACCENT
   const uPx2 = fitPx(ctx, url, 400, DISP, 44, 900)
@@ -189,7 +200,7 @@ export default function GoalPoster({ S, goal, userName = '', onDone }) {
       if (!alive) return
       drawGoalPoster(cv, {
         title, name: userName, weight: displayW, unit, cur: prog.cur, pct: prog.pct, done: prog.done,
-        dateLabel, slogan, url,
+        dateLabel, slogan, url, cta: t('Install free and join the challenge'),
         labels: { newGoal: t('New goal'), done: t('Goal reached!'), doneTxt: t('Goal reached — new level!'), nowTxt: t('Progress · {1}% of goal') }
       })
       setDataUrl(cv.toDataURL('image/png'))
