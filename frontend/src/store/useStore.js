@@ -127,7 +127,19 @@ export const useStore = create((set, get) => {
     async pushState() {
       if (!get().user) return
       clearTimeout(pushTm)
-      try { await api('/api/data', { method: 'PUT', body: JSON.stringify({ state: get().S }) }); localStorage.removeItem(dirtyKeyFor(get().user.id)) }
+      try {
+        const res = await api('/api/data', { method: 'PUT', body: JSON.stringify({ state: get().S }) })
+        localStorage.removeItem(dirtyKeyFor(get().user.id))
+        // Выровнять локальную версию по серверной шкале времени: сервер ставит
+        // _ts своими часами (см. PUT /api/data), поэтому дальнейшие сравнения
+        // «кто свежее» в pullState не зависят от часов устройства.
+        if (res && typeof res.ts === 'number') {
+          const S = get().S
+          S._ts = res.ts
+          localStorage.setItem(keyFor(get().user.id), JSON.stringify(S))
+          set({ S })
+        }
+      }
       catch (e) { localStorage.setItem(dirtyKeyFor(get().user.id), '1') }
     },
     async pullState() {

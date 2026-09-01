@@ -570,12 +570,17 @@ const routes = {
     const body = await readBody(req);
     if (!body.state || typeof body.state !== 'object') return json(res, 400, { error: 'state required' });
     delete body.state.active;              // in-progress workouts stay device-local
+    // Версия state — серверные часы, а не клиентские: если у спортсмена время
+    // на устройстве ушло вперёд/назад, сравнение версий в pullState остаётся
+    // корректным (иначе локальный кэш с «убежавшими» часами всегда побеждал бы
+    // и затирал правки тренера). Фронт выравнивает локальный _ts по этому ts.
+    body.state._ts = Date.now();
     atomicWrite(stateFile(user.id), JSON.stringify(body.state));
     // Инкрементальные метрики для аналитики (athlete_metrics) — пересчитываются
     // из сохранённого state; сбой БД не должен ронять сохранение данных.
     try { await replaceAthleteMetrics(user.id, body.state); }
     catch (e) { console.error('metrics update failed for ' + user.id + ':', e.message); }
-    json(res, 200, { ok: true, ts: body.state._ts || null });
+    json(res, 200, { ok: true, ts: body.state._ts });
   },
 
   // VAPID public key: браузер берёт его перед подпиской на пуши.

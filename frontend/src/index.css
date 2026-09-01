@@ -847,6 +847,26 @@ h4.sec{
 }
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
+/* --- new version banner (service worker update) --- */
+#update-banner{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + var(--sab));
+  z-index:210;display:flex;align-items:center;gap:14px;
+  max-width:88vw;padding:10px 10px 10px 18px;
+  background:color-mix(in srgb,var(--surface-2) 92%,transparent);
+  backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);
+  border:var(--hair) solid var(--sep-op);border-radius:14px;
+  box-shadow:0 14px 38px -8px rgba(0,0,0,.55);
+  font-size:14px;font-weight:500;color:var(--label);
+  animation:upin var(--med) var(--ease);
+}
+#update-banner button{
+  flex:none;border:none;border-radius:10px;padding:9px 16px;
+  background:var(--acc);color:var(--on-acc);font-size:14px;font-weight:600;cursor:pointer;
+  transition:transform var(--fast) var(--ease);
+}
+#update-banner button:active{transform:scale(.94)}
+@keyframes upin{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+
 /* ---------------------------------------------------------------- misc --- */
 .empty{text-align:center;color:var(--label-2);padding:44px 20px;font-size:15px;line-height:1.45}
 .empty .ico{font-size:34px;color:var(--label-2);margin-bottom:12px;display:flex;justify-content:center}
