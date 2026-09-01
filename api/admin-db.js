@@ -154,6 +154,9 @@ CREATE TABLE IF NOT EXISTS promo_leads (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS promo_leads_created_idx ON promo_leads (created_at DESC);
+ALTER TABLE promo_leads ADD COLUMN IF NOT EXISTS company TEXT NOT NULL DEFAULT '';
+ALTER TABLE promo_leads ADD COLUMN IF NOT EXISTS inn TEXT NOT NULL DEFAULT '';
+ALTER TABLE promo_leads ADD COLUMN IF NOT EXISTS payment TEXT NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS trainer_assignments (
   user_id TEXT PRIMARY KEY,
@@ -1059,13 +1062,14 @@ export async function markBookingReminded({ id }) {
 }
 // --- Promo: заявки с публичной страницы (gym.trfnv.ru/promo). ---
 // Лёгкая таблица-журнал: храним сырую заявку, чтобы ничего не терялось.
-export async function insertLead({ id, name, contact, gym = '', message = '', plan = '' }) {
+export async function insertLead({ id, name, contact, gym = '', message = '', plan = '', company = '', inn = '', payment = '' }) {
   await ready();
   await pool.query(
-    `INSERT INTO promo_leads (id, name, contact, gym, message, plan)
-     VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`,
+    `INSERT INTO promo_leads (id, name, contact, gym, message, plan, company, inn, payment)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (id) DO NOTHING`,
     [id, String(name).slice(0, 120), String(contact).slice(0, 200),
-     String(gym).slice(0, 200), String(message).slice(0, 2000), String(plan).slice(0, 80)]
+     String(gym).slice(0, 200), String(message).slice(0, 2000), String(plan).slice(0, 80),
+     String(company).slice(0, 200), String(inn).slice(0, 20), String(payment).slice(0, 40)]
   );
 }
 

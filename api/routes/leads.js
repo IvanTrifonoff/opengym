@@ -44,33 +44,39 @@ export function createLeadsRoutes(deps) {
         const gym = String(body.gym || '').trim();
         const message = String(body.message || '').trim();
         const plan = String(body.plan || '').trim().slice(0, 80);
+        const company = String(body.company || '').trim();
+        const inn = String(body.inn || '').trim();
+        const payment = String(body.payment || '').trim().slice(0, 40);
 
         // Обязательны имя и контакт; всё остальное опционально и обрезается.
         if (!name || !contact) {
           return json(res, 400, { error: 'name and contact are required' });
         }
-        if (name.length > 120 || contact.length > 200 || gym.length > 200 || message.length > 2000) {
+        if (name.length > 120 || contact.length > 200 || gym.length > 200 || message.length > 2000 || company.length > 200 || inn.length > 20) {
           return json(res, 400, { error: 'field too long' });
         }
 
         try {
           await adminDbReady;
           const id = 'lead-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-          await insertLead({ id, name, contact, gym, message, plan });
+          await insertLead({ id, name, contact, gym, message, plan, company, inn, payment });
 
           const ownerId = await findOwnerId();
           if (ownerId) {
             const title = 'Новый запрос с сайта 💼';
+            const kindLabel = payment === 'invoice' ? 'Заказ: счёт для юрлица' : payment === 'sbp' ? 'Заказ: оплата по СБП' : 'Заявка на коммерческое предложение'
             const detail = [
+              kindLabel,
               name + (gym ? ` · ${gym}` : ''),
               'Контакт: ' + contact,
               plan ? 'Тариф: ' + plan : null,
+              company ? 'Компания: ' + company + (inn ? ` (ИНН ${inn})` : '') : null,
               message ? 'Сообщение: ' + message : null
             ].filter(Boolean).join('\n');
             const created = await saveNotification({
               id: 'promo-' + id, userId: ownerId, title,
-              body: 'Заявка на коммерческое предложение.\n' + detail,
-              payload: { kind: 'promo_lead', lead_id: id, contact }
+              body: detail,
+              payload: { kind: 'promo_lead', lead_id: id, contact, payment }
             });
             if (created) {
               await sendPush(ownerId, { title, body: detail, tag: 'promo-' + id, url: '/trainer/notifications' })

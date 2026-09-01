@@ -33,7 +33,7 @@ export default function TrainerNotifications() {
     <div className="narrow" style={{ paddingBottom: 40 }}>
       <div className="hdr">
         <button className="iconbtn" onClick={() => nav('/trainer')} aria-label="Назад"><Icon name="chevronLeft" /></button>
-        <div><h1 style={{ margin: 0 }}>Уведомления</h1><div className="sub">Заявки на тренировки и их статусы</div></div>
+        <div><h1 style={{ margin: 0 }}>Уведомления</h1><div className="sub">Заявки, запросы с сайта и статусы</div></div>
       </div>
 
       {err && <div className="muted small" style={{ padding: '18px 2px' }}>Не удалось загрузить уведомления.</div>}
@@ -44,7 +44,7 @@ export default function TrainerNotifications() {
             <span className="lrow-i"><Icon name="bell" /></span>
             <div>
               <div className="ttl">Пока пусто</div>
-              <div className="muted small">Новые заявки спортсменов и их статусы появятся здесь.</div>
+              <div className="muted small">Новые заявки и уведомления появятся здесь.</div>
             </div>
           </div>
         </div>

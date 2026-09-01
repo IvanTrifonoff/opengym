@@ -205,8 +205,17 @@ function Invites({ admin }) {
 function AdminDashboard({ admin, onLogout }) {
   const nav = useNavigate()
   const [sp] = useSearchParams(); const [staff, setStaff] = useState([]); const [rules, setRules] = useState([]); const [push, setPush] = useState(null)
+  const [unread, setUnread] = useState(0)
   const tab = sp.get('tab') || 'overview'
   const go = v => nav('/admin' + (v === 'overview' ? '' : '?tab=' + v))
+  // Непрочитанные уведомления (заявки с сайта, заказы тарифов, статусы) — бейдж на колокольчике.
+  const refreshUnread = () => api('/api/admin/notifications')
+    .then(d => setUnread((d.notifications || []).filter(n => !n.read).length)).catch(() => {})
+  useEffect(() => {
+    refreshUnread()
+    const t = setInterval(refreshUnread, 60000)
+    return () => clearInterval(t)
+  }, [])
   useEffect(() => {
     api('/api/admin/staff').then(d => setStaff(d.admins || [])).catch(() => {})
     api('/api/admin/loyalty/rules').then(d => setRules(d.rules || [])).catch(() => {})
@@ -220,7 +229,7 @@ function AdminDashboard({ admin, onLogout }) {
   const tabs = [['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ['staff', 'Сотрудники'], ...(canEdit ? [['invites', 'Приглашения']] : [])]
   const back = () => api('/api/admin/impersonate/back', { method: 'POST', body: '{}' }).then(d => { location.href = d.redirect || '/admin' }).catch(() => {})
   return <div className="narrow" style={{ paddingBottom: 40 }}>
-    <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">ИмпульС</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {admin.role}</div></div><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" onClick={() => nav('/admin/analytics')} aria-label="Аналитика"><Icon name="chart" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
+    <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">ИмпульС</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {admin.role}</div></div><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" style={{ position: 'relative' }} onClick={() => nav('/admin/notifications')} aria-label="Уведомления"><Icon name="bell" />{unread > 0 && <span className="notif-badge">{unread > 9 ? '9+' : unread}</span>}</button><button className="iconbtn" onClick={() => nav('/admin/analytics')} aria-label="Аналитика"><Icon name="chart" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
     {admin.impersonated && <div className="card" style={{ borderColor: 'var(--acc)', marginBottom: 14 }}><div className="row between" style={{ gap: 8 }}><div className="small">Вы смотрите интерфейс от имени <b>{admin.name}</b> · {admin.role}</div><Button size="sm" variant="primary" onClick={back}>Вернуться</Button></div></div>}
     <NavBar
       selected={tab}
@@ -272,6 +281,7 @@ export default function AdminApp() {
   if (!admin) return <AdminLogin onLogin={setAdmin} />
   if (loc.pathname.startsWith('/admin/analytics')) return <Analytics admin={admin} />
   if (loc.pathname.startsWith('/admin/help')) return <AdminHelp />
+  if (loc.pathname.startsWith('/admin/notifications')) return <TrainerNotifications />
   if (loc.pathname.startsWith('/trainer/notifications')) {
     if (admin.role !== 'trainer') return <Navigate to="/admin" replace />
     return <TrainerNotifications />

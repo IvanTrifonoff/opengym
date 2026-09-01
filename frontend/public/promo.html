@@ -585,10 +585,12 @@
       </div>
     </div>
 
+    <div style="text-align:center;margin-top:18px"><a class="btn tinted" href="/pricing">Все тарифы и оформление оплаты →</a></div>
+
     <div class="lead-card" id="lead-form">
       <div class="lead-h">Запросить коммерческое предложение</div>
       <div class="lead-s">Подготовим расчёт под вашу сеть и ответим в течение рабочего дня. Это ни к чему не обязывает.</div>
-      <form id="lead-form-el" class="lead-grid" novalidate>
+      <form id="lead-form-el" class="lead-grid">
         <label><span>Имя *</span><input name="name" required maxlength="120" placeholder="Иван Петров"></label>
         <label><span>Контакт *</span><input name="contact" required maxlength="200" placeholder="Телефон, email или Telegram"></label>
         <label><span>Зал / сеть</span><input name="gym" maxlength="200" placeholder="Название клуба"></label>
@@ -698,13 +700,17 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-      if (!r.ok) throw new Error('server');
+      if (!r.ok) {
+        var msg = 'Не удалось отправить — попробуйте ещё раз или напишите на hello@gym.trfnv.ru'
+        try { var er = await r.json(); if (er && er.error === 'name and contact are required') msg = 'Заполните имя и контакт — они обязательны.' } catch (_) {}
+        throw new Error(msg)
+      }
       f.style.display = 'none';
       status.className = 'lead-status lead-ok';
       status.textContent = 'Заявка отправлена! Ответим в течение рабочего дня.';
     } catch (err) {
       status.className = 'lead-status lead-err';
-      status.textContent = 'Не удалось отправить — попробуйте ещё раз или напишите на hello@gym.trfnv.ru';
+      status.textContent = err.message;
     } finally { btn.disabled = false; }
   });
 </script>

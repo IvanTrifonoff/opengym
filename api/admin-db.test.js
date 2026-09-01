@@ -178,12 +178,16 @@ test('промо-заявки: insertLead + findOwnerId + уведомление
     const leadId = 'lead_' + T;
     await insertLead({
       id: leadId, name: 'Тест', contact: 'test@example.com',
-      gym: 'Тест-зал', message: 'хочу КП', plan: 'Индивидуально'
+      gym: 'Тест-зал', message: 'хочу КП', plan: 'Индивидуально',
+      company: 'ООО Тест', inn: '7700000000', payment: 'sbp'
     });
     const rows = await (await pool.query('SELECT * FROM promo_leads WHERE id = $1', [leadId])).rows;
     assert.equal(rows.length, 1);
     assert.equal(rows[0].name, 'Тест');
     assert.equal(rows[0].plan, 'Индивидуально');
+    assert.equal(rows[0].company, 'ООО Тест');
+    assert.equal(rows[0].inn, '7700000000');
+    assert.equal(rows[0].payment, 'sbp');
 
     // повторная вставка того же id — не дублирует журнал
     await insertLead({ id: leadId, name: 'Тест', contact: 'x' });

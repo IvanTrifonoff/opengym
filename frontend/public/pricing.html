@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark" data-accent="lime">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Тарифы ИмпульС — Старт, Сеть, СелфХостед | gym.trfnv.ru</title>
+<meta name="description" content="Тарифы платформы ИмпульС для фитнес-клубов: Старт 4 990 ₽/мес, Сеть 9 990 ₽/мес, СелфХостед 89 000 ₽ + 39 000 ₽/год. Оплата по СБП или счёт. Запросить КП за 24 часа.">
+<style><style>
+  /* ===== openGym design tokens (mirrored from the app) ===== */
+  :root{
+    --bg:#000; --bg-el:#0e0e10; --surface:#1c1c1e; --surface-2:#2c2c2e; --surface-3:#3a3a3c;
+    --label:#fff; --label-2:#ebebf599; --label-3:#ebebf552; --label-4:#ebebf52e;
+    --sep:#54545899; --sep-op:#54545857; --hair:.5px;
+    --blue:#0a84ff; --green:#30d158; --red:#ff453a; --orange:#ff9f0a; --yellow:#ffd60a;
+    --teal:#40c8e0; --indigo:#5e5ce6; --pink:#ff375f; --purple:#bf5af2; --mint:#63e6e2; --grey:#8e8e93;
+    --acc:var(--green); --acc-2:#248a3d; --on-acc:#000;
+    --acc-soft:color-mix(in srgb, var(--acc) 16%, transparent);
+    --acc-line:color-mix(in srgb, var(--acc) 38%, transparent);
+    --r-sm:8px; --r:12px; --r-lg:16px; --r-xl:22px; --r-card:14px;
+    --pad:16px; --ease:cubic-bezier(.32,.72,0,1); --fast:.14s; --med:.22s;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
+  html{background:var(--bg);overscroll-behavior:none;-webkit-text-size-adjust:100%;font-size:16px}
+  body{background:var(--bg);color:var(--label);letter-spacing:-.01em;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-variant-numeric:tabular-nums;min-height:100vh;font-family:-apple-system,BlinkMacSystemFont,SF Pro Text,SF Pro Display,Segoe UI,Roboto,system-ui,sans-serif;font-size:17px;line-height:1.29;overflow-x:hidden}
+  a{color:var(--acc);text-decoration:none}
+  a:hover{text-decoration:underline}
+  button{font:inherit;color:inherit;cursor:pointer;background:none;border:none}
+  :focus-visible{outline:2.5px solid var(--acc);outline-offset:2px;border-radius:6px}
+
+  .wrap{max-width:640px;margin:0 auto;padding:0 20px}
+  @media (min-width:1000px){.wrap{max-width:1080px}}
+
+  /* ===== type scale (app) ===== */
+  .t-large{letter-spacing:-.028em;font-size:34px;font-weight:700;line-height:1.06}
+  .t-title{letter-spacing:-.024em;font-size:28px;font-weight:700;line-height:1.12}
+  .t-title2{letter-spacing:-.021em;font-size:22px;font-weight:700;line-height:1.18}
+  .t-head{letter-spacing:-.012em;font-size:17px;font-weight:600;line-height:1.29}
+  .t-body{letter-spacing:-.012em;font-size:17px;font-weight:400;line-height:1.29}
+  .t-sub{letter-spacing:-.006em;font-size:15px;line-height:1.33}
+  .t-foot{letter-spacing:-.001em;font-size:13px;line-height:1.38}
+  .t-cap{letter-spacing:0;font-size:12px;line-height:1.33}
+  .muted{color:var(--label-2)}
+  .dim{color:var(--label-3)}
+  .accent{color:var(--acc)}
+
+  /* ===== app components ===== */
+  .card{background:var(--surface);border-radius:var(--r-card);padding:16px}
+  .btn{border-radius:var(--r);letter-spacing:-.012em;background:var(--surface-2);color:var(--label);transition:transform var(--fast) var(--ease),background var(--fast),opacity var(--fast);justify-content:center;align-items:center;gap:7px;padding:14px 18px;font-size:17px;font-weight:600;display:inline-flex;text-decoration:none}
+  .btn:hover{text-decoration:none}
+  .btn:active{transform:scale(.975)}
+  .btn.primary{background:var(--acc);color:var(--on-acc)}
+  .btn.primary:active{background:var(--acc-2)}
+  .btn.tinted{background:var(--acc-soft);color:var(--acc)}
+  .btn.ghost{color:var(--acc);background:none;font-weight:400}
+  .btn.ghost:active{background:var(--surface-2)}
+  .btn.sm{border-radius:var(--r-sm);gap:5px;width:auto;padding:8px 14px;font-size:15px}
+  .tag{background:var(--surface-2);color:var(--label-2);text-transform:capitalize;border-radius:6px;align-items:center;gap:3px;padding:3px 7px;font-size:12px;font-weight:500;display:inline-flex}
+  .tag.acc{background:var(--acc-soft);color:var(--acc)}
+  .chip{background:var(--surface);color:var(--label);text-transform:capitalize;letter-spacing:-.006em;transition:background var(--fast),color var(--fast);border-radius:99px;flex:none;padding:6px 13px;font-size:14px;display:inline-flex;align-items:center}
+  .chip.on{background:var(--acc);color:var(--on-acc);font-weight:500}
+  .iconbtn{background:var(--surface);width:36px;height:36px;color:var(--label);transition:background var(--fast),transform var(--fast);border-radius:50%;justify-content:center;align-items:center;font-size:18px;display:inline-flex;text-decoration:none}
+  .iconbtn:active{background:var(--surface-2);transform:scale(.92)}
+  .divider{height:var(--hair);background:var(--sep);border:0;margin:14px 0}
+  .tile{background:var(--surface);border-radius:var(--r-card);padding:14px}
+  .tile .l{color:var(--label-2);letter-spacing:-.004em;font-size:13px;display:flex;align-items:center;gap:5px}
+  .tile .v{letter-spacing:-.026em;margin-top:5px;font-size:26px;font-weight:600;line-height:1.1}
+  .tile .s{color:var(--label-3);font-size:12px;margin-top:3px;line-height:1.33}
+
+  /* ===== page ===== */
+  #page{max-width:560px;margin:0 auto}
+  @media (min-width:1000px){
+    #page{max-width:1080px}
+    .cols{grid-template-columns:1fr 1fr;gap:14px;display:grid}
+    .cols>*{min-width:0}
+  }
+
+  /* sticky header */
+  #topbar{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg-el) 72%,transparent);-webkit-backdrop-filter:saturate(180%)blur(24px);border-bottom:var(--hair) solid var(--sep-op)}
+  #topbar .row{display:flex;align-items:center;gap:12px;min-height:56px}
+  #topbar .logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:17px;letter-spacing:-.012em}
+  #topbar .logo .dot{width:30px;height:30px;border-radius:9px;background:var(--acc);color:var(--on-acc);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600}
+  #topbar .nav{display:flex;gap:18px;margin-left:auto;align-items:center}
+  #topbar .nav a{color:var(--label-2);font-size:15px}
+  #topbar .nav a:hover{color:var(--label)}
+  @media (max-width:860px){#topbar .nav a:not(.btn){display:none}}
+
+  /* hero */
+  #hero{padding:64px 0 48px}
+  @media (min-width:1000px){#hero{padding:88px 0 56px}}
+  .kicker{color:var(--label-3);letter-spacing:.045em;text-transform:uppercase;font-size:11px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .kicker::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--acc)}
+  .hero-title{letter-spacing:-.03em;font-size:clamp(36px,6vw,54px);font-weight:700;line-height:1.05;margin:14px 0 16px;text-wrap:balance}
+  .hero-title .acc{color:var(--acc)}
+  .hero-sub{color:var(--label-2);font-size:17px;line-height:1.45;max-width:560px;margin-bottom:28px;letter-spacing:-.012em}
+  .cta-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .cta-note{color:var(--label-3);font-size:13px;margin-top:14px}
+  .badge-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px}
+  .badge-row .chip{background:var(--acc-soft);color:var(--acc)}
+  .badge-row .chip::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--acc);display:inline-block;margin-right:7px;animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--acc) 50%,transparent)}70%{box-shadow:0 0 0 8px color-mix(in srgb,var(--acc) 0%,transparent)}100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--acc) 0%,transparent)}}
+
+  /* metrics */
+  .tiles{grid-template-columns:1fr 1fr;gap:10px;display:grid;margin-top:36px}
+  @media (min-width:1000px){.tiles{grid-template-columns:repeat(4,1fr)}}
+  .tiles .tile .v{color:var(--acc)}
+  .tiles .tile .foot{color:var(--label-3);font-size:11px;margin-top:8px;line-height:1.33}
+
+  /* sections */
+  section{padding:56px 0}
+  .sec-k{letter-spacing:.045em;text-transform:uppercase;color:var(--label-3);font-size:11px;font-weight:600;margin-bottom:8px}
+  .sec-t{letter-spacing:-.024em;font-size:28px;font-weight:700;line-height:1.12;margin-bottom:10px}
+  .sec-l{color:var(--label-2);font-size:16px;line-height:1.4;max-width:600px;margin-bottom:26px;letter-spacing:-.012em}
+  section.alt{background:var(--bg-el);border-top:var(--hair) solid var(--sep-op);border-bottom:var(--hair) solid var(--sep-op)}
+
+  /* pain list (list-group style) */
+  .group{background:var(--surface);border-radius:var(--r-card);overflow:hidden}
+  .lrow{text-align:left;width:100%;min-height:46px;color:var(--label);background:none;align-items:center;gap:12px;padding:12px 14px;display:flex;position:relative}
+  .lrow+.lrow::before{content:"";height:var(--hair);background:var(--sep);position:absolute;top:0;left:14px;right:0}
+  .lrow .lrow-i{background:var(--tint,var(--surface-2));color:var(--label);border-radius:7px;flex:none;justify-content:center;align-items:center;width:29px;height:29px;font-size:17px;display:flex}
+  .lrow .lrow-m{flex-direction:column;flex:1;gap:1px;min-width:0;display:flex}
+  .lrow .lrow-t{letter-spacing:-.012em;font-size:17px;line-height:1.25}
+  .lrow .lrow-s{color:var(--label-2);font-size:13px;line-height:1.3}
+  .lrow .lrow-v{color:var(--label-2);letter-spacing:-.012em;text-align:right;flex:0 auto;min-width:0;font-size:17px}
+  .lrow .lrow-k{color:var(--acc);flex:none;font-size:17px}
+  .lrow.warn .lrow-t{color:var(--orange)}
+
+  /* role sections */
+  .role{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+  .role .r-ic{width:46px;height:46px;border-radius:13px;background:var(--acc-soft);color:var(--acc);display:flex;align-items:center;justify-content:center;font-size:23px;flex:none}
+  .role h3{letter-spacing:-.02em;font-size:22px;font-weight:700;line-height:1.15}
+  .role p{color:var(--label-2);font-size:14px;line-height:1.35;margin-top:3px}
+
+  /* feature cards */
+  .feat{background:var(--surface);border-radius:var(--r-card);padding:16px}
+  .feat .f-ic{width:32px;height:32px;border-radius:9px;background:var(--acc-soft);color:var(--acc);display:flex;align-items:center;justify-content:center;font-size:17px;margin-bottom:12px}
+  .feat h3{letter-spacing:-.012em;font-size:17px;font-weight:600;margin-bottom:5px}
+  .feat p{color:var(--label-2);font-size:14px;line-height:1.4;letter-spacing:-.006em}
+
+  /* steps */
+  .steps{display:grid;grid-template-columns:1fr;gap:10px}
+  @media (min-width:700px){.steps{grid-template-columns:1fr 1fr}}
+  .step{background:var(--surface);border-radius:var(--r-card);padding:16px;display:flex;gap:14px}
+  .step .n{background:var(--acc);color:var(--on-acc);width:30px;height:30px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700}
+  .step h3{letter-spacing:-.012em;font-size:17px;font-weight:600;margin-bottom:4px}
+  .step p{color:var(--label-2);font-size:14px;line-height:1.4}
+
+  /* quote */
+  .quote{background:var(--surface);border-radius:var(--r-card);padding:22px 20px;margin-top:18px}
+  .quote p{letter-spacing:-.012em;font-size:19px;font-weight:600;line-height:1.35}
+  .quote .who{color:var(--label-2);font-size:14px;margin-top:12px}
+
+  /* roi */
+  .roi{background:var(--surface);border-radius:var(--r-card);padding:20px;box-shadow:inset 0 0 0 1.5px var(--acc-line)}
+  .roi .sec-t{color:var(--acc)}
+  .roi-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}
+  @media (min-width:700px){.roi-grid{grid-template-columns:repeat(4,1fr)}}
+  .roi-item .v{letter-spacing:-.026em;font-size:26px;font-weight:600;line-height:1.1;color:var(--acc)}
+  .roi-item .l{color:var(--label-2);font-size:13px;line-height:1.35;margin-top:5px}
+  .roi .disclaimer{color:var(--label-3);font-size:12px;line-height:1.4;margin-top:18px}
+
+  /* pricing */
+  .price{background:var(--surface);border-radius:var(--r-lg);padding:20px;display:flex;flex-direction:column}
+  .price.hot{box-shadow:inset 0 0 0 1.5px var(--acc-line);background:color-mix(in srgb,var(--acc) 5%,var(--surface))}
+  .price .pname{color:var(--label-2);letter-spacing:-.012em;font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .price .pval{letter-spacing:-.026em;font-size:34px;font-weight:700;line-height:1.1;margin:10px 0 2px}
+  .price .pval small{font-size:15px;color:var(--label-2);font-weight:400}
+  .price .pdesc{color:var(--label-2);font-size:14px;margin-bottom:16px}
+  .price ul{list-style:none;margin:0 0 20px;flex:1}
+  .price li{display:flex;gap:10px;padding:6px 0;font-size:14.5px;color:var(--label-2);letter-spacing:-.006em}
+  .price li::before{content:"";flex:none;width:7px;height:7px;border-radius:50%;background:var(--acc);margin-top:8px}
+  .price .btn{width:100%}
+
+  /* lead form */
+  .lead-card{background:var(--surface);border-radius:var(--r-lg);padding:24px;margin-top:26px;border:1px solid var(--sep-op)}
+  .lead-h{font-size:18px;font-weight:700;letter-spacing:-.012em}
+  .lead-s{color:var(--label-2);font-size:14px;margin:6px 0 16px}
+  .lead-grid{display:grid;grid-template-columns:1fr;gap:12px}
+  @media (min-width:700px){.lead-grid{grid-template-columns:1fr 1fr}}
+  .lead-grid .full{grid-column:1/-1}
+  .lead-grid label span{display:block;font-size:12.5px;color:var(--label-2);margin-bottom:5px}
+  .lead-grid input,.lead-grid select,.lead-grid textarea{width:100%;box-sizing:border-box;background:var(--bg-el);border:1px solid var(--sep-op);border-radius:12px;color:var(--label);padding:11px 12px;font-size:14.5px;font-family:inherit}
+  .lead-grid input:focus,.lead-grid select:focus,.lead-grid textarea:focus{outline:none;border-color:var(--acc-line)}
+  .lead-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .lead-status{font-size:13.5px}
+  .lead-ok{color:#5cd48c}
+  .lead-err{color:#ff8a8a}
+
+  /* faq */
+  details{background:var(--surface);border-radius:var(--r-card);margin-bottom:10px;overflow:hidden}
+  summary{cursor:pointer;letter-spacing:-.012em;font-size:16px;font-weight:600;padding:16px;display:flex;justify-content:space-between;align-items:center;gap:12px;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"";flex:none;width:10px;height:10px;border-right:1.5px solid var(--label-3);border-bottom:1.5px solid var(--label-3);transform:rotate(45deg) translateY(-3px);transition:transform var(--med) var(--ease)}
+  details[open] summary::after{transform:rotate(225deg) translateY(-1px)}
+  details .a{padding:0 16px 16px;color:var(--label-2);font-size:14.5px;line-height:1.45}
+
+  /* phone screenshots */
+  .shots{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:6px}
+  @media (min-width:700px){.shots{grid-template-columns:repeat(5,1fr)}}
+  .shot{border-radius:18px;overflow:hidden;border:1px solid var(--sep-op);background:var(--bg-el);box-shadow:0 10px 26px rgba(0,0,0,.38)}
+  .shot img{display:block;width:100%;height:auto}
+  .shot .cap{padding:8px 10px 10px;font-size:12px;line-height:1.3;color:var(--label-2);letter-spacing:-.006em}
+
+  /* final cta */
+  #cta{text-align:center;padding:72px 0}
+  #cta .sec-t{font-size:clamp(30px,4.5vw,40px)}
+  #cta .sec-l{margin-left:auto;margin-right:auto}
+  #cta .cta-row{justify-content:center}
+  #cta .cta-note{margin-top:16px}
+
+  footer{border-top:var(--hair) solid var(--sep-op);padding:24px 0 40px;color:var(--label-3);font-size:13px}
+  footer .frow{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+  footer .r{margin-left:auto;display:flex;gap:18px}
+  footer .r a{color:var(--label-3)}
+  footer .r a:hover{color:var(--label)}
+
+  /* payment modal */
+  .modal{position:fixed;inset:0;z-index:100;display:none;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.55)}
+  .modal.open{display:flex}
+  .modal .sheet{background:var(--bg-el);border-radius:20px 20px 0 0;width:100%;max-width:540px;padding:24px;max-height:88vh;overflow:auto;border:1px solid var(--sep-op)}
+  @media(min-width:700px){.modal{align-items:center}.modal .sheet{border-radius:20px;margin:20px}}
+  .pay-opt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--sep-op);border-radius:14px;padding:13px 14px;cursor:pointer;margin-bottom:10px;background:var(--surface)}
+  .pay-opt.on{border-color:var(--acc-line);background:color-mix(in srgb,var(--acc) 6%,var(--surface))}
+  .pay-opt .dot{flex:none;width:18px;height:18px;border-radius:50%;border:2px solid var(--label-3);margin-top:2px}
+  .pay-opt.on .dot{border-color:var(--acc);background:radial-gradient(circle at center,var(--acc) 42%,transparent 46%)}
+  .pay-opt .ttl{font-weight:600;font-size:15.5px}
+  .pay-opt .sub{color:var(--label-3);font-size:13px;margin-top:2px;line-height:1.35}
+  .fld{display:block;margin-bottom:12px}
+  .fld span{display:block;font-size:12.5px;color:var(--label-2);margin-bottom:5px}
+  .fld input,.fld textarea{width:100%;box-sizing:border-box;background:var(--bg-el);border:1px solid var(--sep-op);border-radius:12px;color:var(--label);padding:11px 12px;font-size:14.5px;font-family:inherit}
+  .fld input:focus,.fld textarea:focus{outline:none;border-color:var(--acc-line)}
+  .pay-status{font-size:13.5px;margin-top:10px}
+  .pay-ok{color:#5cd48c}
+  .pay-err{color:#ff8a8a}
+  .cmp{display:grid;gap:12px;margin:26px 0 0;padding-top:22px;border-top:var(--hair) solid var(--sep-op)}
+  @media(min-width:700px){.cmp{grid-template-columns:1fr 1fr 1fr 1fr}}
+  .cmp .c{background:var(--surface);border-radius:var(--r-card);padding:14px}
+  .cmp .c b{display:block;font-size:13px;margin-bottom:8px}
+  .cmp .c .li{color:var(--label-2);font-size:12.5px;padding:3px 0;display:flex;gap:7px}
+  .cmp .c .li::before{content:"✓";color:var(--acc);flex:none}
+  .cmp .c .li.no{color:var(--label-4)}
+  .cmp .c .li.no::before{content:"—"}
+</style></head>
+<body>
+
+<div id="topbar">
+  <div class="wrap">
+    <div class="row">
+      <div class="logo"><span class="dot">✧</span>ИмпульС</div>
+      <div class="nav">
+        <a href="/promo#athlete">Спортсмен</a>
+        <a href="/promo#trainer">Тренер</a>
+        <a href="/promo#owner">Владелец</a>
+        <a href="#pricing">Тарифы</a>
+        <a href="#faq">FAQ</a>
+        <a class="btn primary sm" href="#lead-form" onclick="pickPlan('Индивидуально')">Запросить КП</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="page">
+
+  <section id="hero" style="padding-bottom:32px">
+    <div class="badge-row"><span class="chip">Облако или ваш сервер</span><span class="chip">Переход между тарифами в любой момент</span></div>
+    <h1 class="hero-title">Тарифы <span class="acc">ИмпульС</span></h1>
+    <p class="sec-l" style="margin-left:0">Понятные цены без скрытых платежей. Облачные тарифы подключаются за день и масштабируются без миграций. СелфХостед — одна инвестиция, и данные навсегда на вашем сервере.</p>
+  </section>
+
+  <section id="pricing">
+    <div class="cols">
+      <div class="price">
+        <div class="pname">Старт</div>
+        <div class="pval">4 990 ₽ <small>/ мес за клуб</small></div>
+        <div class="pdesc">Облако. Один филиал — всё для запуска лояльности.</div>
+        <ul>
+          <li>1 филиал · до 1 000 спортсменов</li>
+          <li>До 20 тренеров</li>
+          <li>Приложение спортсмена: программы, 1300+ упражнений, статистика, цели и постеры</li>
+          <li>Баллы, награды и обмен</li>
+          <li>Вход по Face ID / Touch ID и пинкоды</li>
+          <li>Тренерский портал и панель управления</li>
+          <li>Поддержка и обновления включены</li>
+        </ul>
+        <button class="btn primary" type="button" onclick="openPay('Старт', '4 990 ₽/мес')">Оформить тариф</button>
+      </div>
+      <div class="price hot">
+        <div class="pname">Сеть <span class="tag acc">популярный</span></div>
+        <div class="pval">9 990 ₽ <small>/ мес за сеть</small></div>
+        <div class="pdesc">Облако. Несколько филиалов: единая база и лояльность.</div>
+        <ul>
+          <li>Всё из тарифа «Старт»</li>
+          <li>До 5 филиалов · до 10 000 спортсменов</li>
+          <li>До 100 тренеров</li>
+          <li>Интеграция с СКУД / турникетами / CRM (вебхук)</li>
+          <li>Аналитика и вкладка «Удержание»</li>
+          <li>Роли сотрудников и разграничение доступа</li>
+          <li>Push-уведомления и мониторинг доставки</li>
+          <li>Приоритетная поддержка</li>
+        </ul>
+        <button class="btn primary" type="button" onclick="openPay('Сеть', '9 990 ₽/мес')">Оформить тариф</button>
+      </div>
+      <div class="price">
+        <div class="pname">СелфХостед</div>
+        <div class="pval">89 000 ₽ <small>+ 39 000 ₽/год обновления</small></div>
+        <div class="pdesc">Ваш сервер и ваши данные. Разовые инвестиции без подписки.</div>
+        <ul>
+          <li>Без ограничений по филиалам и тренерам</li>
+          <li>Без ограничений по числу спортсменов</li>
+          <li>Данные на вашем сервере / в вашем контуре</li>
+          <li>Весь функционал тарифов «Старт» и «Сеть»</li>
+          <li>Развёртывание «под ключ» и обучение персонала</li>
+          <li>Обновления и поддержка — 39 000 ₽/год</li>
+        </ul>
+        <button class="btn ghost" type="button" onclick="pickPlan('СелфХостед')">Обсудить задачу</button>
+      </div>
+      <div class="price">
+        <div class="pname">Индивидуально</div>
+        <div class="pval">по запросу</div>
+        <div class="pdesc">Свои механики, интеграции и масштаб.</div>
+        <ul>
+          <li>Любые функции из тарифов выше</li>
+          <li>Интеграции под ваше оборудование</li>
+          <li>Уникальные механики лояльности</li>
+          <li>Брендирование под ваш стиль</li>
+          <li>Доработки по техническому заданию</li>
+        </ul>
+        <button class="btn ghost" type="button" onclick="pickPlan('Индивидуально')">Обсудить задачу</button>
+      </div>
+    </div>
+
+    <div class="cmp">
+      <div class="c"><b>Старт</b><div class="li">1 филиал</div><div class="li">до 1 000 спортсменов</div><div class="li">до 20 тренеров</div><div class="li">Облако, поддержка</div></div>
+      <div class="c"><b>Сеть</b><div class="li">до 5 филиалов</div><div class="li">до 10 000 спортсменов</div><div class="li">до 100 тренеров</div><div class="li">СКУД/CRM вебхук, приоритет</div></div>
+      <div class="c"><b>СелфХостед</b><div class="li">без ограничений</div><div class="li">без ограничений</div><div class="li">без ограничений</div><div class="li">данные на вашем сервере</div></div>
+      <div class="c"><b>Индивидуально</b><div class="li">свои механики</div><div class="li">интеграции</div><div class="li">брендирование</div><div class="li">доработки по ТЗ</div></div>
+    </div>
+
+    <div class="lead-card" id="lead-form">
+      <div class="lead-h">Запросить коммерческое предложение</div>
+      <div class="lead-s">Подготовим расчёт под вашу сеть и ответим в течение рабочего дня. Это ни к чему не обязывает.</div>
+      <form id="lead-form-el" class="lead-grid">
+        <label><span>Имя *</span><input name="name" required maxlength="120" placeholder="Иван Петров"></label>
+        <label><span>Контакт *</span><input name="contact" required maxlength="200" placeholder="Телефон, email или Telegram"></label>
+        <label><span>Зал / сеть</span><input name="gym" maxlength="200" placeholder="Название клуба"></label>
+        <label><span>Интересует тариф</span>
+          <select name="plan" id="lead-plan">
+            <option value="Старт">Старт — 4 990 ₽/мес</option>
+            <option value="Сеть">Сеть — 9 990 ₽/мес</option>
+            <option value="СелфХостед">СелфХостед — 89 000 ₽</option>
+            <option value="Индивидуально" selected>Индивидуально</option>
+          </select>
+        </label>
+        <label class="full"><span>Комментарий</span><textarea name="message" rows="3" maxlength="2000" placeholder="Что хотите автоматизировать? Сколько филиалов и спортсменов?"></textarea></label>
+        <div class="full lead-actions">
+          <button class="btn primary" type="submit">Отправить заявку</button>
+          <div id="lead-status" class="lead-status"></div>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="alt" id="faq">
+    <div class="sec-k">Вопросы</div>
+    <h2 class="sec-t">Частые вопросы о тарифах</h2>
+    <div style="margin-top:22px">
+      <details>
+        <summary>Что входит в облачные тарифы «Старт» и «Сеть»?</summary>
+        <div class="a">Весь функционал: приложение спортсмена (программы, статистика, цели с постерами), программа лояльности с баллами и наградами, тренерский портал с календарём и записями, панель управления, push-уведомления. Разница только в масштабе: число филиалов, спортсменов и тренеров. Обновления и поддержка включены.</div>
+      </details>
+      <details>
+        <summary>Чем СелфХостед отличается от облака?</summary>
+        <div class="a">Облако — мы разворачиваем и обслуживаем систему, вы платите подписку. СелфХостед — вы платите один раз 89 000 ₽, получаете систему на свой сервер и полностью владеете данными. Ежегодные 39 000 ₽ — это обновления и поддержка; без них система продолжает работать, просто не получает новые версии.</div>
+      </details>
+      <details>
+        <summary>Как оплатить — есть ли СБП или счёт?</summary>
+        <div class="a">Да. При оформлении тарифа можно выбрать оплату по СБП (QR-код) или счёт для юридического лица. После отправки заявки мы пришлём счёт или QR-код на указанный контакт в течение рабочего дня.</div>
+      </details>
+      <details>
+        <summary>Можно ли перейти с тарифа на тариф?</summary>
+        <div class="a">Да, в любой момент. Пересчитаем разницу пропорционально — без потери данных, спортсменов, баллов и настроек.</div>
+      </details>
+      <details>
+        <summary>Что нужно для запуска?</summary>
+        <div class="a">Для облака — только домен. Для СелфХостеда — сервер (или виртуальная машина) и домен, остальное разворачиваем мы «под ключ» и обучаем персонал.</div>
+      </details>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>© 2026 ИмпульС — платформа лояльности и приложение для фитнес-клубов</div>
+      <div class="r">
+        <a href="/promo">Возможности</a>
+        <a href="https://gym.trfnv.ru">Демо-клуб</a>
+        <a href="mailto:hello@gym.trfnv.ru">hello@gym.trfnv.ru</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<!-- Модалка оформления тарифа (СБП / счёт) -->
+<div class="modal" id="pay-modal" role="dialog" aria-modal="true">
+  <div class="sheet">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:14px">
+      <div><div class="lead-h" id="pay-title">Оформить тариф</div><div class="lead-s" style="margin:4px 0 0" id="pay-plan"></div></div>
+      <button class="iconbtn" type="button" onclick="closePay()" aria-label="Закрыть">✕</button>
+    </div>
+    <div id="pay-body"></div>
+  </div>
+</div>
+
+<script>
+  var PAY_PLAN = ''
+
+  function pickPlan(plan) {
+    var sel = document.getElementById('lead-plan')
+    if (sel) sel.value = plan
+    var form = document.getElementById('lead-form')
+    if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
+  function openPay(plan, price) {
+    PAY_PLAN = plan
+    document.getElementById('pay-title').textContent = 'Оформить тариф'
+    document.getElementById('pay-plan').textContent = plan + ' — ' + price
+    document.getElementById('pay-body').innerHTML =
+      '<div class="pay-opt on" id="opt-sbp" onclick="selMethod('sbp')"><span class="dot"></span><div><div class="ttl">Оплата по СБП</div><div class="sub">Мгновенный перевод по QR-коду из банковского приложения. Ссылку на оплату пришлём на контакт.</div></div></div>' +
+      '<div class="pay-opt" id="opt-invoice" onclick="selMethod('invoice')"><span class="dot"></span><div><div class="ttl">Счёт для юридического лица</div><div class="sub">Выставим счёт с реквизитами — оплата по безналу.</div></div></div>' +
+      '<div id="pay-fields">' +
+        '<label class="fld"><span>Имя *</span><input id="pf-name" required maxlength="120" placeholder="Иван Петров"></label>' +
+        '<label class="fld"><span>Контакт *</span><input id="pf-contact" required maxlength="200" placeholder="Телефон, email или Telegram"></label>' +
+        '<label class="fld" id="fld-company" style="display:none"><span>Компания</span><input id="pf-company" maxlength="200" placeholder="Название организации"></label>' +
+        '<label class="fld" id="fld-inn" style="display:none"><span>ИНН</span><input id="pf-inn" maxlength="12" placeholder="10 или 12 цифр"></label>' +
+      '</div>' +
+      '<button class="btn primary" type="button" style="width:100%" onclick="submitPay()">Отправить заявку на оплату</button>' +
+      '<div class="pay-status" id="pay-status"></div>'
+    document.getElementById('pay-modal').classList.add('open')
+  }
+  function selMethod(m) {
+    document.getElementById('opt-sbp').className = 'pay-opt' + (m === 'sbp' ? ' on' : '')
+    document.getElementById('opt-invoice').className = 'pay-opt' + (m === 'invoice' ? ' on' : '')
+    document.getElementById('fld-company').style.display = m === 'invoice' ? 'block' : 'none'
+    document.getElementById('fld-inn').style.display = m === 'invoice' ? 'block' : 'none'
+  }
+  function closePay() { document.getElementById('pay-modal').classList.remove('open') }
+  document.getElementById('pay-modal').addEventListener('click', function (e) { if (e.target === this) closePay() })
+
+  async function submitPay() {
+    var name = document.getElementById('pf-name').value.trim()
+    var contact = document.getElementById('pf-contact').value.trim()
+    var company = document.getElementById('pf-company').value.trim()
+    var inn = document.getElementById('pf-inn').value.trim()
+    var method = document.getElementById('opt-sbp').className.indexOf('on') >= 0 ? 'sbp' : 'invoice'
+    var status = document.getElementById('pay-status')
+    if (!name || !contact) { status.className = 'pay-status pay-err'; status.textContent = 'Заполните имя и контакт.'; return }
+    if (method === 'invoice' && inn && !/^\d{10}(\d{2})?$/.test(inn)) { status.className = 'pay-status pay-err'; status.textContent = 'ИНН — 10 или 12 цифр.'; return }
+    var btn = event.target; btn.disabled = true
+    status.className = 'pay-status'; status.textContent = 'Отправляем…'
+    try {
+      var r = await fetch('/api/lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, contact: contact, company: company, inn: inn, plan: PAY_PLAN, payment: method, message: 'Оформление тарифа ' + PAY_PLAN + (method === 'sbp' ? ', оплата по СБП' : ', счёт для юрлица') })
+      })
+      if (!r.ok) throw new Error('server')
+      document.getElementById('pay-body').innerHTML = '<div style="text-align:center;padding:14px 6px 8px"><div style="font-size:38px">✅</div><div class="ttl" style="font-size:17px;margin-top:8px">Заявка на оплату отправлена</div><div class="lead-s" style="margin:8px 0 0">Пришлём счёт или QR-код на указанный контакт в течение рабочего дня.</div><button class="btn ghost" type="button" style="margin-top:14px" onclick="closePay()">Закрыть</button></div>'
+    } catch (err) {
+      status.className = 'pay-status pay-err'
+      status.textContent = 'Не удалось отправить — попробуйте ещё раз или напишите на hello@gym.trfnv.ru'
+      btn.disabled = false
+    }
+  }
+
+  document.addEventListener('submit', async function (e) {
+    if (e.target.id !== 'lead-form-el') return
+    e.preventDefault()
+    var f = e.target, btn = f.querySelector('button[type=submit]')
+    var status = document.getElementById('lead-status')
+    btn.disabled = true; status.className = 'lead-status'; status.textContent = 'Отправляем…'
+    try {
+      var body = Object.fromEntries(new FormData(f).entries())
+      var r = await fetch('/api/lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      if (!r.ok) {
+        var msg = 'Не удалось отправить — попробуйте ещё раз или напишите на hello@gym.trfnv.ru'
+        try { var er = await r.json(); if (er && er.error === 'name and contact are required') msg = 'Заполните имя и контакт — они обязательны.' } catch (_) {}
+        throw new Error(msg)
+      }
+      f.style.display = 'none'
+      status.className = 'lead-status lead-ok'
+      status.textContent = 'Заявка отправлена! Ответим в течение рабочего дня.'
+    } catch (err) {
+      status.className = 'lead-status lead-err'
+      status.textContent = err.message
+    } finally { btn.disabled = false }
+  })
+</script>
+</body>
+</html>
