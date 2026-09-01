@@ -3,16 +3,33 @@
 // и в генераторе постера для соцсетей.
 import { bestWeightFor } from './history.js'
 
-// Прогресс цели: текущий лучший вес упражнения vs целевой.
-//   goal = { exId, w, unit, createdAt, ... }
+// Лучшее число повторений в одном выполненном подходе (для bodyweight-целей,
+// где отягощения нет и прогресс меряется повторами, а не килограммами).
+export function bestRepsFor(S, exId) {
+  let best = 0
+  ;(S && S.workouts || []).forEach(w => (w.entries || []).forEach(e => {
+    if (e.id === exId) (e.sets || []).forEach(s => { if (s && s.done && (s.r || 0) > best) best = s.r })
+  }))
+  return best
+}
+
+// Прогресс цели: текущий лучший результат упражнения vs целевой.
+//   goal = { exId, w, unit, createdAt }     — силовая цель (вес)
+//   goal = { exId, reps, createdAt }        — bodyweight-цель (повторения)
+// kind: 'weight' | 'reps' — какую метрику сравниваем.
 export function goalProg(S, goal) {
-  const target = Math.max(0, Number(goal && goal.w) || 0)
-  const cur = goal && goal.exId && S && Array.isArray(S.workouts) ? bestWeightFor(S, goal.exId) : 0
+  if (!goal || !goal.exId) return { cur: 0, target: 0, pct: 0, done: false, kind: 'weight' }
+  const byReps = goal.reps != null
+  const hasW = !!(S && Array.isArray(S.workouts))
+  const target = Math.max(0, Number(byReps ? goal.reps : goal.w) || 0)
+  const cur = byReps ? (hasW ? bestRepsFor(S, goal.exId) : 0)
+                     : (hasW ? bestWeightFor(S, goal.exId) : 0)
   return {
     cur,
     target,
     pct: target > 0 ? Math.min(100, Math.round(cur / target * 100)) : 0,
-    done: target > 0 && cur >= target
+    done: target > 0 && cur >= target,
+    kind: byReps ? 'reps' : 'weight'
   }
 }
 

@@ -129,7 +129,9 @@ export default function GoalPoster({ S, goal, userName = '', onDone }) {
   const ex = goal && goal.exId ? EXIDX[goal.exId] : null
   const title = ex ? exName(ex) : (goal && goal.label) || ''
   const prog = goalProg(S || {}, goal)
-  const unit = (goal && goal.unit) || (S && S.unit) || 'kg'
+  const isReps = !!(goal && goal.reps != null)
+  const unit = isReps ? t('reps').toUpperCase() : ((goal && goal.unit) || (S && S.unit) || 'kg').toUpperCase()
+  const displayW = isReps ? goal.reps : goal.w
   const dateLabel = new Date(goal && goal.createdAt ? goal.createdAt : Date.now())
     .toLocaleDateString(dateLocale(), { day: 'numeric', month: 'long', year: 'numeric' })
   const slogan = t('Train · Set goals · Achieve').toUpperCase()
@@ -139,7 +141,7 @@ export default function GoalPoster({ S, goal, userName = '', onDone }) {
     const cv = ref.current
     if (!cv) return
     drawGoalPoster(cv, {
-      title, name: userName, weight: goal.w, unit, cur: prog.cur, pct: prog.pct, done: prog.done,
+      title, name: userName, weight: displayW, unit, cur: prog.cur, pct: prog.pct, done: prog.done,
       dateLabel, slogan, url,
       labels: { newGoal: t('New goal'), done: t('Goal reached!'), doneTxt: t('Goal reached — new level!'), nowTxt: t('Now {0} · {1}% of goal') }
     })
@@ -156,7 +158,7 @@ export default function GoalPoster({ S, goal, userName = '', onDone }) {
   const share = async () => {
     const b = await toBlob()
     const file = new File([b], 'impulsegym-goal.png', { type: 'image/png' })
-    const text = `${title}: ${fmtNum(prog.cur)} → ${fmtNum(goal.w)} ${unit}. ${t('Made with impulseGym')} — ${url}`
+    const text = `${title}: ${fmtNum(prog.cur)} → ${fmtNum(isReps ? goal.reps : goal.w)} ${unit}. ${t('Made with impulseGym')} — ${url}`
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try { await navigator.share({ files: [file], title, text }) } catch (e) { /* отменено */ }
     } else download()

@@ -661,4 +661,6 @@ export default {
   'Goal reached — new level!': 'Цель достигнута — новый уровень!',
   'Now {0} · {1}% of goal': 'Сейчас {0} · {1}% от цели',
   'Train · Set goals · Achieve': 'Тренируйся · Ставь цели · Достигай',
+  'reps': 'повторений',
+  'Enter a valid reps': 'Введи корректное число повторений',
 };

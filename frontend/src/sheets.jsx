@@ -10,7 +10,7 @@ import { nav } from './lib/nav.js'
 import { starterRoutines } from './lib/starter.js'
 import Media, { Thumb } from './components/Media.jsx'
 import GoalPoster from './components/GoalPoster.jsx'
-import { goalProg, sortGoals } from './lib/goals.js'
+import { goalProg, sortGoals, bestRepsFor } from './lib/goals.js'
 import Stepper from './components/Stepper.jsx'
 import Icon from './components/Icon.jsx'
 import { Button, Slider, Switch, Segmented, SelectRow, Row } from './components/ui.jsx'
@@ -244,14 +244,21 @@ function GoalSheet({ close }) {
   const name = (useStore.getState().user || {}).name || ''
   const goals = sortGoals(st, st.goals || [])
 
-  const addFlow = () => exercisePicker(ex => { setPick(ex); setV(bestWeightFor(st, ex.id) || 40) })
+  const openPicker = () => ui().openSheet(close => <ExercisePicker close={close} onPick={ex => {
+    close()   // вернуться в GoalSheet — пикер был вторым листом поверх нашего
+    setPick(ex)
+    setV(isBodyweightEq(ex) ? (bestRepsFor(st, ex.id) || 10) : (bestWeightFor(st, ex.id) || 40))
+  }} />)
   const saveGoal = () => {
+    const bw = pick && isBodyweightEq(pick)
     const n = Math.round((v || 0) * 10) / 10
-    if (!n || n <= 0) { toast(t('Enter a valid weight')); return }
-    const g = { id: uid(), exId: pick.id, w: n, unit: st.unit, createdAt: Date.now() }
+    if (!n || n <= 0) { toast(bw ? t('Enter a valid reps') : t('Enter a valid weight')); return }
+    const g = bw
+      ? { id: uid(), exId: pick.id, reps: Math.round(n), createdAt: Date.now() }
+      : { id: uid(), exId: pick.id, w: n, unit: st.unit, createdAt: Date.now() }
     update(s => { s.goals = [...(s.goals || []), g] })
     setGoal(g); setPhase('poster'); setPick(null)
-    toast(t('Goal set: {0}', exName(EXIDX[pick.id]) + ' → ' + fmtNum(n) + ' ' + st.unit))
+    toast(t('Goal set: {0}', exName(EXIDX[pick.id]) + ' → ' + fmtNum(bw ? g.reps : g.w) + ' ' + (bw ? t('reps') : st.unit)))
   }
   const openGoal = g => { setGoal(g); setPhase('poster') }
   const removeGoal = g => { update(s => { s.goals = (s.goals || []).filter(x => x.id !== g.id) }); toast(t('Goal removed')) }
@@ -290,7 +297,7 @@ function GoalSheet({ close }) {
                   return <div className="item" key={g.id} onClick={() => openGoal(g)} style={{ cursor: 'pointer' }}>
                     <div className="grow">
                       <div className="tt">{exName(ex) || g.exId} {p.done && <span className="tag" style={{ color: 'var(--acc)', borderColor: 'var(--acc)55', marginLeft: 6 }}>{t('reached!')}</span>}</div>
-                      <div className="ss">{fmtNum(p.cur)} → {fmtNum(g.w)} {g.unit} · {p.pct}%</div>
+                      <div className="ss">{fmtNum(p.cur)} → {fmtNum(g.reps != null ? g.reps : g.w)} {g.reps != null ? t('reps') : g.unit} · {p.pct}%</div>
                       <div style={{ height: 5 }} />
                       <div style={{ height: 6, borderRadius: 3, background: 'var(--surface-2)', overflow: 'hidden' }}>
                         <i style={{ display: 'block', height: '100%', borderRadius: 3, background: p.done ? 'var(--acc)' : 'var(--accent)', width: Math.max(3, p.pct) + '%' }} />
@@ -301,10 +308,12 @@ function GoalSheet({ close }) {
                 })}</div>}
             <div style={{ height: 10 }} />
             {pick ? <>
-              <WeightInput value={v} setValue={setV} unit={st.unit} />
+              {isBodyweightEq(pick)
+                ? <Stepper value={v} step={1} decimal={false} onChange={setV} unit={t('reps')} />
+                : <WeightInput value={v} setValue={setV} unit={st.unit} />}
               <div style={{ height: 10 }} />
             </> : null}
-            <Button variant="primary" icon="plus" onClick={pick ? saveGoal : addFlow}>{pick ? t('Save goal') : t('Add goal')}</Button>
+            <Button variant="primary" icon="plus" onClick={pick ? saveGoal : openPicker}>{pick ? t('Save goal') : t('Add goal')}</Button>
             {pick && <div style={{ height: 8 }} />}
             {pick && <Button variant="ghost" onClick={() => setPick(null)}>{t('Cancel')}</Button>}
           </>}
