@@ -14,31 +14,39 @@ import Icon from './Icon.jsx'
 //   selected— key активного раздела (подсветка).
 //   badges  — { [key]: number } — счётчики (значение ≤0 не показывается).
 //   center  — { icon, label, onClick, active } | null — центральная круглая кнопка
-//             (у спортсмена — «Старт» / «Продолжить»).
+//             (у спортсмена — «Старт» / «Продолжить»). Вставляется ПОСЕРЕДИНЕ
+//             списка items (после первой половины), а не в конец — иначе кнопка
+//             уезжает в правый край бара.
 export default function NavBar({ items, selected, badges, center }) {
   const nav = useNavigate()
   const pick = it => () => {
     if (it.onClick) it.onClick()
     else if (it.to) nav(it.to)
   }
+  const ItemButton = ({ it }) => {
+    const b = badges && badges[it.key] > 0 ? badges[it.key] : 0
+    return (
+      <button key={it.key} className={it.key === selected ? 'on' : ''} onClick={pick(it)} aria-label={it.label}>
+        <Icon name={it.icon} />
+        <span>{it.label}</span>
+        {b > 0 && <span className="tab-badge">{b > 9 ? '9+' : b}</span>}
+      </button>
+    )
+  }
+  const CenterButton = center && center.icon ? (
+    <button className={'start' + (center.active ? ' rec' : '')} onClick={center.onClick}>
+      <span className="cir"><Icon name={center.icon} /></span>
+      {center.label && <span>{center.label}</span>}
+    </button>
+  ) : null
+  // Центр встаёт в середину бара (после первой половины разделов), как было
+  // у спортсмена в старом TabBar: home, plan, [Старт], stats, library.
+  const mid = Math.ceil(items.length / 2)
   return (
     <nav id="navbar">
-      {items.map(it => {
-        const b = badges && badges[it.key] > 0 ? badges[it.key] : 0
-        return (
-          <button key={it.key} className={it.key === selected ? 'on' : ''} onClick={pick(it)} aria-label={it.label}>
-            <Icon name={it.icon} />
-            <span>{it.label}</span>
-            {b > 0 && <span className="tab-badge">{b > 9 ? '9+' : b}</span>}
-          </button>
-        )
-      })}
-      {center && center.icon && (
-        <button className={'start' + (center.active ? ' rec' : '')} onClick={center.onClick}>
-          <span className="cir"><Icon name={center.icon} /></span>
-          {center.label && <span>{center.label}</span>}
-        </button>
-      )}
+      {items.slice(0, mid).map(it => <ItemButton key={it.key} it={it} />)}
+      {CenterButton}
+      {items.slice(mid).map(it => <ItemButton key={it.key} it={it} />)}
     </nav>
   )
 }
