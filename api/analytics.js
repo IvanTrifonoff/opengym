@@ -23,6 +23,12 @@ function weekKeyOf(d) {
 }
 const tsOf = d => { const t = new Date(d); return isNaN(t) ? null : t.getTime(); };
 const round1 = n => Math.round(n * 10) / 10;
+// Тренд тоннажа: насколько объём текущих 30 дней отличается от предыдущих 30.
+// null — нет базы (предыдущий период пуст) — дельту показывать нечего.
+export function trendPct(cur, prev) {
+  if (cur == null || !prev || prev <= 0) return null;
+  return round1((cur - prev) / prev * 100);
+}
 
 export function workoutVolume(w) {
   let v = 0;
@@ -103,6 +109,10 @@ function athleteRow(u, S, pg, now) {
   const workouts30 = workouts.filter(w => tsOf(w.d) >= cut30).length;
   const volume = (S ? S.workouts || [] : []).reduce((v, w) => v + workoutVolume(w), 0);
   const volume30 = (S ? S.workouts || [] : []).filter(w => tsOf(w.d) >= cut30).reduce((v, w) => v + workoutVolume(w), 0);
+  const cut60 = now - 60 * DAY;
+  const volume30Prev = (S ? S.workouts || [] : [])
+    .filter(w => { const t = tsOf(w.d); return t != null && t >= cut60 && t < cut30; })
+    .reduce((v, w) => v + workoutVolume(w), 0);
   const vis = pg.visitsByUser.get(u.id);
   const ld = pg.ledgerByUser.get(u.id);
   const points = pg.pointsByUser.get(u.id);
@@ -120,7 +130,7 @@ function athleteRow(u, S, pg, now) {
     trainerId: pg.trainerByUser.get(u.id) || null,
     visits: vis ? vis.n : 0, visits30: vis ? vis.n30 : 0, lastVisit,
     workouts: workouts.length, workouts30, lastWorkout,
-    volume: round1(volume), volume30: round1(volume30),
+    volume: round1(volume), volume30: round1(volume30), volume30Prev: round1(volume30Prev),
     streak: streakWeeks(workouts, now),
     freq: round1(freqN / (30 / 7)),
     lastActivity,
@@ -172,6 +182,8 @@ export async function collectAnalytics({ users, stateOf, scope, now = Date.now()
   const base = withActivity.length || 1;
   const avgFreq = withActivity.length ? round1(withActivity.reduce((s, r) => s + r.freq, 0) / withActivity.length) : 0;
 
+  const volume30 = inScope.reduce((s, r) => s + r.volume30, 0);
+  const volume30Prev = inScope.reduce((s, r) => s + (r.volume30Prev || 0), 0);
   const summary = {
     total: inScope.length,
     active, atRisk, gone, fresh,
@@ -179,7 +191,9 @@ export async function collectAnalytics({ users, stateOf, scope, now = Date.now()
     avgFreq,
     visits30: inScope.reduce((s, r) => s + r.visits30, 0),
     workouts30: inScope.reduce((s, r) => s + r.workouts30, 0),
-    volume30: round1(inScope.reduce((s, r) => s + r.volume30, 0)),
+    volume30: round1(volume30),
+    volume30Prev: round1(volume30Prev),
+    volumeTrendPct: trendPct(volume30, volume30Prev),
     pointsIssued: inScope.reduce((s, r) => s + r.issued, 0),
     pointsSpent: inScope.reduce((s, r) => s + r.spent, 0),
     redemptions: inScope.reduce((s, r) => s + r.redemptions, 0)

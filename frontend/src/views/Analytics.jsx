@@ -238,7 +238,10 @@ export default function Analytics({ admin }) {
       <Tile l="Частота / нед" v={summary.avgFreq || '—'} />
       <Tile l="Визиты 30д" v={summary.visits30} />
       <Tile l="Тренировки 30д" v={summary.workouts30} />
-      <Tile l="Объём 30д" v={fmtNum2(summary.volume30) + ' кг'} />
+      <Tile l="Тоннаж 30д"
+        v={fmtNum2(summary.volume30) + ' кг' + (summary.volumeTrendPct == null ? '' :
+          ' · ' + (summary.volumeTrendPct >= 0 ? '↑' : '↓') + Math.abs(summary.volumeTrendPct) + '%')}
+        color={summary.volumeTrendPct == null ? undefined : (summary.volumeTrendPct >= 0 ? 'var(--green)' : 'var(--red)')} />
       <Tile l="Баллов выдано" v={summary.pointsIssued} color="var(--acc)" />
       <Tile l="Баллов потрачено" v={summary.pointsSpent} />
       <Tile l="Наград выдано" v={summary.redemptions} />

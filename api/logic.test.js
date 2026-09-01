@@ -6,6 +6,7 @@ import {
   validTime, timeInRange, bookingTransitionAllowed, validateAvailabilitySlots,
   effectiveRoutineId, nextHour, daySlots, userNow, normaliseAccessEvent
 } from './logic.js';
+import { trendPct, workoutVolume } from './analytics.js';
 
 /* ---------- validTime ---------- */
 test('validTime: принимает корректные 24ч форматы', () => {
@@ -198,4 +199,22 @@ test('access: без member_key — ошибка', () => {
 });
 test('access: невалидная дата — ошибка', () => {
   assert.throws(() => normaliseAccessEvent({ event_id: 'e1', member_key: 'm1', occurred_at: 'not-a-date' }), /occurred_at is invalid/);
+});
+/* ---------- аналитика: тоннаж и тренд ---------- */
+test('тренд тоннажа: рост / падение / нет базы', () => {
+  assert.equal(trendPct(110, 100), 10);
+  assert.equal(trendPct(90, 100), -10);
+  assert.equal(trendPct(105.5, 100), 5.5);
+  assert.equal(trendPct(100, 0), null);      // предыдущий период пуст — базы нет
+  assert.equal(trendPct(100, null), null);
+  assert.equal(trendPct(null, 100), null);
+});
+test('объём тренировки: вес×повторения только выполненных подходов', () => {
+  const w = { entries: [
+    { sets: [{ w: 100, r: 10, done: true }, { w: 100, r: 10, done: true }, { w: 100, r: 10, done: false }] },
+    { sets: [{ w: 30, r: 15, done: true }] }
+  ]};
+  assert.equal(workoutVolume(w), 100 * 10 * 2 + 30 * 15); // 2450
+  assert.equal(workoutVolume({ entries: [] }), 0);
+  assert.equal(workoutVolume({}), 0);
 });
