@@ -7,6 +7,8 @@
 // (3) дублируется push, если у владельца есть подписка.
 //
 // Фабрика: принимает зависимости и возвращает [{ method, path, handler }].
+import { sendEmail } from '../email.js';
+
 export function createLeadsRoutes(deps) {
   const {
     json, readBody, adminDbReady, insertLead, findOwnerId, saveNotification, sendPush,
@@ -83,6 +85,17 @@ export function createLeadsRoutes(deps) {
             if (created) {
               await sendPush(ownerId, { title, body: detail, tag: 'promo-' + id, url: '/trainer/notifications' })
                 .catch(() => {});
+              // Email-уведомление владельцу (ivan@trfnv.ru) — не блокирует ответ,
+              // если почта не настроена (RESEND_API_KEY пуст) или сервис недоступен.
+              await sendEmail({
+                subject: 'Новая заявка: ' + name + (plan ? ' · ' + plan : ''),
+                text: detail,
+                html: '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto">'
+                  + '<h2 style="margin:0 0 12px">' + title + '</h2>'
+                  + '<p style="color:#444;line-height:1.5;white-space:pre-line;margin:0">'
+                  + detail.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                  + '</p><p style="color:#888;font-size:13px;margin:16px 0 0">Отправлено с gym.trfnv.ru · ИмпульС</p></div>'
+              }).catch(e => console.error('lead email failed:', e.message));
             }
           }
           json(res, 200, { ok: true });
