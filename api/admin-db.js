@@ -254,6 +254,10 @@ ALTER TABLE loyalty_outbox ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DE
 ALTER TABLE loyalty_outbox ADD COLUMN IF NOT EXISTS last_error TEXT;
 `;
 
+const DEMO_MIGRATION = `
+ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS demo_session TEXT;
+`;
+
 const AVAILABILITY_MIGRATION = `
 ALTER TABLE trainer_availability DROP CONSTRAINT IF EXISTS trainer_availability_pkey;
 CREATE INDEX IF NOT EXISTS trainer_availability_trainer_weekday_idx ON trainer_availability (trainer_id, weekday);
@@ -310,6 +314,7 @@ export const adminDbReady = (async () => {
     await pool.query(RECURRING_MIGRATION);
     await pool.query(METRICS_MIGRATION);
     await pool.query(OUTBOX_MIGRATION);
+    await pool.query(DEMO_MIGRATION);
   } catch (error) {
     initError = error;
     console.error('admin database init failed:', error.message);

@@ -7,7 +7,7 @@
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test logic.test.js admin-db.test.js"
+    "test": "node --test logic.test.js admin-db.test.js demo-club.test.js"
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.1.1",
