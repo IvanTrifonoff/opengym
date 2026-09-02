@@ -50,6 +50,11 @@ const RP_NAME = process.env.RP_NAME || 'ИмпульС';
 // code the admin generates. Both default off so a fresh self-hosted instance stays open.
 const ADMIN_UIDS = (process.env.ADMIN_UIDS || '').split(',').map(s => s.trim()).filter(Boolean);
 const INVITE_ONLY = /^(1|true|yes|on)$/i.test(process.env.INVITE_ONLY || '');
+// Демо-режим (demo.gym.trfnv.ru): отдельное развёртывание со своей БД, где
+// посетитель с /promo4gym получает свой клон демо-клуба на одну сессию.
+// На проде (gym.trfnv.ru и self-hosted) флаг выключен — демо-эндпоинты и
+// демо-скоуп в списках/аналитике не регистрируются и не фильтруют.
+const DEMO_MODE = process.env.DEMO_MODE === '1';
 // 90 days keeps someone who trains a few times a week permanently signed in without a stolen
 // cookie staying good for a year. Overridable because a family instance and one on the open
 // internet don't want the same number. Only affects cookies minted from now on — the expiry is

@@ -49,6 +49,23 @@ CREATE TABLE IF NOT EXISTS private_codes (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS demo_tokens (
+  token TEXT PRIMARY KEY,
+  ip TEXT NOT NULL,
+  used BOOLEAN NOT NULL DEFAULT false,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS demo_tokens_ip_created_idx ON demo_tokens (ip, created_at);
+CREATE TABLE IF NOT EXISTS demo_sessions (
+  id TEXT PRIMARY KEY,
+  token TEXT NOT NULL,
+  ip TEXT NOT NULL,
+  owner_admin_id TEXT,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS demo_sessions_expires_idx ON demo_sessions (expires_at);
 CREATE TABLE IF NOT EXISTS loyalty_rules (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -534,7 +551,90 @@ export async function revokePrivateCode(code) {
   return result.rows[0] || null;
 }
 
+/* ---------- demo club sessions (demo.gym.trfnv.ru, DEMO_MODE=1) ---------- */
+// Демо-клуб: отдельное развёртывание со своей БД, где посетитель с /promo4gym
+// получает свой клон клуба на одну сессию. Здесь — только токены и сессии
+// (антибот + TTL). Сам клон (филиал, тренер, атлеты) спавнит demo-club.js.
+// Токен одноразовый: POST /api/demo/token выдаёт (с IP-лимитом), POST
+// /api/demo/enter его расходует и создаёт demo-сессию.
+export async function createDemoToken({ token, ip, ttlMs = 15 * 60 * 1000 }) {
+  await ready();
+  await pool.query(
+    'INSERT INTO demo_tokens (token, ip, expires_at) VALUES ($1, $2, $3) ON CONFLICT (token) DO NOTHING',
+    [token, ip, new Date(Date.now() + ttlMs)]
+  );
+}
+
+// Сколько токенов выдано с IP за окно — для лимита (антибот), напр. 5/час.
+export async function countDemoTokensSince(ip, windowMs = 60 * 60 * 1000) {
+  await ready();
+  const r = await pool.query(
+    'SELECT count(*)::int AS n FROM demo_tokens WHERE ip = $1 AND created_at >= $2',
+    [ip, new Date(Date.now() - windowMs)]
+  );
+  return r.rows[0].n;
+}
+
+// Атомарный расход одноразового токена: совпал IP, не истёк, ещё не использован.
+export async function takeDemoToken(token, ip) {
+  await ready();
+  const r = await pool.query(
+    `UPDATE demo_tokens SET used = true
+     WHERE token = $1 AND used = false AND expires_at > now() AND ip = $2
+     RETURNING token, ip, created_at`,
+    [String(token || '').trim(), String(ip || '')]
+  );
+  return r.rows[0] || null;
+}
+
+export async function getDemoSession(id) {
+  await ready();
+  const r = await pool.query('SELECT * FROM demo_sessions WHERE id = $1', [id]);
+  return r.rows[0] || null;
+}
+
+export async function createDemoSession({ id, token, ip, ttlMs = 60 * 60 * 1000 }) {
+  await ready();
+  await pool.query(
+    `INSERT INTO demo_sessions (id, token, ip, owner_admin_id, expires_at)
+     VALUES ($1, $2, $3, NULL, $4) ON CONFLICT (id) DO NOTHING`,
+    [id, token, ip, new Date(Date.now() + ttlMs)]
+  );
+  return getDemoSession(id);
+}
+
+// Продлить жизнь сессии (активность) — TTL от последнего действия.
+export async function touchDemoSession(id, ttlMs = 60 * 60 * 1000) {
+  await ready();
+  await pool.query(
+    'UPDATE demo_sessions SET expires_at = $2 WHERE id = $1',
+    [id, new Date(Date.now() + ttlMs)]
+  );
+}
+
+// Сессии, чей TTL истёк, — кандидаты на полное удаление клона (cleaner, Ф3).
+export async function listExpiredDemoSessions(now = new Date()) {
+  await ready();
+  const r = await pool.query(
+    'SELECT id, token, ip, owner_admin_id FROM demo_sessions WHERE expires_at <= $1 ORDER BY created_at',
+    [now]
+  );
+  return r.rows;
+}
+
+export async function deleteDemoSession(id) {
+  await ready();
+  await pool.query('DELETE FROM demo_sessions WHERE id = $1', [id]);
+}
+
+// Протухшие/использованные токены не копим: чистка при старте и в cleaner'е.
+export async function purgeDemoTokens(now = new Date()) {
+  await ready();
+  await pool.query('DELETE FROM demo_tokens WHERE expires_at <= $1 OR used = true', [now]);
+}
+
 export async function listLoyaltyRules() {
+
   await ready();
   const result = await pool.query(
     `SELECT id, name, event_type, enabled, conditions, actions, limits, created_by, created_at, updated_at

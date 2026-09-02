@@ -24,7 +24,10 @@ const {
   setTrainerAssignment, listTrainerAssignments, saveNotification,
   insertLead, findOwnerId, getSetting, setSetting, deleteSetting,
   listLeads, markLeadsViewed, countUnreadLeads, listAdmins,
-  softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch
+  softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
+  createDemoToken, countDemoTokensSince, takeDemoToken,
+  getDemoSession, createDemoSession, touchDemoSession,
+  listExpiredDemoSessions, deleteDemoSession, purgeDemoTokens
 } = db;
 
 const T = (Date.now() % 1e6).toString(36) + Math.random().toString(36).slice(2, 6);
@@ -284,3 +287,55 @@ test('сотрудники: softDeleteAdmin скрывает и блокируе
   assert.ok(admins.some(a => a.id === id), 'trainer visible after restore');
   await pool.query('DELETE FROM admin_users WHERE id = $1', [id]);
 });
+
+/* ---- demo club: токены (антибот) и сессии (клон на одну сессию) ---- */
+test('демо-токены: лимит окна, одноразовость, расход по IP', async (t) => {
+  if (!needDb(t)) return;
+  const ip = '10.' + (T.charCodeAt(0) % 200) + '.' + (T.charCodeAt(1) % 200) + '.1';
+  const tok = 'dt_' + T;
+  await createDemoToken({ token: tok, ip });
+  assert.equal(await countDemoTokensSince(ip, 60 * 60 * 1000), 1, 'свежий токен учтён в окне');
+  // Повторный create с тем же токеном — идемпотентно (ON CONFLICT DO NOTHING).
+  await createDemoToken({ token: tok, ip });
+  assert.equal(await countDemoTokensSince(ip, 60 * 60 * 1000), 1, 'дубликат токена не задваивает лимит');
+  // Чужой IP не может расходовать токен.
+  assert.equal(await takeDemoToken(tok, '10.9.9.9'), null, 'чужой IP отклонён');
+  // Одноразовость: первый расход возвращает токен, второй — нет.
+  const hit = await takeDemoToken(tok, ip);
+  assert.ok(hit && hit.token === tok, 'первый расход успешен');
+  assert.equal(await takeDemoToken(tok, ip), null, 'повторный расход невозможен');
+  await pool.query('DELETE FROM demo_tokens WHERE token = $1', [tok]);
+});
+
+test('демо-токены: истёкшие и использованные вычищаются', async (t) => {
+  if (!needDb(t)) return;
+  const ip = '10.99.1.1';
+  const a = 'dt_a_' + T, b = 'dt_b_' + T;
+  await createDemoToken({ token: a, ip, ttlMs: 5 });
+  await createDemoToken({ token: b, ip, ttlMs: 60 * 60 * 1000 });
+  await takeDemoToken(b, ip);
+  // a: протух (ttl 5 мс и прошло время), b: использован — оба должны уйти.
+  await new Promise(r => setTimeout(r, 20));
+  await purgeDemoTokens();
+  const r = await pool.query('SELECT count(*)::int AS n FROM demo_tokens WHERE token = $1 OR token = $2', [a, b]);
+  assert.equal(r.rows[0].n, 0, 'протухшие/использованные токены удалены');
+});
+
+test('демо-сессии: create/get/touch/expired/delete', async (t) => {
+  if (!needDb(t)) return;
+  const id = 'ds_' + T;
+  const s1 = await createDemoSession({ id, token: 'dt_s_' + T, ip: '10.77.0.1', ttlMs: 200 });
+  assert.ok(s1 && s1.id === id, 'сессия создана');
+  // Продлеваем TTL — сессия не должна числиться истёкшей после паузы.
+  await new Promise(r => setTimeout(r, 20));
+  await touchDemoSession(id, 60 * 60 * 1000);
+  let expired = await listExpiredDemoSessions();
+  assert.ok(!expired.some(x => x.id === id), 'продлённая сессия не истекла');
+  // Истёкшая сессия попадает в список кандидатов на удаление клона.
+  await pool.query('UPDATE demo_sessions SET expires_at = now() - interval \'1 minute\' WHERE id = $1', [id]);
+  expired = await listExpiredDemoSessions();
+  assert.ok(expired.some(x => x.id === id), 'истёкшая сессия видна cleaner\'у');
+  await deleteDemoSession(id);
+  assert.equal(await getDemoSession(id), null, 'сессия удалена');
+});
+

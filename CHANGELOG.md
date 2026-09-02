@@ -1,3 +1,22 @@
+## v1.2.45 — (2026-09-02) — демо-клуб Ф0: токены и сессии (каркас demo.gym.trfnv.ru)
+- Начало фичи «Демо-клуб» (полный дизайн — docs/demo-club.md): отдельное
+  развёртывание demo.gym.trfnv.ru со своей БД, где посетитель с /promo4gym
+  получает свой клон клуба на одну сессию (антибот: IP-лимит + одноразовый
+  токен; TTL; полное удаление клона после сессии).
+- api/server.js: флаг DEMO_MODE (env DEMO_MODE=1) — на проде демо-эндпоинты
+  и демо-скоуп не регистрируются и не фильтруют.
+- api/admin-db.js: таблицы demo_tokens (token, ip, used, expires_at) и
+  demo_sessions (id, token, ip, owner_admin_id, expires_at) в SCHEMA
+  (идемпотентно). Функции: createDemoToken (ON CONFLICT DO NOTHING),
+  countDemoTokensSince (окно для лимита), takeDemoToken (атомарный
+  одноразовый расход по IP), getDemoSession, createDemoSession,
+  touchDemoSession (продление TTL), listExpiredDemoSessions (кандидаты для
+  cleaner), deleteDemoSession, purgeDemoTokens (протухшие/использованные).
+- Тесты: +3 интеграционных в admin-db.test.js (лимит окна + одноразовость +
+  чужой IP; очистка протухших/использованных; create/get/touch/expired/delete
+  сессии). Итог: api-тесты 56/56.
+- Поведение прода не меняется: таблицы создаются пустыми, DEMO_MODE выключен.
+
 ## v1.2.44 — (2026-09-02) — «Приватный режим»: гостевой вход по коду за разовую оплату
 - Гостевой режим («Продолжить без аккаунта») убран с главного экрана входа —
   теперь это «Приватный режим»: данные хранятся только на устройстве,
