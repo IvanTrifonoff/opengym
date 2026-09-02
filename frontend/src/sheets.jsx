@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
+import { progressionInfoSheet } from './components/ProgressionInfo.jsx'
 import { EXDB, EXIDX, BODYPARTS, isCardio, isBodyweightEq, allExercises, equipmentOf } from './lib/exercises.js'
 import { fmtDate, fmtNum, fmtVol, fmtDur, durPart, todayISO, uid, exCount, DAYN, MONTHS_LONG, ACCENTS } from './lib/format.js'
 import { lastEntryFor, bestWeightFor, buildSets, effectiveRoutineId, workoutVolume, setsDone, setsDoneActive, lastBW, supersetUnits, unitOf, setLabel, defaultConfig, cleanupSg, modeOf, effortOf, isBw, isPerSide, sideReps } from './lib/history.js'
@@ -576,7 +577,11 @@ function ProgressionFields({ ex, mode, c, setC, routine, unit }) {
   const active = policyFor({ ...c, id: ex.id }, routine, mode)
   const inc = c.inc > 0 ? c.inc : (mode === 'time' ? 5 : defaultIncrement(ex.id, unit))
   return <>
-    <h4 className="sec">{t('Progression')}</h4>
+    <div className="row between" style={{ alignItems: 'center', marginBottom: 8 }}>
+      <h4 className="sec" style={{ margin: 0 }}>{t('Progression')}</h4>
+      <button className="iconbtn" style={{ width: 34, height: 34, flex: 'none' }} onClick={progressionInfoSheet}
+        aria-label={t('How progression works')} title={t('How progression works')}><Icon name="info" /></button>
+    </div>
     <div className="sect-b" style={{ marginBottom: 8 }}>
       <SelectRow title={t('Rule')} sheetTitle={t('Progression')} value={c.prog || ''} onChange={v => setC(x => ({ ...x, prog: v || undefined }))}
         options={[{ value: '', label: t('Follow the routine ({0})', t(POLICY_NAME[inherited])) },
