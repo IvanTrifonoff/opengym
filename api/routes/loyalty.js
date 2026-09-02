@@ -5,6 +5,9 @@
 // Два контура:
 //   - спортсмен: кошелёк/награды/погашение (readSession)
 //   - админ: управление наградами/редемпшнами/правилами (requireAdminAccount)
+// Демо-скоуп (DEMO_MODE=1): админ-списки правил/наград фильтруются по
+// demo_session (созданы демо-владельцем сессии) — см. demo-scope.js.
+import { scopeOwnerRows } from '../demo-scope.js';
 export function createLoyaltyRoutes(deps) {
   const {
     json, readBody, readSession, requireAdminAccount,
@@ -52,13 +55,14 @@ export function createLoyaltyRoutes(deps) {
       }
     },
 
-    // Админ: все награды (включая скрытые) для управления.
+    // Админ: все награды (включая скрытые) для управления
+    // (в демо — только награды своего клона).
     {
       method: 'GET',
       path: '/api/admin/loyalty/rewards',
       handler: async (req, res) => {
         const admin = await requireAdminAccount(req, res); if (!admin) return;
-        json(res, 200, { rewards: await listRewards(false) });
+        json(res, 200, { rewards: scopeOwnerRows(admin, await listRewards(false)) });
       }
     },
 
@@ -111,13 +115,13 @@ export function createLoyaltyRoutes(deps) {
       }
     },
 
-    // Админ: правила начисления баллов.
+    // Админ: правила начисления баллов (в демо — только правила своего клона).
     {
       method: 'GET',
       path: '/api/admin/loyalty/rules',
       handler: async (req, res) => {
         const admin = await requireAdminAccount(req, res); if (!admin) return;
-        json(res, 200, { rules: await listLoyaltyRules() });
+        json(res, 200, { rules: scopeOwnerRows(admin, await listLoyaltyRules()) });
       }
     },
 

@@ -379,7 +379,7 @@ export async function updateAdminCounter(credentialId, counter) {
 export async function listAdmins() {
   await ready();
   const result = await pool.query(
-    `SELECT a.id, a.name, a.role, a.branch_key, a.disabled, a.deleted_at, a.created_at, a.updated_at,
+    `SELECT a.id, a.name, a.role, a.branch_key, a.demo_session, a.disabled, a.deleted_at, a.created_at, a.updated_at,
             count(c.id)::int AS passkeys
      FROM admin_users a LEFT JOIN admin_credentials c ON c.admin_id = a.id
      WHERE a.deleted_at IS NULL

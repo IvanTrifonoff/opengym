@@ -1,5 +1,10 @@
 // api/routes/admin.js — админ-панель: все роуты /api/admin/*.
 //
+// Демо-скоуп (DEMO_MODE=1): демо-владелец/тренер видят только свой клон —
+// списки ниже фильтруются по demo_session (см. demo-scope.js). На проде
+// фильтры неактивны.
+import { scopeAdmins, scopeBranches, scopeOwnerRows, scopeUsers } from '../demo-scope.js';
+
 // Фабрика: принимает зависимости и возвращает [{ method, path, handler }].
 // Вынесено из монолита server.js — поведение идентично (импорт, не копия).
 // Контуры:
@@ -157,12 +162,13 @@ export function createAdminRoutes(deps) {
   // Список сотрудников (админ-аккаунты с ролями owner/manager/trainer/operator).
   { method: 'GET', path: '/api/admin/staff', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
-    json(res, 200, { admins: await listAdmins() });
+    json(res, 200, { admins: scopeAdmins(admin, await listAdmins()) });
   } },
   // Owner: сменить роль / отключить сотрудника (нельзя отключить самого себя).
   { method: 'POST', path: '/api/admin/staff/update', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner']); if (!admin) return;
     const body = await readBody(req);
+    if (!scopeAdmins(admin, await listAdmins()).some(a => a.id === body.id)) return json(res, 404, { error: 'admin not found in scope' });
     if (body.id === admin.id && body.disabled) return json(res, 400, { error: 'cannot disable yourself' });
     try {
       const updated = await updateAdmin({ id: String(body.id || ''), role: body.role, disabled: body.disabled });
@@ -177,6 +183,7 @@ export function createAdminRoutes(deps) {
     const body = await readBody(req);
     const id = String(body.id || '');
     if (id === admin.id) return json(res, 400, { error: 'cannot delete yourself' });
+    if (!scopeAdmins(admin, await listAdmins()).some(a => a.id === id)) return json(res, 404, { error: 'admin not found in scope' });
     try {
       const removed = await softDeleteAdmin(id);
       if (!removed) return json(res, 404, { error: 'admin not found or is an owner' });
@@ -186,6 +193,7 @@ export function createAdminRoutes(deps) {
   { method: 'POST', path: '/api/admin/staff/restore', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner']); if (!admin) return;
     const body = await readBody(req);
+    if (!scopeAdmins(admin, await listAdmins()).some(a => a.id === String(body.id || ''))) return json(res, 404, { error: 'admin not found in scope' });
     try {
       const restored = await restoreAdmin(String(body.id || ''));
       if (!restored) return json(res, 404, { error: 'admin not found' });
@@ -195,7 +203,7 @@ export function createAdminRoutes(deps) {
   /* ---------- branches (филиалы/залы) ---------- */
   { method: 'GET', path: '/api/admin/branches', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
-    json(res, 200, { branches: await listBranches() });
+    json(res, 200, { branches: scopeBranches(admin, await listBranches()) });
   } },
   { method: 'POST', path: '/api/admin/branches/save', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
@@ -430,7 +438,7 @@ export function createAdminRoutes(deps) {
   { method: 'GET', path: '/api/admin/analytics/trainers', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
     try {
-      const admins = await listAdmins();
+      const admins = scopeAdmins(admin, await listAdmins());
       json(res, 200, { trainers: admins.filter(a => a.role === 'trainer' && !a.disabled).map(a => ({ id: a.id, name: a.name })) });
     } catch (error) {
       console.error('analytics trainers failed:', error.message);
@@ -456,6 +464,11 @@ export function createAdminRoutes(deps) {
       if (scope.kind === 'trainer') {
         const ta = await listTrainerAssignments();
         const mine = new Set(ta.filter(x => x.trainer_id === admin.id).map(x => x.user_id));
+        rows = rows.filter(r => mine.has(r.id));
+      }
+      // Демо-клон: владелец видит удержание ТОЛЬКО своих атлетов (не чужие клоны).
+      if (scope.kind === 'demoSession') {
+        const mine = new Set(scopeUsers(admin, db.users).map(u => u.id));
         rows = rows.filter(r => mine.has(r.id));
       }
       // Recompute summary/funnel from the filtered rows so a trainer sees THEIR numbers,
@@ -489,10 +502,11 @@ export function createAdminRoutes(deps) {
     let trainerId = String(body.trainer_id || '').trim() || null;
     if (admin.role === 'trainer') trainerId = trainerId ? admin.id : null;
     if (!userId) return json(res, 400, { error: 'user_id required' });
-    const u = db.users.find(x => x.id === userId);
+    const visible = scopeUsers(admin, db.users);
+    const u = visible.find(x => x.id === userId);
     if (!u) return json(res, 404, { error: 'no such user' });
     if (trainerId) {
-      const admins = await listAdmins();
+      const admins = scopeAdmins(admin, await listAdmins());
       if (!admins.some(a => a.id === trainerId && a.role === 'trainer' && !a.disabled))
         return json(res, 400, { error: 'not a trainer' });
     }
@@ -511,7 +525,7 @@ export function createAdminRoutes(deps) {
     try {
       const [assignments, admins] = await Promise.all([listTrainerAssignments(), listAdmins()]);
       const nameOf = new Map(admins.map(a => [a.id, a.name]));
-      const rows = db.users
+      const rows = scopeUsers(admin, db.users)
         .filter(u => !u.admin && (!q || (u.name || '').toLowerCase().includes(q)))
         .slice(0, 25)
         .map(u => {

@@ -355,6 +355,10 @@ async function requireAdminAccount(req, res, roles = ['owner', 'manager', 'train
 // only athletes assigned to them; an operator gets statuses only (frontend decides what
 // to render — the data returned is the same list).
 function analyticsScope(admin) {
+  // Демо-клон (DEMO_MODE=1): владелец/тренер сессии видят ТОЛЬКО свой клон —
+  // owner-скоуп «вся сеть» здесь означал бы чужие демо-клоны. Фильтрация
+  // по demo_session дальше в canSeeAthlete / retention / списочных путях.
+  if (DEMO_MODE && admin.demo_session) return { kind: 'demoSession', session: admin.demo_session };
   if (admin.role === 'owner') return { kind: 'all' };
   if (admin.role === 'manager') return { kind: 'branch', branch: admin.branch_key || null };
   if (admin.role === 'trainer') return { kind: 'trainer', trainerId: admin.id };
@@ -364,6 +368,12 @@ function analyticsScope(admin) {
 // Trainer program access: owner/manager see any athlete; a trainer only their
 // own assigned athletes (trainer_assignments).
 async function requireProgramAccess(admin, userId) {
+  // Демо-режим: владелец/тренер сессии получают доступ к программе атлета
+  // только если атлет из ИХ клона (иначе owner-скоуп открыл бы чужие клоны).
+  if (DEMO_MODE && admin.demo_session) {
+    const u = db.users.find(x => x.id === userId);
+    return !!(u && u.demo_session === admin.demo_session);
+  }
   if (admin.role === 'owner' || admin.role === 'manager') return true;
   if (admin.role === 'trainer') {
     const ta = await listTrainerAssignments();

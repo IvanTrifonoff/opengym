@@ -13,7 +13,10 @@ import path from 'node:path';
 import { pool } from './access-db.js';
 import { buildDemoState, bestWeightsOf } from './demo-seed.js';
 import { spawnDemoClub, destroyDemoClub, demoIds, ownerIdToSession, runDemoCleanupOnce } from './demo-club.js';
-import { getWallet, createDemoToken, takeDemoToken, createDemoSession, getDemoSession } from './admin-db.js';
+import { getWallet, createDemoToken, takeDemoToken, createDemoSession, getDemoSession,
+  listAdmins, listLoyaltyRules, listRewards, listBranches } from './admin-db.js';
+import { collectAnalytics, canSeeAthlete } from './analytics.js';
+import { scopeAdmins, scopeBranches, scopeOwnerRows, scopeUsers, demoModeOn } from './demo-scope.js';
 
 const USE_DB = !!process.env.DATABASE_URL;
 const T = (Date.now() % 1e6).toString(36) + Math.random().toString(36).slice(2, 6);
@@ -64,6 +67,36 @@ test('демо: ownerId → sessionId (для /api/demo/end), и только д
   assert.equal(ownerIdToSession(ids.ownerId), 'ds_xyz');
   assert.equal(ownerIdToSession('admin-abc'), null);
   assert.equal(ownerIdToSession(null), null);
+});
+
+/* ---- Ф4: демо-скоуп (изоляция клонов, DEMO_MODE=1) ---- */
+test('демо-скоуп: canSeeAthlete и списковые хелперы фильтруют по demo_session', () => {
+  const prev = process.env.DEMO_MODE;
+  process.env.DEMO_MODE = '1';
+  try {
+    // canSeeAthlete (как его зовёт collectAnalytics через filterAthletes)
+    assert.equal(canSeeAthlete({ kind: 'demoSession', session: 'ds_a' }, { demoSession: 'ds_a' }), true);
+    assert.equal(canSeeAthlete({ kind: 'demoSession', session: 'ds_a' }, { demoSession: 'ds_b' }), false);
+    assert.equal(canSeeAthlete({ kind: 'demoSession', session: 'ds_a' }, { demoSession: null }), false);
+    assert.equal(canSeeAthlete({ kind: 'all' }, { demoSession: 'ds_b' }), true, 'owner-скоуп прода не тронут');
+    // списковые хелперы: demo-админ видит только свою сессию
+    const adminA = { demo_session: 'ds_a' };
+    const rows = [
+      { id: '1', demo_session: 'ds_a' }, { id: '2', demo_session: 'ds_b' }, { id: '3', demo_session: null }
+    ];
+    assert.deepEqual(scopeAdmins(adminA, rows).map(r => r.id), ['1']);
+    assert.deepEqual(scopeUsers(adminA, rows).map(r => r.id), ['1']);
+    const branches = [{ id: 'demo-ds_a' }, { id: 'demo-ds_b' }, { id: 'real-branch' }];
+    assert.deepEqual(scopeBranches(adminA, branches).map(b => b.id), ['demo-ds_a']);
+    const owned = [{ id: 'r1', created_by: 'demo-owner-ds_a' }, { id: 'r2', created_by: 'demo-owner-ds_b' }];
+    assert.deepEqual(scopeOwnerRows(adminA, owned).map(r => r.id), ['r1']);
+    // вне демо-режима — без фильтрации
+    process.env.DEMO_MODE = '0';
+    assert.equal(scopeAdmins(adminA, rows).length, 3);
+    assert.equal(demoModeOn(), false);
+  } finally {
+    process.env.DEMO_MODE = prev;
+  }
 });
 
 /* ---------- demo-club: спавн и полное удаление клона ---------- */
@@ -158,6 +191,51 @@ test('демо: cleaner удаляет истёкшие клоны и токен
     assert.equal(tokens.rows[0].n, 0, 'использованный токен вычищен');
   } finally {
     await destroyDemoClub({ sessionId: sid, db, saveDb, dataDir: dir }).catch(() => {});
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+  }
+});
+
+/* ---- Ф4: два параллельных демо-клона не видят друг друга ---- */
+test('демо-изоляция: аналитика и списки владельца видят только свой клон', async (t) => {
+  if (!needDb(t)) return;
+  const sidA = 'dsA_' + T, sidB = 'dsB_' + T;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'demoIso-'));
+  const db = { users: [] };
+  const saveDb = () => {};
+  const prev = process.env.DEMO_MODE;
+  process.env.DEMO_MODE = '1';
+  const idsA = demoIds(sidA), idsB = demoIds(sidB);
+  try {
+    await spawnDemoClub({ sessionId: sidA, db, saveDb, dataDir: dir });
+    await spawnDemoClub({ sessionId: sidB, db, saveDb, dataDir: dir });
+    assert.equal(db.users.length, 6, 'в users оба клона');
+    const adminA = { demo_session: sidA };
+
+    // атлеты: только свои
+    const mine = scopeUsers(adminA, db.users);
+    assert.deepEqual(mine.map(u => u.id).sort(), Object.values(idsA.athleteIds).sort());
+
+    // сотрудники/филиалы/правила/награды: только свои
+    const admins = scopeAdmins(adminA, await listAdmins());
+    assert.deepEqual(admins.map(a => a.id).sort(), [idsA.ownerId, idsA.trainerId].sort());
+    const branches = scopeBranches(adminA, await listBranches());
+    assert.deepEqual(branches.map(b => b.id), [idsA.branchId]);
+    const rules = scopeOwnerRows(adminA, await listLoyaltyRules());
+    assert.equal(rules.length, 3, 'правила только клона A');
+    assert.ok(rules.every(r => r.created_by === idsA.ownerId));
+    const rewards = scopeOwnerRows(adminA, await listRewards(false));
+    assert.equal(rewards.length, 2, 'награды только клона A');
+    assert.ok(rewards.every(r => r.created_by === idsA.ownerId));
+
+    // аналитика владельца A: ровно 3 атлета клона A, без следов B
+    const { athletes } = await collectAnalytics({ users: db.users, scope: { kind: 'demoSession', session: sidA } });
+    assert.equal(athletes.length, 3, 'в аналитике только клон A');
+    assert.ok(athletes.every(a => Object.values(idsA.athleteIds).includes(a.id)), 'нет атлетов клона B');
+    assert.ok(athletes.every(a => a.demoSession === sidA), 'метка demoSession в строке аналитики');
+  } finally {
+    process.env.DEMO_MODE = prev;
+    await destroyDemoClub({ sessionId: sidA, db, saveDb, dataDir: dir }).catch(() => {});
+    await destroyDemoClub({ sessionId: sidB, db, saveDb, dataDir: dir }).catch(() => {});
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   }
 });

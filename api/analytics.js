@@ -143,6 +143,7 @@ function athleteRow(u, pg, now, S) {
   const branch = (vis && vis.branch) || (pg.branchByUser.get(u.id) || {}).branch_key || null;
   const row = {
     id: u.id, name: u.name, created: u.created || null, disabled: !!u.disabled,
+    demoSession: u.demo_session || null,
     unit,
     branch,
     trainerId: pg.trainerByUser.get(u.id) || null,
@@ -174,6 +175,7 @@ function statusOf(row, now) {
 // scope: { kind: 'all' } | { kind: 'branch', branch } | { kind: 'trainer', trainerId } | { kind: 'statuses' }
 export function canSeeAthlete(scope, row) {
   if (scope.kind === 'all') return true;
+  if (scope.kind === 'demoSession') return row.demoSession === scope.session;
   if (scope.kind === 'branch') return !scope.branch || row.branch === scope.branch;
   if (scope.kind === 'trainer') return row.trainerId === scope.trainerId;
   return true; // statuses: same list, frontend gates what it renders

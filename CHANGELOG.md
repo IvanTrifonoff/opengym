@@ -1,3 +1,29 @@
+## v1.2.49 — (2026-09-02) — демо-клуб Ф4: изоляция клонов (демо-скоуп, DEMO_MODE=1)
+- Два параллельных посетителя demo.gym.trfnv.ru больше не видят клоны друг
+  друга: всё, что показывает демо-владелец/тренер, фильтруется по их
+  demo_session.
+- api/demo-scope.js (новый): чистые хелперы — demoModeOn, demoBranchOf,
+  demoOwnerOf, isDemoAdmin, scopeAdmins (сотрудники сессии), scopeBranches
+  (филиал клона), scopeOwnerRows (правила/награды, созданные владельцем
+  сессии), scopeUsers (атлеты сессии). На проде (DEMO_MODE выключен) все
+  фильтры неактивны — поведение не меняется.
+- api/analytics.js: строка атлета несёт demoSession; canSeeAthlete понимает
+  scope.kind='demoSession' → overview/athletes/leaderboard/detail владельца
+  считаются только по его клону (детальный 403 на чужого атлета).
+- api/server.js: analyticsScope для DEMO-админа возвращает demoSession-скоуп
+  вместо owner «вся сеть»; requireProgramAccess разрешает программу атлета
+  только внутри своей сессии.
+- api/routes/admin.js: staff/branches/retention/assign/users-поиск/тренеры —
+  фильтрация по demo_session; staff update/delete/restore и assign не могут
+  тронуть объекты чужой сессии.
+- api/routes/loyalty.js: админ-списки правил и наград — только своего клона.
+- api/admin-db.js: listAdmins возвращает demo_session (для скоупа).
+- Тесты: +2 в demo-club.test.js — чистый (canSeeAthlete + все scope-хелперы
+  под DEMO_MODE=1 и вне его) и интеграционный (два живых клона: аналитика,
+  сотрудники, филиал, правила, награды владельца A — ровно клон A, без
+  следов B). Итог: api-тесты 66/66.
+- Прод не затронут: DEMO_MODE выключен.
+
 ## v1.2.48 — (2026-09-02) — демо-клуб Ф3: вход/выход и фоновый cleaner
 - api/routes/demo.js: два новых демо-эндпоинта (только при DEMO_MODE=1):
   · POST /api/demo/enter — расходует одноразовый токен (takeDemoToken),
