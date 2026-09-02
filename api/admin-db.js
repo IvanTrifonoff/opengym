@@ -33,6 +33,13 @@ CREATE TABLE IF NOT EXISTS admin_invites (
   used_admin_id TEXT
 );
 
+CREATE TABLE IF NOT EXISTS branches (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  deleted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS loyalty_rules (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -204,6 +211,7 @@ ALTER TABLE loyalty_ledger ADD COLUMN IF NOT EXISTS source_id TEXT;
 
 const ADMIN_MIGRATION = `
 ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS branch_key TEXT;
+ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 `;
 
 // Split shifts: a trainer may have several intervals per weekday (e.g. 9-12 and 16-21).
@@ -340,9 +348,10 @@ export async function updateAdminCounter(credentialId, counter) {
 export async function listAdmins() {
   await ready();
   const result = await pool.query(
-    `SELECT a.id, a.name, a.role, a.branch_key, a.disabled, a.created_at, a.updated_at,
+    `SELECT a.id, a.name, a.role, a.branch_key, a.disabled, a.deleted_at, a.created_at, a.updated_at,
             count(c.id)::int AS passkeys
      FROM admin_users a LEFT JOIN admin_credentials c ON c.admin_id = a.id
+     WHERE a.deleted_at IS NULL
      GROUP BY a.id ORDER BY a.created_at`
   );
   return result.rows;
@@ -415,6 +424,60 @@ export async function updateAdmin({ id, role, disabled }) {
     `UPDATE admin_users SET role = COALESCE($2, role), disabled = COALESCE($3, disabled), updated_at = now()
      WHERE id = $1 RETURNING id, name, role, disabled`,
     [id, role || null, typeof disabled === 'boolean' ? disabled : null]
+  );
+  return result.rows[0] || null;
+}
+
+// Мягкое удаление сотрудника: профиль скрывается из списков и вход блокируется,
+// данные (креды, истории) остаются в БД. Восстановление — restoreAdmin.
+export async function softDeleteAdmin(id) {
+  await ready();
+  const result = await pool.query(
+    `UPDATE admin_users SET deleted_at = now(), disabled = true, updated_at = now()
+     WHERE id = $1 AND deleted_at IS NULL
+       AND role <> 'owner'
+     RETURNING id, name, role, deleted_at`, [id]
+  );
+  return result.rows[0] || null;
+}
+
+export async function restoreAdmin(id) {
+  await ready();
+  const result = await pool.query(
+    `UPDATE admin_users SET deleted_at = NULL, disabled = false, updated_at = now()
+     WHERE id = $1 RETURNING id, name, role, deleted_at`, [id]
+  );
+  return result.rows[0] || null;
+}
+
+/* ---------- branches (филиалы/залы) ---------- */
+export async function listBranches() {
+  await ready();
+  const result = await pool.query(
+    'SELECT id, name, deleted_at, created_at FROM branches WHERE deleted_at IS NULL ORDER BY name'
+  );
+  return result.rows;
+}
+
+export async function saveBranch({ id, name }) {
+  await ready();
+  const bid = String(id || '').trim() || crypto.randomBytes(8).toString('hex');
+  const bname = String(name || '').trim().slice(0, 80);
+  if (!bname) throw new Error('branch name is required');
+  const result = await pool.query(
+    `INSERT INTO branches (id, name) VALUES ($1, $2)
+     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+     RETURNING id, name, created_at`,
+    [bid, bname]
+  );
+  return result.rows[0];
+}
+
+export async function softDeleteBranch(id) {
+  await ready();
+  const result = await pool.query(
+    'UPDATE branches SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING id, name, deleted_at',
+    [id]
   );
   return result.rows[0] || null;
 }

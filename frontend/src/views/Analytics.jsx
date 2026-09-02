@@ -7,6 +7,7 @@ import { fmtDate } from '../lib/format.js'
 import Icon from '../components/Icon.jsx'
 import NavBar from '../components/NavBar.jsx'
 import { Button } from '../components/ui.jsx'
+import { confirmSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import TrainerProgram from './TrainerProgram.jsx'
 import Retention from './Retention.jsx'
@@ -97,6 +98,17 @@ export function AthleteCard({ id, admin, trainers, onBack, onProgram }) {
           </select>
           <Button size="sm" variant="primary" onClick={assign} disabled={busy || tr === (d.user.trainerId || '')}>Сохранить</Button>
         </div>
+      </div>
+    </div>}
+
+    {canManage && <div className="card" style={{ marginBottom: 12, borderColor: 'color-mix(in srgb, var(--red) 45%, transparent)' }}>
+      <div className="row between" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <div><div style={{ fontWeight: 600 }}>Закрыть доступ</div><div className="small dim" style={{ marginTop: 2 }}>Профиль скрывается из списков, вход блокируется; данные и статистика остаются на сервере.</div></div>
+        <Button size="sm" variant="danger" onClick={() => confirmSheet({
+          title: 'Удалить спортсмена ' + d.user.name + '?', message: 'Профиль скроется из списков, вход и синхронизация будут заблокированы. Все данные останутся на сервере — восстановление возможно в любой момент.',
+          confirmText: 'Удалить', danger: true,
+          onConfirm: () => api('/api/admin/user/delete', { method: 'POST', body: JSON.stringify({ id }) }).then(() => { onBack() }).catch(e => setErr(e.message || 'Не удалось удалить'))
+        })}>Удалить спортсмена</Button>
       </div>
     </div>}
 

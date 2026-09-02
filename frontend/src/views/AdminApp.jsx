@@ -5,6 +5,7 @@ import { api, passkeyAdminLogin, passkeyAdminRegister } from '../lib/api.js'
 import Icon from '../components/Icon.jsx'
 import NavBar from '../components/NavBar.jsx'
 import { Button, Switch } from '../components/ui.jsx'
+import { confirmSheet } from '../sheets.jsx'
 import { loyaltyHelpSheet } from '../components/LoyaltyHelp.jsx'
 import Analytics from './Analytics.jsx'
 import Trainer from './Trainer.jsx'
@@ -180,7 +181,30 @@ function Staff({ admin }) {
     <div className="row between" style={{ marginBottom: 10 }}><div><h2 style={{ margin: 0 }}>Сотрудники</h2><div className="sub">Отдельные passkey и роли доступа</div></div></div>
     {canManage && <div className="card"><h3 style={{ marginTop: 0 }}>Пригласить сотрудника</h3><div className="row" style={{ gap: 8 }}><input className="field" value={name} onChange={e => setName(e.target.value)} placeholder="Имя сотрудника" /><select className="field" value={role} onChange={e => setRole(e.target.value)}>{roles.filter(r => r !== 'owner').map(r => <option key={r}>{r}</option>)}</select><Button variant="primary" size="sm" onClick={makeInvite} disabled={!name.trim()}>Создать</Button></div>{invite && <div className="small" style={{ marginTop: 10 }}>Код: <b>{invite.code}</b><br />Ссылка: <span className="dim">{link}</span><button className="btn xs plain" onClick={() => navigator.clipboard?.writeText(link)}>Копировать</button></div>}</div>}
     <ErrorLine error={error} />
-    <div className="list">{staff.map(s => <div className="item" key={s.id}><div className="grow"><div className="tt">{s.name} {s.disabled && <span className="tag" style={{ color: 'var(--red)' }}>off</span>}</div><div className="ss">{s.role} · {s.passkeys} passkey</div></div>{admin.role === 'owner' && <button className="btn xs plain" onClick={() => impersonate(s)} disabled={s.disabled}>Войти как</button>}<span className="tag acc">{s.role}</span></div>)}</div>
+    <div className="list">{staff.map(s => <div className="item" key={s.id}><div className="grow"><div className="tt">{s.name} {s.disabled && <span className="tag" style={{ color: 'var(--red)' }}>off</span>}</div><div className="ss">{s.role} · {s.passkeys} passkey</div></div>{admin.role === 'owner' && <button className="btn xs plain" onClick={() => impersonate(s)} disabled={s.disabled}>Войти как</button>}<span className="tag acc">{s.role}</span>{admin.role === 'owner' && s.role !== 'owner' && <button className="btn xs plain danger" onClick={() => confirmSheet({
+      title: 'Удалить сотрудника ' + s.name + '?', message: 'Профиль скроется из списков, вход будет заблокирован. Данные и статистика останутся — восстановить можно в любой момент.',
+      confirmText: 'Удалить', danger: true,
+      onConfirm: () => api('/api/admin/staff/delete', { method: 'POST', body: JSON.stringify({ id: s.id }) }).then(load).catch(e => setError(e.message))
+    })}>Удалить</button>}</div>)}</div>
+  </>
+}
+
+function Branches({ admin }) {
+  const [branches, setBranches] = useState([]); const [name, setName] = useState(''); const [error, setError] = useState('')
+  const canEdit = admin.role === 'owner' || admin.role === 'manager'
+  const load = () => api('/api/admin/branches').then(d => setBranches(d.branches || [])).catch(e => setError(e.message))
+  useEffect(() => { load(); }, [])
+  const create = () => api('/api/admin/branches/save', { method: 'POST', body: JSON.stringify({ name }) }).then(() => { setName(''); load() }).catch(e => setError(e.message))
+  const rename = (id, n) => api('/api/admin/branches/save', { method: 'POST', body: JSON.stringify({ id, name: n }) }).then(load).catch(e => setError(e.message))
+  const del = b => confirmSheet({ title: 'Удалить филиал «' + b.name + '»?', message: 'Филиал скроется из списков; правила лояльности, сотрудники и история по нему останутся в системе.', confirmText: 'Удалить', danger: true, onConfirm: () => api('/api/admin/branches/delete', { method: 'POST', body: JSON.stringify({ id: b.id }) }).then(load).catch(e => setError(e.message)) })
+  return <>
+    <div className="row between" style={{ marginBottom: 10 }}><div><h2 style={{ margin: 0 }}>Филиалы</h2><div className="sub">Залы сети: правила лояльности и аналитика в разрезе филиала</div></div></div>
+    {canEdit && <div className="card"><h3 style={{ marginTop: 0 }}>Добавить филиал</h3><div className="row" style={{ gap: 8 }}><input className="field" value={name} onChange={e => setName(e.target.value)} placeholder="Название зала, например «Филиал на Ленина»" /><Button variant="primary" size="sm" onClick={create} disabled={!name.trim()}>Создать</Button></div></div>}
+    <ErrorLine error={error} />
+    <div className="list">{branches.length ? branches.map(b => <div className="item" key={b.id}><div className="grow"><div className="tt">{b.name}</div><div className="ss">id: {b.id}</div></div>
+      {canEdit && <button className="btn xs plain" onClick={() => { const n = prompt('Новое название филиала:', b.name); if (n && n.trim()) rename(b.id, n.trim()) }}>Переименовать</button>}
+      {admin.role === 'owner' && <button className="iconbtn" onClick={() => del(b)} aria-label="Удалить филиал"><Icon name="trash" /></button>}
+    </div>) : <div className="empty small muted">Филиалов пока нет — добавьте первый зал.</div>}</div>
   </>
 }
 
@@ -231,7 +255,7 @@ function AdminDashboard({ admin, onLogout }) {
   const lastPushFail = push?.stats?.failures?.length ? push.stats.failures[push.stats.failures.length - 1] : null
   const pushTile = push ? (push.degraded ? 'сбои' : 'ok') : '—'
   const canEdit = admin.role === 'owner' || admin.role === 'manager'
-  const tabs = [['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ['staff', 'Сотрудники'], ...(canEdit ? [['invites', 'Приглашения'], ['leads', 'Заявки']] : [])]
+  const tabs = [['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ['staff', 'Сотрудники'], ...(canEdit ? [['branches', 'Филиалы'], ['invites', 'Приглашения'], ['leads', 'Заявки']] : [])]
   const back = () => api('/api/admin/impersonate/back', { method: 'POST', body: '{}' }).then(d => { location.href = d.redirect || '/admin' }).catch(() => {})
   return <div className="narrow" style={{ paddingBottom: 40 }}>
     <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">ИмпульС</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {admin.role}</div></div><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" style={{ position: 'relative' }} onClick={() => nav('/admin/notifications')} aria-label="Уведомления"><Icon name="bell" />{unread > 0 && <span className="notif-badge">{unread > 9 ? '9+' : unread}</span>}</button><button className="iconbtn" onClick={() => nav('/admin/analytics')} aria-label="Аналитика"><Icon name="chart" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
@@ -245,6 +269,7 @@ function AdminDashboard({ admin, onLogout }) {
         { key: 'rewards', icon: 'medal', label: 'Награды', onClick: () => go('rewards') },
         { key: 'staff', icon: 'person', label: 'Сотрудники', onClick: () => go('staff') },
         ...(canEdit ? [
+          { key: 'branches', icon: 'house', label: 'Филиалы', onClick: () => go('branches') },
           { key: 'invites', icon: 'link', label: 'Приглашения', onClick: () => go('invites') },
           { key: 'leads', icon: 'clipboard', label: 'Заявки', onClick: () => go('leads') }
         ] : [])
@@ -254,6 +279,7 @@ function AdminDashboard({ admin, onLogout }) {
     {tab === 'loyalty' && <Loyalty canEdit={canEdit} />}
     {tab === 'rewards' && <Rewards canEdit={canEdit} />}
     {tab === 'staff' && <Staff admin={admin} />}
+    {tab === 'branches' && <Branches admin={admin} />}
     {tab === 'invites' && <Invites admin={admin} />}
     {tab === 'leads' && <AdminLeads onViewed={n => setLeadUnread(n)} />}
   </div>

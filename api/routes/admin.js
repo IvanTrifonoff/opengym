@@ -22,6 +22,7 @@ export function createAdminRoutes(deps) {
     analyticsScope, requireProgramAccess, bookingNotification,
     adminDbReady, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
     listAdmins, registerAdmin, updateAdmin, updateAdminCounter, createAdminInvite,
+    softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
     setTrainerAssignment, listTrainerAssignments,
     getTrainerAvailability, setTrainerAvailability, listBookings, createBooking,
     findBookingConflict, getBooking, updateBookingStatus,
@@ -168,6 +169,50 @@ export function createAdminRoutes(deps) {
       json(res, 200, { ok: true, admin: updated });
     } catch (error) { json(res, 400, { error: error.message }); }
   } },
+  // Owner: мягкое удаление сотрудника — профиль скрывается из списков,
+  // вход блокируется, данные (креды) остаются; восстановление — staff/restore.
+  { method: 'POST', path: '/api/admin/staff/delete', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner']); if (!admin) return;
+    const body = await readBody(req);
+    const id = String(body.id || '');
+    if (id === admin.id) return json(res, 400, { error: 'cannot delete yourself' });
+    try {
+      const removed = await softDeleteAdmin(id);
+      if (!removed) return json(res, 404, { error: 'admin not found or is an owner' });
+      json(res, 200, { ok: true, admin: removed });
+    } catch (error) { json(res, 400, { error: error.message }); }
+  } },
+  { method: 'POST', path: '/api/admin/staff/restore', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner']); if (!admin) return;
+    const body = await readBody(req);
+    try {
+      const restored = await restoreAdmin(String(body.id || ''));
+      if (!restored) return json(res, 404, { error: 'admin not found' });
+      json(res, 200, { ok: true, admin: restored });
+    } catch (error) { json(res, 400, { error: error.message }); }
+  } },
+  /* ---------- branches (филиалы/залы) ---------- */
+  { method: 'GET', path: '/api/admin/branches', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
+    json(res, 200, { branches: await listBranches() });
+  } },
+  { method: 'POST', path: '/api/admin/branches/save', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
+    const body = await readBody(req);
+    try {
+      const branch = await saveBranch({ id: body.id, name: body.name });
+      json(res, 200, { ok: true, branch });
+    } catch (error) { json(res, 400, { error: error.message }); }
+  } },
+  { method: 'POST', path: '/api/admin/branches/delete', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner']); if (!admin) return;
+    const body = await readBody(req);
+    try {
+      const removed = await softDeleteBranch(String(body.id || ''));
+      if (!removed) return json(res, 404, { error: 'branch not found' });
+      json(res, 200, { ok: true, branch: removed });
+    } catch (error) { json(res, 400, { error: error.message }); }
+  } },
   // Начало регистрации сотрудника по инвайт-коду: генерация WebAuthn-челленджа.
   { method: 'POST', path: '/api/admin/staff/register/options', handler: async (req, res) => {
     const body = await readBody(req);
@@ -215,7 +260,7 @@ export function createAdminRoutes(deps) {
   // One row per user, cheap enough for a personal instance (reads each state file once).
   { method: 'GET', path: '/api/admin/users', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
-    const users = db.users.map(u => {
+    const users = db.users.filter(u => !u.deleted).map(u => {
       const S = readState(u.id) || {};
       const workouts = S.workouts || [];
       const last = workouts[workouts.length - 1];
@@ -258,6 +303,30 @@ export function createAdminRoutes(deps) {
     if (u.disabled) presence.delete(u.id);   // drop them off "training now" at once
     saveDb();
     json(res, 200, { ok: true, id: u.id, disabled: u.disabled });
+  } },
+  // Мягкое удаление атлета: профиль скрывается из списков, вход и синк блокируются,
+  // файл состояния и история остаются на сервере. Восстановление — user/restore.
+  { method: 'POST', path: '/api/admin/user/delete', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
+    const body = await readBody(req);
+    const u = db.users.find(x => x.id === body.id);
+    if (!u) return json(res, 404, { error: 'no such user' });
+    if (isAdmin(u)) return json(res, 400, { error: 'cannot delete an admin' });
+    u.deleted = true;
+    u.disabled = true;
+    presence.delete(u.id);
+    saveDb();
+    json(res, 200, { ok: true, id: u.id, deleted: true });
+  } },
+  { method: 'POST', path: '/api/admin/user/restore', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res); if (!admin) return;
+    const body = await readBody(req);
+    const u = db.users.find(x => x.id === body.id);
+    if (!u) return json(res, 404, { error: 'no such user' });
+    u.deleted = false;
+    u.disabled = false;
+    saveDb();
+    json(res, 200, { ok: true, id: u.id, deleted: false });
   } },
 
   /* ---------- analytics: athlete stats, discipline, leaderboard, retention ---------- */

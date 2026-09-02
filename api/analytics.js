@@ -186,7 +186,7 @@ export function filterAthletes(rows, scope) {
 export async function collectAnalytics({ users, scope, now = Date.now() }) {
   const pg = await pgAggregates(now);
   const all = users
-    .filter(u => !u.admin)                       // staff accounts live in the admin DB, not here
+    .filter(u => !u.admin && !u.deleted)          // staff accounts live in the admin DB; deleted are hidden
     .map(u => athleteRow(u, pg, now))
     .filter(Boolean);
   const athletes = filterAthletes(all, scope).sort((a, b) => (a.name || '').localeCompare(b.name || ''));

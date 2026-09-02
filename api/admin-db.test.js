@@ -23,7 +23,8 @@ const {
   getAdminInvite, acceptLoyaltyEvent, getWallet, roleAllowed, recurHorizonDays,
   setTrainerAssignment, listTrainerAssignments, saveNotification,
   insertLead, findOwnerId, getSetting, setSetting, deleteSetting,
-  listLeads, markLeadsViewed, countUnreadLeads
+  listLeads, markLeadsViewed, countUnreadLeads, listAdmins,
+  softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch
 } = db;
 
 const T = (Date.now() % 1e6).toString(36) + Math.random().toString(36).slice(2, 6);
@@ -248,4 +249,38 @@ test('промо: настройки (СБП QR) + прочитанность з
     try { await deleteSetting('test_key_' + T); } catch {}
     throw e;
   }
+});
+
+/* ---- филиалы: CRUD + мягкое удаление ---- */
+test('филиалы: save/list/rename/soft delete', async (t) => {
+  if (!needDb(t)) return;
+  const id = 'br_' + T;
+  await saveBranch({ id, name: 'Зал тест' });
+  await saveBranch({ id, name: 'Зал тест-2' });           // rename через ON CONFLICT
+  let list = await listBranches();
+  assert.ok(list.some(b => b.id === id && b.name === 'Зал тест-2'), 'renamed branch in list');
+  const removed = await softDeleteBranch(id);
+  assert.ok(removed && removed.id === id, 'soft delete returns branch');
+  list = await listBranches();
+  assert.ok(!list.some(b => b.id === id), 'soft-deleted branch hidden');
+});
+
+/* ---- мягкое удаление сотрудника ---- */
+test('сотрудники: softDeleteAdmin скрывает и блокирует, restore возвращает', async (t) => {
+  if (!needDb(t)) return;
+  const id = 'adm_' + T;
+  await pool.query(
+    `INSERT INTO admin_users (id, name, role) VALUES ($1, $2, 'trainer') ON CONFLICT (id) DO NOTHING`,
+    [id, 'Тест-тренер ' + T]
+  );
+  let admins = await listAdmins();
+  assert.ok(admins.some(a => a.id === id), 'trainer visible before delete');
+  const removed = await softDeleteAdmin(id);
+  assert.ok(removed && removed.deleted_at, 'soft delete stamps deleted_at');
+  admins = await listAdmins();
+  assert.ok(!admins.some(a => a.id === id), 'trainer hidden after delete');
+  await restoreAdmin(id);
+  admins = await listAdmins();
+  assert.ok(admins.some(a => a.id === id), 'trainer visible after restore');
+  await pool.query('DELETE FROM admin_users WHERE id = $1', [id]);
 });

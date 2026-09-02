@@ -15,6 +15,7 @@ import {
 import {
   acceptLoyaltyEvent, adminDbReady, applyLoyaltyRules, countUnreadNotifications, createAdminInvite, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
   listAdmins, listLoyaltyRules, listNotifications, markBadgeSeen, markNotificationsRead, registerAdmin, roleAllowed, saveLoyaltyRule, saveNotification, deleteLoyaltyRule, dispatchOutbox,
+  softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
   syncAdminOwners, updateAdmin, updateAdminCounter, getWallet, listRewards, saveReward, deleteReward, redeemReward, listRedemptions, updateRedemption,
   setTrainerAssignment, listTrainerAssignments,
   getTrainerAvailability, setTrainerAvailability, listBookings, createBooking,
@@ -279,7 +280,7 @@ function readSession(req) {
   if (!uid || +exp < Date.now()) return null;
   const user = db.users.find(u => u.id === uid) || null;
   if (!user) return null;
-  if (user.disabled) return null;           // disabled accounts are locked out everywhere
+  if (user.disabled || user.deleted) return null;  // disabled/deleted accounts are locked out everywhere
   // Missing third field = pre-versioning cookie = version 0. Anything non-numeric is a malformed
   // payload (it still had to pass the HMAC, so this is belt-and-braces) and is refused outright.
   const claimed = ver === undefined ? 0 : Number(ver);
@@ -562,7 +563,7 @@ const routes = {
     saveDb();
     const user = db.users.find(u => u.id === cred.userId);
     if (!user) return json(res, 500, { error: 'user missing' });
-    if (user.disabled) return json(res, 403, { error: 'this account has been disabled' });
+    if (user.disabled || user.deleted) return json(res, 403, { error: 'this account has been closed' });
     json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) } }, { 'Set-Cookie': sessionCookie(user) });
   },
 
