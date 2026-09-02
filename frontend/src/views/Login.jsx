@@ -68,17 +68,20 @@ function InstallCard() {
     await prompt.userChoice.catch(() => {})
     setPrompt(null)
   }
+  // Manual hint (iOS Safari / Android) is its own orange pulsing block — no grey card.
+  // The native-button case (Chrome beforeinstallprompt) keeps the card for the button.
+  if (prompt) {
+    return (
+      <div className="card" style={{ marginTop: 18, textAlign: 'left' }}>
+        <Button variant="primary" className="w-full" icon="download" onClick={install}>{t('Install the app to your Home Screen')}</Button>
+      </div>
+    )
+  }
+  if (!(IS_APPLE || IS_ANDROID)) return null
   return (
-    <div className="card" style={{ marginTop: 18, textAlign: 'left' }}>
-      {prompt
-        ? <Button variant="primary" className="w-full" icon="download" onClick={install}>{t('Install the app to your Home Screen')}</Button>
-        : IS_APPLE || IS_ANDROID
-          ? <div className="small install-hint" style={{ lineHeight: 1.5, marginTop: 10 }}>
-            <Icon name="house" style={{ marginRight: 6, verticalAlign: -2 }} />
-            {IS_ANDROID ? t('In Chrome: ⋮ menu → Add to Home screen') : t('In Safari: Share → Add to Home Screen')}
-            {' — '}{t('to install impulseGym as a full-screen app.')}
-          </div>
-          : null}
+    <div className="small install-hint" style={{ lineHeight: 1.5, marginTop: 18 }}>
+      {IS_ANDROID ? t('In Chrome: ⋮ menu → Add to Home screen') : t('In Safari: Share → Add to Home Screen')}
+      {' — '}{t('to install impulseGym as a full-screen app.')}
     </div>
   )
 }
