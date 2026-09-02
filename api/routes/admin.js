@@ -23,6 +23,7 @@ export function createAdminRoutes(deps) {
     adminDbReady, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
     listAdmins, registerAdmin, updateAdmin, updateAdminCounter, createAdminInvite,
     softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
+    listPrivateCodes, createPrivateCode, revokePrivateCode,
     setTrainerAssignment, listTrainerAssignments,
     getTrainerAvailability, setTrainerAvailability, listBookings, createBooking,
     findBookingConflict, getBooking, updateBookingStatus,
@@ -211,6 +212,28 @@ export function createAdminRoutes(deps) {
       const removed = await softDeleteBranch(String(body.id || ''));
       if (!removed) return json(res, 404, { error: 'branch not found' });
       json(res, 200, { ok: true, branch: removed });
+    } catch (error) { json(res, 400, { error: error.message }); }
+  } },
+  /* ---------- private access codes (owner) ---------- */
+  { method: 'GET', path: '/api/admin/private-codes', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner']); if (!admin) return;
+    json(res, 200, { codes: await listPrivateCodes() });
+  } },
+  { method: 'POST', path: '/api/admin/private-codes/new', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner']); if (!admin) return;
+    const body = await readBody(req);
+    try {
+      const code = await createPrivateCode({ note: body.note, createdBy: admin.id });
+      json(res, 200, { ok: true, code });
+    } catch (error) { json(res, 400, { error: error.message }); }
+  } },
+  { method: 'POST', path: '/api/admin/private-codes/revoke', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner']); if (!admin) return;
+    const body = await readBody(req);
+    try {
+      const revoked = await revokePrivateCode(String(body.code || ''));
+      if (!revoked) return json(res, 404, { error: 'code not found' });
+      json(res, 200, { ok: true, code: revoked });
     } catch (error) { json(res, 400, { error: error.message }); }
   } },
   // Начало регистрации сотрудника по инвайт-коду: генерация WebAuthn-челленджа.

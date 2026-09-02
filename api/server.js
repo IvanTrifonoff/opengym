@@ -23,6 +23,7 @@ import {
   listRecurringSeries, listRecurringSkips, listRecurringSummary, setRecurringSeries, deleteRecurringSeries, skipRecurringDate, unskipRecurringDate, rollRecurringForward,
   listDueReminders, markBookingReminded,
   insertLead, findOwnerId, getSetting, setSetting, deleteSetting,
+  listPrivateCodes, createPrivateCode, checkPrivateCode, revokePrivateCode,
   listLeads, markLeadsViewed, countUnreadLeads
 } from './admin-db.js';
 import { collectAnalytics, athleteDetail } from './analytics.js';
@@ -455,6 +456,21 @@ const routes = {
 
   // Public config the login screen needs before anyone is signed in.
   'GET /api/config': async (req, res) => json(res, 200, { invite_only: INVITE_ONLY }),
+
+  // «Приватный режим»: активация по одноразовому коду, выданному владельцем после
+  // оплаты. Публичный — вызывается со страницы /private до входа. Активный код
+  // разблокирует гостевой локальный режим на устройстве (данные остаются локально).
+  'POST /api/private/unlock': async (req, res) => {
+    const body = await readBody(req);
+    try {
+      const hit = await checkPrivateCode(String(body.code || '').trim());
+      if (!hit) return json(res, 403, { error: 'invalid or inactive access code' });
+      json(res, 200, { ok: true, code: hit.code });
+    } catch (e) {
+      console.error('private unlock failed:', e.message);
+      json(res, 503, { error: 'service unavailable' });
+    }
+  },
 
   // Текущий спортсмен: id/name/admin — для восстановления UI после перезагрузки.
   'GET /api/me': async (req, res) => {

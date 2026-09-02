@@ -227,6 +227,27 @@ function Invites({ admin }) {
   </>
 }
 
+// Коды «Приватного режима» (/private): гостевой локальный режим приложения без
+// аккаунта. Код выдаётся владельцем после разовой оплаты (СБП/счёт) и активирует
+// режим на устройстве спортсмена. Видят и создают коды только владельцы — код —
+// это товар, за который спортсмен заплатил один раз.
+function PrivateCodes({ admin }) {
+  const [codes, setCodes] = useState([]); const [note, setNote] = useState(''); const [created, setCreated] = useState(null); const [error, setError] = useState('')
+  const load = () => api('/api/admin/private-codes').then(d => setCodes(d.codes || [])).catch(e => setError(e.message))
+  useEffect(() => { load(); }, [])
+  const create = () => api('/api/admin/private-codes/new', { method: 'POST', body: JSON.stringify({ note }) }).then(d => { setCreated(d.code); setNote(''); load() }).catch(e => setError(e.message))
+  const revoke = code => api('/api/admin/private-codes/revoke', { method: 'POST', body: JSON.stringify({ code }) }).then(load).catch(e => setError(e.message))
+  return <>
+    <div className="row between" style={{ marginBottom: 10 }}><div><h2 style={{ margin: 0 }}>Приватный режим</h2><div className="sub">Гостевой доступ на /private — данные только на устройстве. Код выдаётся после разовой оплаты и активирует режим навсегда</div></div></div>
+    <div className="card"><h3 style={{ marginTop: 0 }}>Создать код</h3><div className="row" style={{ gap: 8 }}><input className="field" value={note} onChange={e => setNote(e.target.value)} placeholder="Кому выдан (необязательно)" /><Button variant="primary" size="sm" onClick={create}>Создать</Button></div>
+      {created && <div className="small" style={{ marginTop: 10 }}>Код доступа: <b style={{ fontSize: 20, letterSpacing: '.14em' }}>{created.code}</b>{' '}<button className="btn xs plain" onClick={() => navigator.clipboard?.writeText(created.code)}>Копировать код</button><br />Страница входа: <span className="dim">{location.origin}/private</span></div>}
+    </div>
+    <ErrorLine error={error} />
+    {!codes.length && <div className="card empty">Кодов пока нет. Создайте первый — спортсмен введёт его на {location.origin}/private.</div>}
+    <div className="list">{codes.map(c => <div className="item" key={c.code}><div className="grow"><div className="tt" style={{ letterSpacing: '.1em' }}>{c.code}</div><div className="ss">{c.note || 'без пометки'} · создан {new Date(c.created_at).toLocaleDateString()} · активаций: {c.uses}</div></div>{c.active ? <><span className="tag acc">активен</span><button className="btn xs plain" onClick={() => revoke(c.code)}>Отозвать</button></> : <span className="tag">отозван</span>}</div>)}</div>
+  </>
+}
+
 function AdminDashboard({ admin, onLogout }) {
   const nav = useNavigate()
   const [sp] = useSearchParams(); const [staff, setStaff] = useState([]); const [rules, setRules] = useState([]); const [push, setPush] = useState(null)
@@ -272,7 +293,8 @@ function AdminDashboard({ admin, onLogout }) {
           { key: 'branches', icon: 'house', label: 'Филиалы', onClick: () => go('branches') },
           { key: 'invites', icon: 'link', label: 'Приглашения', onClick: () => go('invites') },
           { key: 'leads', icon: 'clipboard', label: 'Заявки', onClick: () => go('leads') }
-        ] : [])
+        ] : []),
+        ...(admin.role === 'owner' ? [{ key: 'private', icon: 'lock', label: 'Приватный', onClick: () => go('private') }] : [])
       ]}
     />
     {tab === 'overview' && <><div className="tiles"><div className="tile"><div className="l">Сотрудники</div><div className="v">{staff.length || '—'}</div></div><div className="tile"><div className="l">Правила</div><div className="v">{rules.length || '—'}</div></div><div className="tile"><div className="l">Пуши</div><div className="v" style={{ fontSize: '1rem', color: push?.degraded ? 'var(--red)' : 'var(--green)' }}>{pushTile}</div></div><div className="tile"><div className="l">Роль</div><div className="v" style={{ fontSize: '1rem' }}>{admin.role}</div></div><div className="tile"><div className="l">База</div><div className="v" style={{ fontSize: '1rem', color: 'var(--green)' }}>online</div></div></div>{push?.degraded && <div className="card" style={{ borderColor: 'var(--red)', marginBottom: 12, background: 'color-mix(in srgb,var(--red) 7%,var(--bg-el))' }}><div className="row between" style={{ gap: 10 }}><div className="grow"><div style={{ fontWeight: 600, color: 'var(--red)' }}>Сбои доставки push-уведомлений</div><div className="small dim" style={{ marginTop: 3 }}>не отправлено {push.stats?.failed || 0} шт. за 24 ч{lastPushFail ? ' · последний: ' + lastPushFail.host + (lastPushFail.status ? ' · ' + lastPushFail.status : '') + (lastPushFail.error ? ' · ' + lastPushFail.error : '') : ''}{push.webhookConfigured ? '' : ' · вебхук-алерт не настроен'}</div></div>{canEdit && <Button size="sm" variant="ghost" onClick={resetPush}>Сбросить</Button>}</div></div>}<div className="card"><h2 style={{ marginTop: 0 }}>Быстрый старт</h2><p className="dim">Создайте правило «Посещение» и выдайте сотруднику invite-код. События СКУД начнут начислять баллы после привязки member_key к профилю спортсмена.</p><Button variant="primary" onClick={() => go('loyalty')}>Настроить loyalty</Button></div></>}
@@ -281,6 +303,7 @@ function AdminDashboard({ admin, onLogout }) {
     {tab === 'staff' && <Staff admin={admin} />}
     {tab === 'branches' && <Branches admin={admin} />}
     {tab === 'invites' && <Invites admin={admin} />}
+    {tab === 'private' && <PrivateCodes admin={admin} />}
     {tab === 'leads' && <AdminLeads onViewed={n => setLeadUnread(n)} />}
   </div>
 }

@@ -40,6 +40,15 @@ CREATE TABLE IF NOT EXISTS branches (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS private_codes (
+  code TEXT PRIMARY KEY,
+  note TEXT NOT NULL DEFAULT '',
+  active BOOLEAN NOT NULL DEFAULT true,
+  uses INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS loyalty_rules (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -478,6 +487,49 @@ export async function softDeleteBranch(id) {
   const result = await pool.query(
     'UPDATE branches SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING id, name, deleted_at',
     [id]
+  );
+  return result.rows[0] || null;
+}
+
+/* ---------- private access codes (разовый платёж -> доступ навсегда) ---------- */
+// Код «Приватного режима»: выдаётся владельцем после оплаты (СБП/счёт), активирует
+// гостевой локальный режим на устройстве. Хранится в БД, чтобы код нельзя было
+// подделать на клиенте и чтобы владелец мог видеть/отзывать выданные коды.
+export async function listPrivateCodes() {
+  await ready();
+  const result = await pool.query(
+    'SELECT code, note, active, uses, created_at FROM private_codes ORDER BY created_at DESC'
+  );
+  return result.rows;
+}
+
+export async function createPrivateCode({ note, createdBy }) {
+  await ready();
+  const code = crypto.randomBytes(9).toString('hex').toUpperCase().slice(0, 12);
+  const result = await pool.query(
+    `INSERT INTO private_codes (code, note, created_by) VALUES ($1, $2, $3)
+     RETURNING code, note, active, uses, created_at`,
+    [code, String(note || '').trim().slice(0, 200), createdBy || '']
+  );
+  return result.rows[0];
+}
+
+// Проверка кода при попытке войти в «Приватный режим»: активный код разблокирует
+// доступ на устройстве; каждый удачный ввод учитывается (uses) для контроля.
+export async function checkPrivateCode(code) {
+  await ready();
+  const result = await pool.query(
+    `UPDATE private_codes SET uses = uses + 1
+     WHERE code = $1 AND active = true
+     RETURNING code, note, uses`, [String(code || '').trim()]
+  );
+  return result.rows[0] || null;
+}
+
+export async function revokePrivateCode(code) {
+  await ready();
+  const result = await pool.query(
+    'UPDATE private_codes SET active = false WHERE code = $1 RETURNING code, active', [String(code || '').trim()]
   );
   return result.rows[0] || null;
 }
