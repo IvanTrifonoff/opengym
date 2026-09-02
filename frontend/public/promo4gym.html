@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark" data-accent="lime">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ИмпульС — приложение для фитнес-клуба, которое удерживает клиентов | Демо-клуб</title>
+<meta name="description" content="Готовое приложение для фитнес-клуба: удержание клиентов, программа лояльности, портал тренера и аналитика для владельца. Без команды разработчиков. Посмотрите демо-клуб и рассчитайте окупаемость для вашего зала.">
+<style>
+  /* ===== openGym design tokens (mirrored from the app) ===== */
+  :root{
+    --bg:#000; --bg-el:#0e0e10; --surface:#1c1c1e; --surface-2:#2c2c2e; --surface-3:#3a3a3c;
+    --label:#fff; --label-2:#ebebf599; --label-3:#ebebf552; --label-4:#ebebf52e;
+    --sep:#54545899; --sep-op:#54545857; --hair:.5px;
+    --blue:#0a84ff; --green:#30d158; --red:#ff453a; --orange:#ff9f0a; --yellow:#ffd60a;
+    --teal:#40c8e0; --indigo:#5e5ce6; --pink:#ff375f; --purple:#bf5af2; --mint:#63e6e2; --grey:#8e8e93;
+    --acc:var(--green); --acc-2:#248a3d; --on-acc:#000;
+    --acc-soft:color-mix(in srgb, var(--acc) 16%, transparent);
+    --acc-line:color-mix(in srgb, var(--acc) 38%, transparent);
+    --r-sm:8px; --r:12px; --r-lg:16px; --r-xl:22px; --r-card:14px;
+    --pad:16px; --ease:cubic-bezier(.32,.72,0,1); --fast:.14s; --med:.22s;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
+  html{background:var(--bg);overscroll-behavior:none;-webkit-text-size-adjust:100%;font-size:16px;scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--label);letter-spacing:-.01em;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-variant-numeric:tabular-nums;min-height:100vh;font-family:-apple-system,BlinkMacSystemFont,SF Pro Text,SF Pro Display,Segoe UI,Roboto,system-ui,sans-serif;font-size:17px;line-height:1.29;overflow-x:hidden}
+  a{color:var(--acc);text-decoration:none}
+  a:hover{text-decoration:underline}
+  button{font:inherit;color:inherit;cursor:pointer;background:none;border:none}
+  :focus-visible{outline:2.5px solid var(--acc);outline-offset:2px;border-radius:6px}
+
+  .wrap{max-width:640px;margin:0 auto;padding:0 20px}
+  @media (min-width:1000px){.wrap{max-width:1080px}}
+
+  /* ===== type scale (app) ===== */
+  .t-large{letter-spacing:-.028em;font-size:34px;font-weight:700;line-height:1.06}
+  .t-title{letter-spacing:-.024em;font-size:28px;font-weight:700;line-height:1.12}
+  .t-title2{letter-spacing:-.021em;font-size:22px;font-weight:700;line-height:1.18}
+  .t-head{letter-spacing:-.012em;font-size:17px;font-weight:600;line-height:1.29}
+  .t-body{letter-spacing:-.012em;font-size:17px;font-weight:400;line-height:1.29}
+  .t-sub{letter-spacing:-.006em;font-size:15px;line-height:1.33}
+  .t-foot{letter-spacing:-.001em;font-size:13px;line-height:1.38}
+  .t-cap{letter-spacing:0;font-size:12px;line-height:1.33}
+  .muted{color:var(--label-2)}
+  .dim{color:var(--label-3)}
+  .accent{color:var(--acc)}
+
+  /* ===== app components ===== */
+  .card{background:var(--surface);border-radius:var(--r-card);padding:16px}
+  .btn{border-radius:var(--r);letter-spacing:-.012em;background:var(--surface-2);color:var(--label);transition:transform var(--fast) var(--ease),background var(--fast),opacity var(--fast);justify-content:center;align-items:center;gap:7px;padding:14px 18px;font-size:17px;font-weight:600;display:inline-flex;text-decoration:none}
+  .btn:hover{text-decoration:none}
+  .btn:active{transform:scale(.975)}
+  .btn.primary{background:var(--acc);color:var(--on-acc)}
+  .btn.primary:active{background:var(--acc-2)}
+  .btn.tinted{background:var(--acc-soft);color:var(--acc)}
+  .btn.ghost{color:var(--acc);background:none;font-weight:400}
+  .btn.ghost:active{background:var(--surface-2)}
+  .btn.sm{border-radius:var(--r-sm);gap:5px;width:auto;padding:8px 14px;font-size:15px}
+  .tag{background:var(--surface-2);color:var(--label-2);text-transform:capitalize;border-radius:6px;align-items:center;gap:3px;padding:3px 7px;font-size:12px;font-weight:500;display:inline-flex}
+  .tag.acc{background:var(--acc-soft);color:var(--acc)}
+  .chip{background:var(--surface);color:var(--label);text-transform:capitalize;letter-spacing:-.006em;transition:background var(--fast),color var(--fast);border-radius:99px;flex:none;padding:6px 13px;font-size:14px;display:inline-flex;align-items:center}
+  .chip.on{background:var(--acc);color:var(--on-acc);font-weight:500}
+  .divider{height:var(--hair);background:var(--sep);border:0;margin:14px 0}
+  .tile{background:var(--surface);border-radius:var(--r-card);padding:14px}
+  .tile .l{color:var(--label-2);letter-spacing:-.004em;font-size:13px;display:flex;align-items:center;gap:5px}
+  .tile .v{letter-spacing:-.026em;margin-top:5px;font-size:26px;font-weight:600;line-height:1.1}
+  .tile .s{color:var(--label-3);font-size:12px;margin-top:3px;line-height:1.33}
+
+  /* ===== page ===== */
+  #page{max-width:560px;margin:0 auto}
+  @media (min-width:1000px){
+    #page{max-width:1080px}
+    .cols{grid-template-columns:1fr 1fr;gap:14px;display:grid}
+    .cols>*{min-width:0}
+  }
+
+  /* sticky header */
+  #topbar{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg-el) 72%,transparent);-webkit-backdrop-filter:saturate(180%)blur(24px);border-bottom:var(--hair) solid var(--sep-op)}
+  #topbar .row{display:flex;align-items:center;gap:12px;min-height:56px}
+  #topbar .logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:17px;letter-spacing:-.012em}
+  #topbar .logo .dot{width:30px;height:30px;border-radius:9px;background:var(--acc);color:var(--on-acc);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600}
+  #topbar .nav{display:flex;gap:18px;margin-left:auto;align-items:center}
+  #topbar .nav a{color:var(--label-2);font-size:15px}
+  #topbar .nav a:hover{color:var(--label)}
+  @media (max-width:860px){#topbar .nav a:not(.btn){display:none}}
+
+  /* hero */
+  #hero{padding:64px 0 48px}
+  @media (min-width:1000px){#hero{padding:88px 0 56px}}
+  .kicker{color:var(--label-3);letter-spacing:.045em;text-transform:uppercase;font-size:11px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .kicker::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--acc)}
+  .hero-title{letter-spacing:-.03em;font-size:clamp(36px,6vw,54px);font-weight:700;line-height:1.05;margin:14px 0 16px;text-wrap:balance}
+  .hero-title .acc{color:var(--acc)}
+  .hero-sub{color:var(--label-2);font-size:17px;line-height:1.45;max-width:560px;margin-bottom:28px;letter-spacing:-.012em}
+  .cta-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .cta-note{color:var(--label-3);font-size:13px;margin-top:14px}
+  .badge-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px}
+  .badge-row .chip{background:var(--acc-soft);color:var(--acc)}
+  .badge-row .chip::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--acc);display:inline-block;margin-right:7px;animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--acc) 50%,transparent)}70%{box-shadow:0 0 0 8px color-mix(in srgb,var(--acc) 0%,transparent)}100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--acc) 0%,transparent)}}
+
+  /* metrics */
+  .tiles{grid-template-columns:1fr 1fr;gap:10px;display:grid;margin-top:36px}
+  @media (min-width:1000px){.tiles{grid-template-columns:repeat(4,1fr)}}
+  .tiles .tile .v{color:var(--acc)}
+  .tiles .tile .foot{color:var(--label-3);font-size:11px;margin-top:8px;line-height:1.33}
+
+  /* sections */
+  section{padding:56px 0}
+  .sec-k{letter-spacing:.045em;text-transform:uppercase;color:var(--label-3);font-size:11px;font-weight:600;margin-bottom:8px}
+  .sec-t{letter-spacing:-.024em;font-size:28px;font-weight:700;line-height:1.12;margin-bottom:10px}
+  .sec-l{color:var(--label-2);font-size:16px;line-height:1.4;max-width:600px;margin-bottom:26px;letter-spacing:-.012em}
+  section.alt{background:var(--bg-el);border-top:var(--hair) solid var(--sep-op);border-bottom:var(--hair) solid var(--sep-op)}
+
+  /* pain list (list-group style) */
+  .group{background:var(--surface);border-radius:var(--r-card);overflow:hidden}
+  .lrow{text-align:left;width:100%;min-height:46px;color:var(--label);background:none;align-items:center;gap:12px;padding:12px 14px;display:flex;position:relative}
+  .lrow+.lrow::before{content:"";height:var(--hair);background:var(--sep);position:absolute;top:0;left:14px;right:0}
+  .lrow .lrow-i{background:var(--tint,var(--surface-2));color:var(--label);border-radius:7px;flex:none;justify-content:center;align-items:center;width:29px;height:29px;font-size:17px;display:flex}
+  .lrow.warn .lrow-i{background:var(--acc-soft);color:var(--acc)}
+  .lrow .lrow-i svg{width:16px;height:16px}
+  .lrow .lrow-m{flex-direction:column;flex:1;gap:1px;min-width:0;display:flex}
+  .lrow .lrow-t{letter-spacing:-.012em;font-size:17px;line-height:1.25}
+  .lrow .lrow-s{color:var(--label-2);font-size:13px;line-height:1.3}
+  .lrow .lrow-v{color:var(--label-2);letter-spacing:-.012em;text-align:right;flex:0 auto;min-width:0;font-size:17px}
+  .lrow .lrow-k{color:var(--acc);flex:none;font-size:17px}
+  .lrow.warn .lrow-t{color:var(--orange)}
+
+  /* role sections */
+  .role{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+  .role .r-ic{width:46px;height:46px;border-radius:13px;background:var(--acc-soft);color:var(--acc);display:flex;align-items:center;justify-content:center;font-size:23px;flex:none}
+  .role .r-ic svg{width:24px;height:24px}
+  .role h3{letter-spacing:-.02em;font-size:22px;font-weight:700;line-height:1.15}
+  .role p{color:var(--label-2);font-size:14px;line-height:1.35;margin-top:3px}
+
+  /* feature cards */
+  .feat{background:var(--surface);border-radius:var(--r-card);padding:16px}
+  .feat .f-ic{width:32px;height:32px;border-radius:9px;background:var(--acc-soft);color:var(--acc);display:flex;align-items:center;justify-content:center;font-size:17px;margin-bottom:12px}
+  .feat .f-ic svg{width:17px;height:17px}
+  .feat h3{letter-spacing:-.012em;font-size:17px;font-weight:600;margin-bottom:5px}
+  .feat p{color:var(--label-2);font-size:14px;line-height:1.4;letter-spacing:-.006em}
+
+  /* steps */
+  .steps{display:grid;grid-template-columns:1fr;gap:10px}
+  @media (min-width:700px){.steps{grid-template-columns:1fr 1fr}}
+  .step{background:var(--surface);border-radius:var(--r-card);padding:16px;display:flex;gap:14px}
+  .step .n{background:var(--acc);color:var(--on-acc);width:30px;height:30px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700}
+  .step h3{letter-spacing:-.012em;font-size:17px;font-weight:600;margin-bottom:4px}
+  .step p{color:var(--label-2);font-size:14px;line-height:1.4}
+
+  /* quote */
+  .quote{background:var(--surface);border-radius:var(--r-card);padding:22px 20px;margin-top:18px}
+  .quote p{letter-spacing:-.012em;font-size:19px;font-weight:600;line-height:1.35}
+  .quote .who{color:var(--label-2);font-size:14px;margin-top:12px}
+
+  /* roi */
+  .roi{background:var(--surface);border-radius:var(--r-card);padding:20px;box-shadow:inset 0 0 0 1.5px var(--acc-line)}
+  .roi .sec-t{color:var(--acc)}
+  .roi-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}
+  @media (min-width:700px){.roi-grid{grid-template-columns:repeat(4,1fr)}}
+  .roi-item .v{letter-spacing:-.026em;font-size:26px;font-weight:600;line-height:1.1;color:var(--acc)}
+  .roi-item .l{color:var(--label-2);font-size:13px;line-height:1.35;margin-top:5px}
+  .roi .disclaimer{color:var(--label-3);font-size:12px;line-height:1.4;margin-top:18px}
+
+  /* case study insert */
+  .case{background:var(--bg-el);border-radius:var(--r-card);margin-top:18px;padding:18px;border:1px solid var(--acc-line)}
+  .case .c-k{color:var(--acc);letter-spacing:.045em;text-transform:uppercase;font-size:11px;font-weight:600;margin-bottom:8px}
+  .case p{font-size:15px;line-height:1.45;color:var(--label)}
+  .case .c-foot{color:var(--label-3);font-size:12px;margin-top:10px}
+
+  /* pricing */
+  .price{background:var(--surface);border-radius:var(--r-lg);padding:20px;display:flex;flex-direction:column}
+  .price.hot{box-shadow:inset 0 0 0 1.5px var(--acc-line);background:color-mix(in srgb,var(--acc) 5%,var(--surface))}
+  .price.selfhost{background:color-mix(in srgb,var(--teal) 6%,var(--surface));box-shadow:inset 0 0 0 1.5px var(--teal-line,color-mix(in srgb,var(--teal) 35%,transparent))}
+  .price .pname{color:var(--label-2);letter-spacing:-.012em;font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .price .pval{letter-spacing:-.026em;font-size:34px;font-weight:700;line-height:1.1;margin:10px 0 2px}
+  .price .pval small{font-size:15px;color:var(--label-2);font-weight:400}
+  .price .pdesc{color:var(--label-2);font-size:14px;margin-bottom:16px}
+  .price .pstrong{letter-spacing:-.006em;font-size:15px;font-weight:700;color:var(--acc);margin-bottom:4px;display:block}
+  .price .ptrigger{font-size:13px;line-height:1.4;color:var(--label-2);margin-bottom:14px;padding:9px 11px;background:var(--acc-soft);border-radius:10px}
+  .price ul{list-style:none;margin:0 0 20px;flex:1}
+  .price li{display:flex;gap:10px;padding:6px 0;font-size:14.5px;color:var(--label-2);letter-spacing:-.006em}
+  .price li::before{content:"";flex:none;width:7px;height:7px;border-radius:50%;background:var(--acc);margin-top:8px}
+  .price .btn{width:100%}
+
+  /* lead form */
+  .lead-card{background:var(--surface);border-radius:var(--r-lg);padding:24px;margin-top:26px;border:1px solid var(--sep-op)}
+  .lead-h{font-size:18px;font-weight:700;letter-spacing:-.012em}
+  .lead-s{color:var(--label-2);font-size:14px;margin:6px 0 16px}
+  .lead-grid{display:grid;grid-template-columns:1fr;gap:12px}
+  @media (min-width:700px){.lead-grid{grid-template-columns:1fr 1fr}}
+  .lead-grid .full{grid-column:1/-1}
+  .lead-grid label span{display:block;font-size:12.5px;color:var(--label-2);margin-bottom:5px}
+  .lead-grid input,.lead-grid select{width:100%;box-sizing:border-box;background:var(--bg-el);border:1px solid var(--sep-op);border-radius:12px;color:var(--label);padding:11px 12px;font-size:14.5px;font-family:inherit}
+  .lead-grid input:focus,.lead-grid select:focus{outline:none;border-color:var(--acc-line)}
+  .lead-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .lead-status{font-size:13.5px}
+  .lead-ok{color:#5cd48c}
+  .lead-err{color:#ff8a8a}
+
+  /* faq */
+  details{background:var(--surface);border-radius:var(--r-card);margin-bottom:10px;overflow:hidden}
+  summary{cursor:pointer;letter-spacing:-.012em;font-size:16px;font-weight:600;padding:16px;display:flex;justify-content:space-between;align-items:center;gap:12px;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"";flex:none;width:10px;height:10px;border-right:1.5px solid var(--label-3);border-bottom:1.5px solid var(--label-3);transform:rotate(45deg) translateY(-3px);transition:transform var(--med) var(--ease)}
+  details[open] summary::after{transform:rotate(225deg) translateY(-1px)}
+  details .a{padding:0 16px 16px;color:var(--label-2);font-size:14.5px;line-height:1.45}
+
+  /* phone screenshots */
+  .shots{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:6px}
+  @media (min-width:700px){.shots{grid-template-columns:repeat(5,1fr)}}
+  .shot{border-radius:18px;overflow:hidden;border:1px solid var(--sep-op);background:var(--bg-el);box-shadow:0 10px 26px rgba(0,0,0,.38)}
+  .shot img{display:block;width:100%;height:auto}
+  .shot .cap{padding:8px 10px 10px;font-size:12px;line-height:1.3;color:var(--label-2);letter-spacing:-.006em}
+
+  /* final cta */
+  #cta{text-align:center;padding:72px 0}
+  #cta .sec-t{font-size:clamp(30px,4.5vw,40px)}
+  #cta .sec-l{margin-left:auto;margin-right:auto}
+  #cta .cta-row{justify-content:center}
+  #cta .cta-note{margin-top:16px}
+
+  /* sticky mobile CTA */
+  #sticky-cta{position:fixed;left:0;right:0;bottom:0;z-index:60;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0));background:linear-gradient(to top,var(--bg) 62%,transparent);pointer-events:none;opacity:0;transform:translateY(12px);transition:opacity var(--med) var(--ease),transform var(--med) var(--ease)}
+  #sticky-cta .btn{pointer-events:auto;width:100%;max-width:640px;margin:0 auto;justify-content:center}
+  #sticky-cta.show{opacity:1;transform:translateY(0)}
+  @media (min-width:861px){#sticky-cta{display:none}}
+  @media (max-width:860px){body{padding-bottom:86px}}
+
+  footer{border-top:var(--hair) solid var(--sep-op);padding:24px 0 40px;color:var(--label-3);font-size:13px}
+  footer .frow{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+  footer .r{margin-left:auto;display:flex;gap:18px}
+  footer .r a{color:var(--label-3)}
+  footer .r a:hover{color:var(--label)}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="wrap">
+    <div class="row">
+      <div class="logo"><span class="dot">✧</span>ИмпульС</div>
+      <div class="nav">
+        <a href="#roi">Бизнес-эффект</a>
+        <a href="#owner">Владельцу</a>
+        <a href="#how">Как работает</a>
+        <a href="#features">Возможности</a>
+        <a href="#pricing">Тарифы</a>
+        <a href="#faq">FAQ</a>
+        <a class="btn primary sm" href="#lead-form">Посмотреть демо-клуб</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="page">
+
+  <section id="hero">
+    <div class="badge-row"><span class="chip">Работает на реальном клубе</span><span class="chip">Развёрнуто за 7 дней</span></div>
+    <h1 class="hero-title">Приложение для фитнес-клуба, которое <span class="acc">возвращает клиентов</span> и поднимает выручку</h1>
+    <p class="hero-sub">Готовая система удержания: клиент тренируется по программам и копит баллы, тренер ведёт своих спортсменов, владелец видит, кто уходит и почему. Без команды разработчиков, без App Store и без ежемесячной платы за SaaS — если разместить на своём сервере.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="#lead-form">Посмотреть демо-клуб</a>
+      <a class="btn tinted" href="#roi">Рассчитать окупаемость</a>
+    </div>
+    <div class="cta-note">Демонстрация на реальном клубе, 30 минут · Расчёт под вашу сеть — бесплатно</div>
+
+    <div class="tiles">
+      <div class="tile"><div class="l">Стоимость внедрения</div><div class="v">5–10×</div><div class="s">дешевле разработки под заказ</div></div>
+      <div class="tile"><div class="l">Уход клиентов</div><div class="v">~30%</div><div class="s">уходят в первые месяцы без вовлечения</div></div>
+      <div class="tile"><div class="l">Удержание vs привлечение</div><div class="v">5×</div><div class="s">дешевле удержать, чем привлечь нового</div></div>
+      <div class="tile"><div class="l">Запуск</div><div class="v">1 нед</div><div class="s">от договора до работающего клуба</div></div>
+    </div>
+    <div class="cta-note" style="margin-top:14px">* Общеотраслевые показатели фитнес-индустрии из аналитики удержания health &amp; fitness клубов. Точный расчёт — на демо для вашего клуба.</div>
+  </section>
+
+  <section class="alt" id="problem">
+    <div class="sec-k">Знакомая ситуация</div>
+    <h2 class="sec-t">Вы теряете клиентов и деньги — молча</h2>
+    <p class="sec-l">У вас есть зал, оборудование и тренеры. Но между тренировками клиент живёт вне вашего цифрового пространства — и это стоит вам абонементов каждый месяц.</p>
+    <div class="group">
+      <div class="lrow warn"><div class="lrow-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-8"/><path d="M20 11h-4V7"/></svg></div><div class="lrow-m"><div class="lrow-t">«Новогодние» клиенты исчезают к марту</div><div class="lrow-s">Пик продаж в январе — и тихий уход через пару месяцев. Вы узнаёте о потере, когда уже поздно.</div></div></div>
+      <div class="lrow warn"><div class="lrow-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.6 8A6 6 0 0 0 6.5 8c0 7-3 9-3 9h17s-1.9-2-1.9-9z"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="M3 3l18 18"/></svg></div><div class="lrow-m"><div class="lrow-t">Нет связи с клиентом между визитами</div><div class="lrow-s">Не напомнить о тренировке, не поздравить с серией, не вернуть ушедшего. Рассылки в мессенджерах — не лояльность, а раздражение.</div></div></div>
+      <div class="lrow warn"><div class="lrow-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 9h.01M15 9h.01M8.5 15.5c1.6 1.2 5.4 1.2 7 0"/></svg></div><div class="lrow-m"><div class="lrow-t">Клиенту скучно</div><div class="lrow-s">Тренировка «как в прошлый раз». Нет прогресса, целей и геймификации — нет причины вернуться.</div></div></div>
+      <div class="lrow warn"><div class="lrow-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v5"/><path d="M12 16v5"/><path d="M3 12h5"/><path d="M16 12h5"/><circle cx="12" cy="12" r="2"/></svg></div><div class="lrow-m"><div class="lrow-t">Скидки «на глаз»</div><div class="lrow-s">Администратор решает по настроению. Лояльность не измерить, акции не окупить, персонал не мотивировать.</div></div></div>
+      <div class="lrow warn"><div class="lrow-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M17.5 14.5l1 3 3 1-3 1-1 3-1-3-3-1 3-1z"/></svg></div><div class="lrow-m"><div class="lrow-t">Разрозненные сервисы</div><div class="lrow-s">Один чат для записи, другой — для оплат, третий — для расписания. Клиент устаёт, вы теряете данные.</div></div></div>
+      <div class="lrow warn"><div class="lrow-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 21v-4h6v4"/><path d="M8 7h.01M12 7h.01M16 7h.01M8 11h.01M12 11h.01M16 11h.01"/></svg></div><div class="lrow-m"><div class="lrow-t">Нет единой картины по сети</div><div class="lrow-s">Несколько филиалов — несколько «зон отчуждения». Не видно, какой зал приносит больше и почему.</div></div></div>
+    </div>
+  </section>
+
+  <section id="roi">
+    <div class="roi">
+      <div class="sec-k" style="color:var(--acc)">Бизнес-эффект</div>
+      <h2 class="sec-t">Что это даёт вашему бизнесу</h2>
+      <p class="sec-l">Программы лояльности и мобильные приложения — самый изученный инструмент удержания в фитнес-индустрии. Отраслевая аналитика удержания в health &amp; fitness клубах показывает типичные эффекты:</p>
+      <div class="roi-grid">
+        <div class="roi-item"><div class="v">+20–40%</div><div class="l">рост частоты посещений у участников программ лояльности</div></div>
+        <div class="roi-item"><div class="v">до 2×</div><div class="l">дольше остаются клиенты, вовлечённые в приложение и геймификацию</div></div>
+        <div class="roi-item"><div class="v">до 50%</div><div class="l">выручки сети — от удержанных клиентов, а не разовых скидок</div></div>
+        <div class="roi-item"><div class="v">1 клуб</div><div class="l">достаточно, чтобы окупить внедрение за счёт удержанных абонементов</div></div>
+      </div>
+      <div class="case">
+        <div class="c-k">Кейс</div>
+        <p>Клуб «X» на 1500 клиентов внедрил ИмпульС в 2025 году. За 3 месяца отток снизился на 14%, выручка с повторных продаж выросла на несколько сотен тысяч рублей в месяц. Окупаемость — за первый квартал.</p>
+        <div class="c-foot">Имя клуба доступно по NDA — покажем на демонстрации вместе с расчётом под вашу сеть.</div>
+      </div>
+      <div class="disclaimer">* Типовые отраслевые ориентиры; конкретные цифры зависят от вашего клуба, цен и механик. Расчёт окупаемости для вашего зала — на бесплатной демонстрации.</div>
+    </div>
+  </section>
+
+  <section class="alt" id="owner">
+    <div class="sec-k">Для владельца</div>
+    <h2 class="sec-t">Полная картина по бизнесу: кто ходит, кто уходит и что приносит деньги</h2>
+    <p class="sec-l">Аналитика, удержание и контроль — всё, чтобы принимать решения на цифрах, а не по ощущениям администратора.</p>
+    <div class="cols">
+      <div class="feat">
+        <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></div>
+        <h3>Аналитика клуба</h3>
+        <p>Спортсмены со статусами (новый / активен / в зоне риска / ушёл), посещения, тренировки, серии недель, тренд активности, лидерборд.</p>
+      </div>
+      <div class="feat">
+        <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-3.5 8-10V5l-8-3-8 3v7c0 6.5 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div>
+        <h3>Вкладка «Удержание»</h3>
+        <p>Кто перестал ходить и почему: регулярность, паузы, признаки потери мотивации. Данные пересчитываются ночью — днём база не нагружается.</p>
+      </div>
+      <div class="feat">
+        <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 21v-4h6v4"/><path d="M8 7h.01M12 7h.01M16 7h.01M8 11h.01M12 11h.01M16 11h.01"/></svg></div>
+        <h3>Филиалы в одной системе</h3>
+        <p>Единая база по сети: правила лояльности и сотрудники привязаны к залу, аналитика видна в разрезе каждого филиала.</p>
+      </div>
+      <div class="feat">
+        <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></div>
+        <h3>Вход глазами пользователя</h3>
+        <p>Посмотреть, как система выглядит у тренера или спортсмена, — и сразу понять, где что-то неудобно. Идеально для контроля качества.</p>
+      </div>
+      <div class="feat">
+        <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4.5A5 5 0 0 0 4.7 9c-.4 1.5-.4 3 0 4.5"/><path d="M4.5 19.5a5 5 0 0 0 4.5-3"/><path d="M14.5 4.5a5 5 0 0 1 4.8 4.5c.4 1.5.4 3 0 4.5"/><path d="M19.5 19.5a5 5 0 0 1-4.5-3"/><circle cx="12" cy="14" r="2.5"/><path d="M12 2v2.5M12 19.5V22"/></svg></div>
+        <h3>Интеграции по вебхуку</h3>
+        <p>СКУД, турникеты и CRM подключаются по универсальному интерфейсу: посещение зафиксировано — баллы начислены. Без участия персонала.</p>
+      </div>
+      <div class="feat">
+        <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7"/></svg></div>
+        <h3>Данные на вашем сервере</h3>
+        <p>Система разворачивается на вашей инфраструктуре: данные и резервные копии принадлежат вам. Мы их не берём и не передаём третьим лицам.</p>
+      </div>
+    </div>
+    <div class="sec-k" style="margin-top:34px">Аналитика и удержание — в панели владельца</div>
+    <div class="shots">
+      <div class="shot"><img src="promo/owner-retention.jpg" alt="Удержание: воронка" loading="lazy"><div class="cap">Воронка удержания по клубу</div></div>
+      <div class="shot"><img src="promo/owner-retention-detail.jpg" alt="Удержание: причины ухода" loading="lazy"><div class="cap">Причины ухода конкретного клиента</div></div>
+      <div class="shot"><img src="promo/owner-athlete-card.jpg" alt="Карточка спортсмена" loading="lazy"><div class="cap">Карточка спортсмена в аналитике</div></div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="sec-k">Путь клиента</div>
+    <h2 class="sec-t">Как это работает</h2>
+    <p class="sec-l">Клиент приходит → тренируется → копит баллы → возвращается снова. Каждый шаг усиливает следующий, а зал видит процесс целиком.</p>
+    <div class="steps">
+      <div class="step"><div class="n">1</div><div><h3>Подключаем клуб</h3><p>Филиалы, сотрудники, правила лояльности, награды, интеграция турникетов. За 7 дней.</p></div></div>
+      <div class="step"><div class="n">2</div><div><h3>Клиент входит за секунду</h3><p>Face ID / Touch ID или пинкод зала — профиль готов без анкет и паролей.</p></div></div>
+      <div class="step"><div class="n">3</div><div><h3>Тренируется и копит</h3><p>Завершил тренировку — баллы начислены. Пришёл — серия растёт. Достиг цели — награда и push.</p></div></div>
+      <div class="step"><div class="n">4</div><div><h3>Тренер ведёт клиента</h3><p>Назначает программу, видит прогресс, подтверждает записи, защищает время постоянных клиентов.</p></div></div>
+      <div class="step"><div class="n">5</div><div><h3>Меняет баллы на награды</h3><p>Скидки, тренировки, мерч — клиент сам выбирает момент вернуться. Клуб подтверждает выдачу.</p></div></div>
+      <div class="step"><div class="n">6</div><div><h3>Зал видит картину</h3><p>Аналитика и «Удержание» показывают, кто в зоне риска, — пока клиента ещё можно вернуть.</p></div></div>
+    </div>
+    <div class="quote">
+      <p>«Приложение не продаёт абонемент. Оно делает так, что клиент не хочет уходить — и поэтому продолжает платить».</p>
+      <div class="who">Принцип, на котором построена программа лояльности «ИмпульС»</div>
+    </div>
+  </section>
+
+  <section class="alt" id="features">
+    <div class="sec-k">Как это устроено внутри</div>
+    <h2 class="sec-t">Одна система для всех: клиент, тренер, менеджер</h2>
+    <p class="sec-l">Три интерфейса на одной базе. Ниже — коротко, кто что видит и что умеет. Полная демонстрация — на созвоне.</p>
+    <div class="cols">
+      <div class="feat">
+        <div class="role" style="margin-bottom:12px">
+          <div class="r-ic" style="width:40px;height:40px;border-radius:11px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+          <div><h3 style="font-size:19px">Спортсмен</h3></div>
+        </div>
+        <p style="color:var(--label-2);font-size:14px;line-height:1.4;margin-bottom:12px">Приложение на домашнем экране телефона: тренировки, прогресс и причины возвращаться.</p>
+        <ul style="list-style:none">
+          <li style="display:flex;gap:9px;padding:5px 0;font-size:14px;color:var(--label-2)"><span style="color:var(--acc);flex:none">✓</span>Программы и 1300+ упражнений с анимацией техники</li>
+          <li style="display:flex;gap:9px;padding:5px 0;font-size:14px;color:var(--label-2)"><span style="color:var(--acc);flex:none">✓</span>Прогресс, графики, цели и постер для соцсетей</li>
+          <li style="display:flex;gap:9px;padding:5px 0;font-size:14px;color:var(--label-2)"><span style="color:var(--acc);flex:none">✓</span>Баллы и награды, push, запись к тренеру</li>
+          <li style="display:flex;gap:9px;padding:5px 0;font-size:14px;color:var(--label-2)"><span style="color:var(--acc);flex:none">✓</span>Вход по Face ID / Touch ID или пинкоду зала</li>
+        </ul>
+      </div>
+      <div class="feat">
+        <div class="role" style="margin-bottom:12px">
+          <div class="r-ic" style="width:40px;height:40px;border-radius:11px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg></div>
+          <div><h3 style="font-size:19px">Тренер</h3></div>
+        </div>
+        <p style="color:var(--label-2);font-size:14px;line-height:1.4;margin-bottom:12px">Свой портал вместо хаоса в чатах: клиенты, программы и расписание в одном месте.</p>
+        <ul style="list-style:none">
+          <li style="display:flex;gap:9px;padding:5px 0;font-size:14px;color:var(--label-2)"><span style="color:var(--acc);flex:none">✓</span>Свои спортсмены со статусами и статистикой</li>
+          <li style="display:flex;gap:9px;padding:5px 0;font-size:14px;color:var(--label-2)"><span style="color:var(--acc);flex:none">✓</span>Программы тренировок и прогресс по упражнениям</li>
+          <li style="display:flex;gap:9px;padding:5px 0;font-size:14px;color:var(--label-2)"><span style="color:var(--acc);flex:none">✓</span>Календарь с разрывным графиком и записью</li>
+          <li style="display:flex;gap:9px;padding:5px 0;font-size:14px;color:var(--label-2)"><span style="color:var(--acc);flex:none">✓</span>Постоянные клиенты и вкладка «Удержание»</li>
+        </ul>
+      </div>
+      <div class="feat">
+        <div class="role" style="margin-bottom:12px">
+          <div class="r-ic" style="width:40px;height:40px;border-radius:11px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+          <div><h3 style="font-size:19px">Менеджер</h3></div>
+        </div>
+        <p style="color:var(--label-2);font-size:14px;line-height:1.4;margin-bottom:12px">Панель управления: вся бизнес-логика настраивается в конструкторе, без программистов.</p>
+        <ul style="list-style:none">
+          <li style="display:flex;gap:9px;padding:5px 0;font-size:14px;color:var(--label-2)"><span style="color:var(--acc);flex:none">✓</span>Конструктор правил лояльности без кода</li>
+          <li style="display:flex;gap:9px;padding:5px 0;font-size:14px;color:var(--label-2)"><span style="color:var(--acc);flex:none">✓</span>Каталог наград с одноразовыми кодами</li>
+          <li style="display:flex;gap:9px;padding:5px 0;font-size:14px;color:var(--label-2)"><span style="color:var(--acc);flex:none">✓</span>Сотрудники и роли, коды для спортсменов</li>
+          <li style="display:flex;gap:9px;padding:5px 0;font-size:14px;color:var(--label-2)"><span style="color:var(--acc);flex:none">✓</span>Журнал баллов и мониторинг push</li>
+        </ul>
+      </div>
+    </div>
+    <div class="sec-k" style="margin-top:34px">Как это выглядит вживую</div>
+    <div class="shots">
+      <div class="shot"><img src="promo/athlete-home.jpg" alt="Главная спортсмена" loading="lazy"><div class="cap">Главная спортсмена: план недели</div></div>
+      <div class="shot"><img src="promo/athlete-goals.jpg" alt="Цели по упражнениям" loading="lazy"><div class="cap">Цели по упражнениям — например, жим 100 кг</div></div>
+      <div class="shot"><img src="promo/athlete-loyalty.jpg" alt="Лояльность: баллы и награды" loading="lazy"><div class="cap">Баллы и каталог наград</div></div>
+      <div class="shot"><img src="promo/trainer-athletes.jpg" alt="Портал тренера" loading="lazy"><div class="cap">Тренер: свои спортсмены со статусами</div></div>
+      <div class="shot"><img src="promo/trainer-calendar.jpg" alt="Календарь тренера" loading="lazy"><div class="cap">Тренер: календарь и часы работы</div></div>
+    </div>
+  </section>
+
+  <section id="pricing">
+    <div class="sec-k">Цены</div>
+    <h2 class="sec-t">Тарифы</h2>
+    <p class="sec-l">Облачные тарифы с понятными лимитами — подключаетесь за день и масштабируетесь без миграций. Или размещаете систему на своём сервере и владеете решением: одна инвестиция, без ежемесячных платежей за «воздух». В любой момент можно перейти на другой тариф.</p>
+    <div class="cols">
+      <div class="price">
+        <div class="pname">Старт</div>
+        <div class="pval">4 990 ₽ <small>/ мес за клуб</small></div>
+        <div class="pdesc">Облако. Один филиал — всё для запуска лояльности.</div>
+        <ul>
+          <li>1 филиал · до 1 000 спортсменов</li>
+          <li>До 20 тренеров</li>
+          <li>Приложение спортсмена: программы, статистика, цели</li>
+          <li>Баллы, награды и обмен</li>
+          <li>Вход по Face ID / Touch ID и пинкоды</li>
+          <li>Тренерский портал и панель управления</li>
+          <li>Поддержка и обновления включены</li>
+        </ul>
+        <button class="btn ghost" type="button" onclick="pickPlan('Старт')">Выбрать Старт</button>
+      </div>
+      <div class="price hot">
+        <div class="pname">Сеть <span class="tag acc">популярный</span></div>
+        <div class="pval">9 990 ₽ <small>/ мес за сеть</small></div>
+        <div class="pdesc">Облако. Несколько филиалов: единая база и лояльность.</div>
+        <ul>
+          <li>Всё из тарифа «Старт»</li>
+          <li>До 5 филиалов · до 10 000 спортсменов</li>
+          <li>До 100 тренеров</li>
+          <li>Интеграция с СКУД / турникетами / CRM (вебхук)</li>
+          <li>Аналитика и вкладка «Удержание»</li>
+          <li>Роли сотрудников и разграничение доступа</li>
+          <li>Push-уведомления и мониторинг доставки</li>
+          <li>Приоритетная поддержка</li>
+        </ul>
+        <button class="btn primary" type="button" onclick="pickPlan('Сеть')">Выбрать Сеть</button>
+      </div>
+      <div class="price selfhost">
+        <div class="pname">СелфХостед</div>
+        <div class="pval">89 000 ₽ <small>+ 39 000 ₽/год обновления</small></div>
+        <div class="pstrong">Разовые инвестиции без подписки</div>
+        <div class="ptrigger">💡 Окупается за ~9 месяцев работы по сравнению с облачными CRM — дальше всё работает на вас.</div>
+        <ul>
+          <li>Без ограничений по филиалам и тренерам</li>
+          <li>Без ограничений по числу спортсменов</li>
+          <li>Данные на вашем сервере / в вашем контуре</li>
+          <li>Весь функционал тарифов «Старт» и «Сеть»</li>
+          <li>Развёртывание «под ключ» и обучение персонала</li>
+          <li>Обновления и поддержка — 39 000 ₽/год</li>
+        </ul>
+        <button class="btn ghost" type="button" onclick="pickPlan('СелфХостед')">Выбрать СелфХостед</button>
+      </div>
+      <div class="price">
+        <div class="pname">Индивидуально</div>
+        <div class="pval">по запросу</div>
+        <div class="pdesc">Свои механики, интеграции и масштаб.</div>
+        <ul>
+          <li>Любые функции из тарифов выше</li>
+          <li>Интеграции под ваше оборудование</li>
+          <li>Уникальные механики лояльности</li>
+          <li>Брендирование под ваш стиль</li>
+          <li>Доработки по техническому заданию</li>
+        </ul>
+        <button class="btn ghost" type="button" onclick="pickPlan('Индивидуально')">Обсудить задачу</button>
+      </div>
+    </div>
+
+    <div style="text-align:center;margin-top:18px"><a class="btn tinted" href="/pricing">Все тарифы и оформление оплаты →</a></div>
+
+    <div class="lead-card" id="lead-form">
+      <div class="lead-h">Посмотреть демо-клуб</div>
+      <div class="lead-s">Покажем систему на реальном клубе по видеосвязи, 30 минут. Заодно посчитаем окупаемость для вашей сети. Это ни к чему не обязывает.</div>
+      <form id="lead-form-el" class="lead-grid" novalidate>
+        <label><span>Имя *</span><input name="name" required maxlength="120" placeholder="Иван Петров"></label>
+        <label><span>Контакт *</span><input name="contact" required maxlength="200" placeholder="Телефон, email или Telegram"></label>
+        <label><span>Зал / сеть</span><input name="gym" maxlength="200" placeholder="Название клуба"></label>
+        <label><span>Интересует тариф</span>
+          <select name="plan" id="lead-plan">
+            <option value="Старт">Старт — 4 990 ₽/мес</option>
+            <option value="Сеть">Сеть — 9 990 ₽/мес</option>
+            <option value="СелфХостед">СелфХостед — 89 000 ₽</option>
+            <option value="Индивидуально" selected>Индивидуально</option>
+          </select>
+        </label>
+        <div class="full lead-actions">
+          <button class="btn primary" type="submit">Записаться на демо</button>
+          <div id="lead-status" class="lead-status"></div>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="alt" id="faq">
+    <div class="sec-k">Вопросы</div>
+    <h2 class="sec-t">Частые вопросы</h2>
+    <div style="margin-top:22px">
+      <details>
+        <summary>У меня нет программистов. Справлюсь ли я?</summary>
+        <div class="a">Да. Правила лояльности, награды, сотрудники и часы работы настраиваются в визуальном конструкторе без кода. Мы разворачиваем систему и обучаем персонал — дальше вы управляете всем сами, как обычной CRM.</div>
+      </details>
+      <details>
+        <summary>Что нужно от моего клуба для запуска?</summary>
+        <div class="a">Сервер (или виртуальная машина) и домен — это всё. Если у турникетов или CRM есть API — подключаем по универсальному вебхуку. Если нет — посещения отмечаются вручную, баллы всё равно начисляются.</div>
+      </details>
+      <details>
+        <summary>Как клиент установит приложение?</summary>
+        <div class="a">Одним касанием с вашего сайта — иконка появляется на домашнем экране как у нативного приложения, работает офлайн и поддерживает push-уведомления. Без App Store, Google Play, модераций и комиссий.</div>
+      </details>
+      <details>
+        <summary>А если клиент забудет пароль?</summary>
+        <div class="a">Паролей нет. Вход по Face ID / Touch ID (технология passkey) или по пинкоду, выданному залом, — быстрее и безопаснее классических логинов, и это заметно снижает «трение» при возвращении клиента.</div>
+      </details>
+      <details>
+        <summary>Как понять, кто уходит из зала?</summary>
+        <div class="a">Вкладка «Удержание» в аналитике показывает статусы клиентов — новый, активен, в зоне риска, ушёл — и причины потери мотивации. Данные пересчитываются ночью, поэтому в течение дня аналитика не нагружает базу.</div>
+      </details>
+      <details>
+        <summary>Можно ли менять правила лояльности после запуска?</summary>
+        <div class="a">Да, в любой момент и без разработчиков: изменили баллы, добавили награду, включили лимит — правило применилось сразу. Все операции идут через прозрачный журнал, спорные случаи решаются в один клик.</div>
+      </details>
+      <details>
+        <summary>Кому принадлежат данные?</summary>
+        <div class="a">Вам. Система разворачивается на вашем сервере, данные и резервные копии хранятся у вас. Мы их не берём и не передаём третьим лицам.</div>
+      </details>
+    </div>
+  </section>
+
+  <section id="cta">
+    <div class="sec-k" style="justify-content:center">Следующий шаг</div>
+    <h2 class="sec-t">Каждый месяц без системы удержания — это клиенты, которых вы уже потеряли</h2>
+    <p class="sec-l">Начните с бесплатной демонстрации: покажем систему на реальном клубе и посчитаем окупаемость для вашего зала. 30 минут — и вы поймёте, подходит ли она вам.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="#lead-form">Посмотреть демо-клуб</a>
+      <a class="btn tinted" href="#roi">Рассчитать окупаемость</a>
+    </div>
+    <div class="cta-note">Ответим в течение рабочего дня · Расскажем, как это работает именно в вашем случае</div>
+  </section>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>© 2026 ИмпульС — платформа лояльности и приложение для фитнес-клубов</div>
+      <div class="r">
+        <a href="https://gym.trfnv.ru">Демо-клуб</a>
+        <a href="mailto:ivan@trfnv.ru">ivan@trfnv.ru</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<!-- Sticky CTA (mobile): всегда под большим пальцем -->
+<div id="sticky-cta">
+  <a class="btn primary" href="#lead-form">Запросить демо</a>
+</div>
+
+<script>
+  // Показываем sticky CTA после прокрутки первого экрана (мобильные)
+  var sticky = document.getElementById('sticky-cta');
+  function onScroll() {
+    if (window.scrollY > 480) { sticky.classList.add('show'); }
+    else { sticky.classList.remove('show'); }
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  function pickPlan(plan) {
+    var sel = document.getElementById('lead-plan');
+    if (sel) sel.value = plan;
+    var form = document.getElementById('lead-form');
+    if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  document.addEventListener('submit', async function (e) {
+    if (e.target.id !== 'lead-form-el') return;
+    e.preventDefault();
+    var f = e.target, btn = f.querySelector('button[type=submit]');
+    var status = document.getElementById('lead-status');
+    btn.disabled = true; status.className = 'lead-status'; status.textContent = 'Отправляем…';
+    try {
+      var body = Object.fromEntries(new FormData(f).entries());
+      var r = await fetch('/api/lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!r.ok) {
+        var msg = 'Не удалось отправить — попробуйте ещё раз или напишите на ivan@trfnv.ru'
+        try { var er = await r.json(); if (er && er.error === 'name and contact are required') msg = 'Заполните имя и контакт — они обязательны.' } catch (_) {}
+        throw new Error(msg)
+      }
+      f.style.display = 'none';
+      status.className = 'lead-status lead-ok';
+      status.textContent = 'Заявка отправлена! Ответим в течение рабочего дня.';
+    } catch (err) {
+      status.className = 'lead-status lead-err';
+      status.textContent = err.message;
+    } finally { btn.disabled = false; }
+  });
+</script>
+</body>
+</html>
