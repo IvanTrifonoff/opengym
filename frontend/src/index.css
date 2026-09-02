@@ -419,6 +419,23 @@ h4.sec{
 }
 @keyframes ping{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.45);opacity:0}}
 
+/* Install-to-home-screen hint: orange, bold, gently pulsing glow so it is
+   impossible to miss on the login screen. Respects prefers-reduced-motion
+   (the blanket rule at the top kills the animation then). */
+.install-hint{
+  color:var(--orange);
+  font-weight:600;
+  border-radius:10px;
+  padding:10px 12px;
+  border:1px solid color-mix(in srgb, var(--orange) 40%, transparent);
+  background:color-mix(in srgb, var(--orange) 10%, transparent);
+  animation:installpulse 2.2s var(--ease) infinite;
+}
+@keyframes installpulse{
+  0%,100%{box-shadow:0 0 0 0 color-mix(in srgb, var(--orange) 45%, transparent)}
+  50%{box-shadow:0 0 0 6px color-mix(in srgb, var(--orange) 0%, transparent)}
+}
+
 /* ------------------------------------------------------------ week strip -- */
 .week{display:flex;justify-content:space-between;gap:4px}
 .wday{

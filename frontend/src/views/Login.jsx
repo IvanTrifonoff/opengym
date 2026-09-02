@@ -73,7 +73,8 @@ function InstallCard() {
       {prompt
         ? <Button variant="primary" className="w-full" icon="download" onClick={install}>{t('Install the app to your Home Screen')}</Button>
         : IS_APPLE || IS_ANDROID
-          ? <div className="small dim" style={{ lineHeight: 1.5 }}>
+          ? <div className="small install-hint" style={{ lineHeight: 1.5, marginTop: 10 }}>
+            <Icon name="house" style={{ marginRight: 6, verticalAlign: -2 }} />
             {IS_ANDROID ? t('In Chrome: ⋮ menu → Add to Home screen') : t('In Safari: Share → Add to Home Screen')}
             {' — '}{t('to install impulseGym as a full-screen app.')}
           </div>
