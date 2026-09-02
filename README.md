@@ -131,11 +131,18 @@ its own product.*
 *Translated from the `dev` history; see [CHANGELOG.md](CHANGELOG.md) v1.2.5…v1.8.1.*
 ## Docs
 
+**Для разработчиков и агентов (начни отсюда):**
+- [docs/AGENT_GUIDE.md](docs/AGENT_GUIDE.md) — **карта всей системы**: роли, код, БД, эндпоинты, механики сессии v1.2.7→v1.2.53, деплой
+- [docs/demo-club.md](docs/demo-club.md) — демо-клуб demo.gym.trfnv.ru (клон на сессию, антибот, TTL)
+- [docs/demo-branch.md](docs/demo-branch.md) — ветка `demo`: политика «только стабильные релизы», deploy-demo.sh
+- [docs/analytics-metrics.md](docs/analytics-metrics.md) — метрики: почему история в файлах, а агрегаты в PostgreSQL
 - [TESTING.md](TESTING.md) — тесты проекта и как их запускать (карта, интеграционные с postgres, CI/CD)
-- [VERSIONING.md](VERSIONING.md) — версионность (семвер, git-tag, релизный цикл)
+- [VERSIONING.md](VERSIONING.md) — версионность (семвер, git-tag, ветки dev/main/demo)
 - [DEPLOY.md](DEPLOY.md) — разворачивание прод-стека на новой VPS
 - [CHANGELOG.md](CHANGELOG.md) — журнал версий
 - [docs/demo-loyalty.md](docs/demo-loyalty.md) — демо-сценарий лояльности для презентации
+- [docs/MOBILE.md](docs/MOBILE.md) — нативная сборка (Capacitor) iOS/Android
+- [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) — разворачивание для себя, HTTPS/passkey
 
 ## Quick start (self-host)
 

@@ -28,12 +28,13 @@ cd api && npm test
 
 | Файл | Тип | Что покрывает | Нужна БД? | Кол-во |
 |---|---|---|---|---|
-| `frontend/src/lib/*.test.js` (7 файлов) | unit (vitest) | расчёт усилия RIR/RPE, прогрессия, история, 1ПМ, импорт, демо-данные, wakelock | нет | **192** |
+| `frontend/src/lib/*.test.js` (8 файлов) | unit (vitest) | расчёт усилия RIR/RPE, прогрессия, история, 1ПМ, импорт, демо-данные, wakelock, цели | нет | **206** |
 | `api/logic.test.js` | unit (node:test) | чистая бизнес-логика (валидация расписания, переходы брони, слоты дня, routine-id, вебхук, метрики тренировок, серия недель) | нет | **41** |
-| `api/admin-db.test.js` | integration (node:test) | слой БД: лояльность, брони/конфликты, расписание тренера, инвайты, назначение тренера, метрики (replace/backfill) | **да** (`DATABASE_URL`) | **10** |
+| `api/admin-db.test.js` | integration (node:test) | слой БД: лояльность, брони/конфликты, расписание тренера, инвайты, назначение тренера, метрики (replace/backfill), филиалы + soft-delete, приватные коды, демо-токены/сессии | **да** (`DATABASE_URL`) | **20** |
+| `api/demo-club.test.js` | integration (node:test) | демо-клон: генератор персон (pure), спавн → destroy клона в живой БД, изоляция двух сессий | **да** (`DATABASE_URL`) | **8** |
 | `api/logic.js` | модуль | извлечённая из `server.js` чистая логика — **импортируется** `server.js`, НЕ копия | — | — |
 
-Итого (CI): **192 фронт + 51 api = 243 широких проверки**, из них 10 требуют postgres.
+Итого: **206 фронт + 66 api (38 logic + 20 admin-db + 8 demo-club) = 272 проверки**, из них 28 api-интеграционных требуют postgres.
 
 > Оговорка: это покрывает **чистую логику и слой БД**. HTTP-маршруты `server.js`,
 > WebAuthn-сессия, push-доставка и миграции проверяются вручную end-to-end на
@@ -127,7 +128,7 @@ DATABASE_URL="postgres://g:g@127.0.0.1:5433/g" node --test admin-db.test.js
 ## CI/CD (GitHub Actions)
 
 ### CI (`ci.yml`) — на каждый push в `dev`
-- frontend: `npm test` (vitest 192) + `npm run build`
+- frontend: `npm test` (vitest 206) + `npm run build`
 - api: `node --test logic.test.js admin-db.test.js` против postgres-сервиса
 - Проверка синтаксиса `server.js` + `logic.js` (`node --check`)
 - **НЕ деплоит** — только сигнал готовности.
