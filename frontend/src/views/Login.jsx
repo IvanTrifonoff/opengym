@@ -88,6 +88,22 @@ function InstallCard() {
 
 export default function Login() {
   const { setUser, pullState, setGuest } = useStore()
+  const [cfg, setCfg] = useState(null)
+  const [demoBusy, setDemoBusy] = useState(false)
+  // Демо-хост (DEMO_MODE=1, /api/config.demo): узнать, что мы на demo.gym.trfnv.ru.
+  useEffect(() => { api('/api/config').then(c => setCfg(c)).catch(() => {}) }, [])
+  // Запуск демо-клуба: одноразовый токен (антибот) -> enter (клон на сессию +
+  // админ-кука владельца) -> панель управления демо-клуба.
+  const startDemo = async () => {
+    if (demoBusy) return
+    setDemoBusy(true)
+    try {
+      const d = await api('/api/demo/token', { method: 'POST' })
+      await api('/api/demo/enter', { method: 'POST', body: JSON.stringify({ token: d.token }) })
+      location.href = '/admin'
+    } catch (e) { useUI.getState().toast(e.message || t('Could not start the demo')) }
+    finally { setDemoBusy(false) }
+  }
   const signIn = async () => {
     try { const u = await passkeyLogin(); setUser(u); await pullState(); useUI.getState().toast(t('Welcome back, {0}', u.name)) }
     catch (e) { if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') useUI.getState().toast(e.message || t('Sign-in failed')) }
@@ -116,15 +132,21 @@ export default function Login() {
   return (
     <div className="narrow" style={wrap}>
       {head}
-      <div className="muted" style={{ marginBottom: 34 }}>{t('Your workouts. Your weights. Your profile.')}</div>
-      {webauthnOK() ? <>
-        <Button variant="primary" icon="person" onClick={signIn}>{t('Sign in with passkey')}</Button>
-        <div style={{ height: 10 }} />
-        <Button icon="sparkles" onClick={() => useUI.getState().openSheet(close => <RegisterSheet close={close} />)}>{t('Create new profile')}</Button>
-        <div style={{ height: 10 }} />
-      </> : <div className="card small muted" style={{ textAlign: 'left' }}>{t("This browser doesn't support passkeys — you can still use impulseGym locally on this device.")}</div>}
-      <a className="btn ghost dim" href="/private">{t('Private mode — data stays on this device, pay once')}</a>
-      <div className="dim small" style={{ marginTop: 26, lineHeight: 1.5 }}>{t('Passkeys use {0} — no passwords.', BIO)}<br />{t('Each profile keeps its own plan, workouts & body weight.')}</div>
+      {cfg?.demo ? <>
+        <div className="muted" style={{ marginBottom: 24 }}>{t('A full demo club: branch, trainer and athletes with real-looking history. No registration — data is deleted after the session.')}</div>
+        <Button variant="primary" style={{ width: '100%' }} disabled={demoBusy} onClick={startDemo}>{demoBusy ? t('Opening the demo club…') : t('Open the demo club')}</Button>
+        <div className="dim small" style={{ marginTop: 16, lineHeight: 1.5 }}>{t('One click — the demo opens as the club owner. Inside you can switch to the trainer or an athlete and try everything.')}</div>
+      </> : <>
+        <div className="muted" style={{ marginBottom: 34 }}>{t('Your workouts. Your weights. Your profile.')}</div>
+        {webauthnOK() ? <>
+          <Button variant="primary" icon="person" onClick={signIn}>{t('Sign in with passkey')}</Button>
+          <div style={{ height: 10 }} />
+          <Button icon="sparkles" onClick={() => useUI.getState().openSheet(close => <RegisterSheet close={close} />)}>{t('Create new profile')}</Button>
+          <div style={{ height: 10 }} />
+        </> : <div className="card small muted" style={{ textAlign: 'left' }}>{t("This browser doesn't support passkeys — you can still use impulseGym locally on this device.")}</div>}
+        <a className="btn ghost dim" href="/private">{t('Private mode — data stays on this device, pay once')}</a>
+        <div className="dim small" style={{ marginTop: 26, lineHeight: 1.5 }}>{t('Passkeys use {0} — no passwords.', BIO)}<br />{t('Each profile keeps its own plan, workouts & body weight.')}</div>
+      </>}
 
       <InstallCard />
 

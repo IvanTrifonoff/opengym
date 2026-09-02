@@ -235,6 +235,11 @@ export default {
   'Private mode is on — your data stays on this device': 'Приватный режим включён — данные остаются на этом устройстве',
   'Don’t have a code?': 'Нет кода?',
   'Back to sign in': 'Назад ко входу',
+  'A full demo club: branch, trainer and athletes with real-looking history. No registration — data is deleted after the session.': 'Готовый демо-клуб: филиал, тренер и атлеты с живой историей. Без регистрации — данные удаляются после сессии.',
+  'Open the demo club': 'Открыть демо-клуб',
+  'Opening the demo club…': 'Открываем демо-клуб…',
+  'One click — the demo opens as the club owner. Inside you can switch to the trainer or an athlete and try everything.': 'Один клик — демо открывается от лица владельца клуба. Внутри можно переключиться на тренера или спортсмена и попробовать всё.',
+  'Could not start the demo': 'Не удалось открыть демо-клуб',
   'Passkeys use {0} — no passwords.': 'Ключи доступа используют {0} — без паролей.',
   'Each profile keeps its own plan, workouts & body weight.': 'У каждого профиля свой план, тренировки и вес тела.',
 

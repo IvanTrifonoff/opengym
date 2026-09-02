@@ -357,7 +357,7 @@ export async function syncAdminOwners(users, credentials, ownerIds) {
 export async function getAdmin(id) {
   await ready();
   const result = await pool.query(
-    `SELECT id, name, role, branch_key, disabled, created_at, updated_at FROM admin_users WHERE id = $1`, [id]
+    `SELECT id, name, role, branch_key, demo_session, disabled, created_at, updated_at FROM admin_users WHERE id = $1`, [id]
   );
   return result.rows[0] || null;
 }

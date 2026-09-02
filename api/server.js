@@ -475,7 +475,9 @@ const routes = {
   'GET /api/health': async (req, res) => json(res, 200, { ok: true, users: db.users.length }),
 
   // Public config the login screen needs before anyone is signed in.
-  'GET /api/config': async (req, res) => json(res, 200, { invite_only: INVITE_ONLY }),
+  // demo: true только на demo.gym.trfnv.ru (DEMO_MODE=1) — фронт показывает
+  // кнопку «Открыть демо-клуб» (токен -> enter -> админ-кука владельца).
+  'GET /api/config': async (req, res) => json(res, 200, { invite_only: INVITE_ONLY, demo: DEMO_MODE }),
 
   // «Приватный режим»: активация по одноразовому коду, выданному владельцем после
   // оплаты. Публичный — вызывается со страницы /private до входа. Активный код
