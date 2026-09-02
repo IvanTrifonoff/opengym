@@ -38,6 +38,7 @@ import { createAdminRoutes } from './routes/admin.js';
 import { createTrainerRoutes } from './routes/trainer.js';
 import { createLeadsRoutes } from './routes/leads.js';
 import { createDemoRoutes } from './routes/demo.js';
+import { spawnDemoClub, destroyDemoClub, startDemoCleaner } from './demo-club.js';
 import { replaceAthleteMetrics, backfillAthleteMetrics } from './metrics.js';
 
 import {
@@ -800,10 +801,21 @@ const routeModules = [
   ...(DEMO_MODE ? createDemoRoutes({
     json, readBody,
     createDemoToken, countDemoTokensSince, takeDemoToken,
-    getDemoSession, createDemoSession
+    createDemoSession, adminSessionCookie, clearAdminCookie, adminSessionPayload,
+    spawnDemoClub, destroyDemoClub,
+    db, saveDb, dataDir: DATA
   }) : [])
 ];
 for (const r of routeModules) routes[r.method + ' ' + r.path] = r.handler;
+
+// Демо-чистильщик (только DEMO_MODE=1, demo.gym.trfnv.ru): каждый прогон
+// находит сессии с истёкшим TTL и полностью удаляет их клоны (state-файлы,
+// профили, правила, метрики), а также протухшие/использованные токены.
+// Первый прогон — сразу при старте (чистка наследия после перезапуска).
+if (DEMO_MODE) {
+  startDemoCleaner({ db, saveDb, dataDir: DATA, intervalMs: 5 * 60 * 1000 });
+  console.log('[demo] demo-club cleaner active (DEMO_MODE=1)');
+}
 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');

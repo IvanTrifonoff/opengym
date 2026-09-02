@@ -20,7 +20,7 @@ import { pool } from './access-db.js';
 import {
   adminDbReady, saveBranch, saveLoyaltyRule, acceptLoyaltyEvent,
   setTrainerAssignment, setTrainerAvailability, createBooking, saveNotification,
-  saveReward
+  saveReward, listExpiredDemoSessions, purgeDemoTokens
 } from './admin-db.js';
 import { replaceAthleteMetrics } from './metrics.js';
 import { buildDemoState } from './demo-seed.js';
@@ -40,6 +40,42 @@ export const demoIds = sessionId => ({
   trainerId: 'demo-trainer-' + sessionId,
   athleteIds: Object.fromEntries(ATHLETES.map(a => [a.key, 'demo-' + a.key + '-' + sessionId]))
 });
+
+// Из id демо-владельца (demo-owner-<sid>) обратно в id сессии — нужно в
+// POST /api/demo/end, чтобы зачистить клон по куке админ-сессии.
+export const ownerIdToSession = id => {
+  const m = /^demo-owner-(.+)$/.exec(String(id || ''));
+  return m ? m[1] : null;
+};
+
+// Один прогон cleaner'а (для тестов и для таймера): сессии с истёкшим TTL
+// полностью удаляются вместе с клонами, протухшие/использованные токены
+// вычищаются. Возвращает число удалённых сессий.
+export async function runDemoCleanupOnce({ db, saveDb, dataDir, now = () => new Date() }) {
+  const expired = await listExpiredDemoSessions(now());
+  for (const s of expired) {
+    try {
+      await destroyDemoClub({ sessionId: s.id, db, saveDb, dataDir });
+      console.log('[demo] cleaned expired session', s.id);
+    } catch (e) {
+      console.error('[demo] cleanup failed for', s.id, e.message);
+    }
+  }
+  await purgeDemoTokens(now()).catch(() => {});
+  return expired.length;
+}
+
+// Фоновый cleaner: первый прогон сразу при старте (подчистить наследие после
+// перезапуска), затем каждые intervalMs. Запускается только при DEMO_MODE=1.
+export function startDemoCleaner(deps) {
+  const intervalMs = deps.intervalMs || 5 * 60 * 1000;
+  runDemoCleanupOnce(deps).catch(e => console.error('[demo] initial cleanup failed:', e.message));
+  const t = setInterval(() => {
+    runDemoCleanupOnce(deps).catch(e => console.error('[demo] cleaner tick failed:', e.message));
+  }, intervalMs);
+  if (t.unref) t.unref();
+  return t;
+}
 
 // Создание клона. db/saveDb/dataDir — пользовательское хранилище (server.js):
 // users в памяти + файл состояния на диск. Всё остальное — в БД клона.

@@ -1,3 +1,26 @@
+## v1.2.48 — (2026-09-02) — демо-клуб Ф3: вход/выход и фоновый cleaner
+- api/routes/demo.js: два новых демо-эндпоинта (только при DEMO_MODE=1):
+  · POST /api/demo/enter — расходует одноразовый токен (takeDemoToken),
+    спавнит изолированный клон (spawnDemoClub), создаёт demo-сессию (TTL
+    60 мин) и выдаёт админ-куку демо-владельца (вход без passkey,
+    redirect /admin). Дальше переключение ролей — штатным impersonate
+    владельца (тренер/атлет), без нового UI.
+  · POST /api/demo/end — определяет demo-сессию по куке (ownerId ->
+    sessionId), полностью удаляет клон, сбрасывает админ-куку.
+- api/demo-club.js: ownerIdToSession (обратная связка demo-owner-<sid> ->
+  sessionId, чистый хелпер), runDemoCleanupOnce (один прогон: сессии с
+  истёкшим TTL удаляются вместе с клонами + вычищаются протухшие/
+  использованные токены), startDemoCleaner (первый прогон при старте,
+  затем каждые 5 минут, с unref).
+- api/server.js: при DEMO_MODE=1 запускает cleaner; демо-роуты получают
+  зависимости (adminSessionCookie, clearAdminCookie, adminSessionPayload,
+  db, saveDb, dataDir, spawnDemoClub, destroyDemoClub).
+- Тесты: +2 в demo-club.test.js (ownerIdToSession roundtrip/отрицание;
+  полный жизненный цикл: токен → клон → форсированный TTL → cleaner всё
+  удалил, включая токен). Итог: api-тесты 64/64.
+- На проде поведение не меняется: DEMO_MODE выключен — /api/demo/* 404,
+  cleaner не запущен.
+
 ## v1.2.47 — (2026-09-02) — демо-клуб Ф2: генератор персон и спавн клона
 - api/demo-seed.js: серверная фабрика демо-состояния спортсмена (чистые
   функции, без БД). Формат JSON идентичен состоянию приложения (PUT

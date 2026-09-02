@@ -12,8 +12,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { pool } from './access-db.js';
 import { buildDemoState, bestWeightsOf } from './demo-seed.js';
-import { spawnDemoClub, destroyDemoClub, demoIds } from './demo-club.js';
-import { getWallet } from './admin-db.js';
+import { spawnDemoClub, destroyDemoClub, demoIds, ownerIdToSession, runDemoCleanupOnce } from './demo-club.js';
+import { getWallet, createDemoToken, takeDemoToken, createDemoSession, getDemoSession } from './admin-db.js';
 
 const USE_DB = !!process.env.DATABASE_URL;
 const T = (Date.now() % 1e6).toString(36) + Math.random().toString(36).slice(2, 6);
@@ -57,6 +57,13 @@ test('персона churn: затухание и длинный разрыв �
   assert.ok(S.workouts.length >= 4 && S.workouts.length <= 9, '4-5 недель с затуханием');
   assert.ok(gapDays(S) >= 13, 'последняя тренировка давно — клиент «ушёл»');
   assert.equal(buildDemoState({ persona: 'churn' }).effort, undefined);
+});
+
+test('демо: ownerId → sessionId (для /api/demo/end), и только для демо-владельца', () => {
+  const ids = demoIds('ds_xyz');
+  assert.equal(ownerIdToSession(ids.ownerId), 'ds_xyz');
+  assert.equal(ownerIdToSession('admin-abc'), null);
+  assert.equal(ownerIdToSession(null), null);
 });
 
 /* ---------- demo-club: спавн и полное удаление клона ---------- */
@@ -117,6 +124,40 @@ test('демо-клон: спавн создаёт полный клуб, destro
     assert.equal((await getWallet(ids.athleteIds.artem)).balance, 0, 'кошелёк пуст');
   } finally {
     await pool.query('DELETE FROM demo_sessions WHERE id = $1', [sid]).catch(() => {});
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+  }
+});
+/* ---- Ф3: жизненный цикл сессии: токен -> клон -> TTL -> cleaner ---- */
+test('демо: cleaner удаляет истёкшие клоны и токены', async (t) => {
+  if (!needDb(t)) return;
+  const sid = 'ds2_' + T;
+  const tok = 'dtc_' + T;
+  const ip = '10.55.0.9';
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'demo2-'));
+  const db = { users: [] };
+  const saveDb = () => {};
+  const ids = demoIds(sid);
+  try {
+    await createDemoToken({ token: tok, ip });
+    const hit = await takeDemoToken(tok, ip);
+    assert.ok(hit && hit.token === tok, 'токен расходуется (как в /api/demo/enter)');
+    await spawnDemoClub({ sessionId: sid, db, saveDb, dataDir: dir });
+    await createDemoSession({ id: sid, token: tok, ip, ttlMs: 60 * 60 * 1000 });
+    assert.ok(await getDemoSession(sid), 'сессия создана');
+
+    // Форсируем истечение TTL и прогоняем cleaner.
+    await pool.query(`UPDATE demo_sessions SET expires_at = now() - interval '1 hour' WHERE id = $1`, [sid]);
+    const cleaned = await runDemoCleanupOnce({ db, saveDb, dataDir: dir });
+    assert.ok(cleaned >= 1, 'cleaner нашёл истёкшую сессию (' + cleaned + ')');
+
+    assert.equal(db.users.length, 0, 'users очищены');
+    assert.equal(fs.readdirSync(dir).filter(f => f.startsWith('state-')).length, 0, 'state-файлы удалены');
+    assert.equal((await pool.query('SELECT id FROM branches WHERE id = $1', [ids.branchId])).rows.length, 0, 'филиал удалён');
+    assert.equal(await getDemoSession(sid), null, 'demo_sessions удалена');
+    const tokens = await pool.query('SELECT count(*)::int n FROM demo_tokens WHERE token = $1', [tok]);
+    assert.equal(tokens.rows[0].n, 0, 'использованный токен вычищен');
+  } finally {
+    await destroyDemoClub({ sessionId: sid, db, saveDb, dataDir: dir }).catch(() => {});
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   }
 });
