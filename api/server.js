@@ -777,6 +777,8 @@ const routeModules = [
     analyticsScope, requireProgramAccess, bookingNotification,
     adminDbReady, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
     listAdmins, registerAdmin, updateAdmin, updateAdminCounter, createAdminInvite,
+    softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
+    listPrivateCodes, createPrivateCode, revokePrivateCode,
     setTrainerAssignment, listTrainerAssignments,
     getTrainerAvailability, setTrainerAvailability, listBookings, createBooking,
     findBookingConflict, getBooking, updateBookingStatus,

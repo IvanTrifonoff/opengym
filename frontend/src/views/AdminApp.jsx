@@ -276,6 +276,7 @@ function AdminDashboard({ admin, onLogout }) {
   const lastPushFail = push?.stats?.failures?.length ? push.stats.failures[push.stats.failures.length - 1] : null
   const pushTile = push ? (push.degraded ? 'сбои' : 'ok') : '—'
   const canEdit = admin.role === 'owner' || admin.role === 'manager'
+  const isDemo = !!admin.demo_session   // демо-клон (demo.gym.trfnv.ru): приватный режим не нужен
   const tabs = [['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ['staff', 'Сотрудники'], ...(canEdit ? [['branches', 'Филиалы'], ['invites', 'Приглашения'], ['leads', 'Заявки']] : [])]
   const back = () => api('/api/admin/impersonate/back', { method: 'POST', body: '{}' }).then(d => { location.href = d.redirect || '/admin' }).catch(() => {})
   return <div className="narrow" style={{ paddingBottom: 40 }}>
@@ -294,7 +295,7 @@ function AdminDashboard({ admin, onLogout }) {
           { key: 'invites', icon: 'link', label: 'Приглашения', onClick: () => go('invites') },
           { key: 'leads', icon: 'clipboard', label: 'Заявки', onClick: () => go('leads') }
         ] : []),
-        ...(admin.role === 'owner' ? [{ key: 'private', icon: 'lock', label: 'Приватный', onClick: () => go('private') }] : [])
+        ...(admin.role === 'owner' && !isDemo ? [{ key: 'private', icon: 'lock', label: 'Приватный', onClick: () => go('private') }] : [])
       ]}
     />
     {tab === 'overview' && <><div className="tiles"><div className="tile"><div className="l">Сотрудники</div><div className="v">{staff.length || '—'}</div></div><div className="tile"><div className="l">Правила</div><div className="v">{rules.length || '—'}</div></div><div className="tile"><div className="l">Пуши</div><div className="v" style={{ fontSize: '1rem', color: push?.degraded ? 'var(--red)' : 'var(--green)' }}>{pushTile}</div></div><div className="tile"><div className="l">Роль</div><div className="v" style={{ fontSize: '1rem' }}>{admin.role}</div></div><div className="tile"><div className="l">База</div><div className="v" style={{ fontSize: '1rem', color: 'var(--green)' }}>online</div></div></div>{push?.degraded && <div className="card" style={{ borderColor: 'var(--red)', marginBottom: 12, background: 'color-mix(in srgb,var(--red) 7%,var(--bg-el))' }}><div className="row between" style={{ gap: 10 }}><div className="grow"><div style={{ fontWeight: 600, color: 'var(--red)' }}>Сбои доставки push-уведомлений</div><div className="small dim" style={{ marginTop: 3 }}>не отправлено {push.stats?.failed || 0} шт. за 24 ч{lastPushFail ? ' · последний: ' + lastPushFail.host + (lastPushFail.status ? ' · ' + lastPushFail.status : '') + (lastPushFail.error ? ' · ' + lastPushFail.error : '') : ''}{push.webhookConfigured ? '' : ' · вебхук-алерт не настроен'}</div></div>{canEdit && <Button size="sm" variant="ghost" onClick={resetPush}>Сбросить</Button>}</div></div>}<div className="card"><h2 style={{ marginTop: 0 }}>Быстрый старт</h2><p className="dim">Создайте правило «Посещение» и выдайте сотруднику invite-код. События СКУД начнут начислять баллы после привязки member_key к профилю спортсмена.</p><Button variant="primary" onClick={() => go('loyalty')}>Настроить loyalty</Button></div></>}
@@ -303,7 +304,7 @@ function AdminDashboard({ admin, onLogout }) {
     {tab === 'staff' && <Staff admin={admin} />}
     {tab === 'branches' && <Branches admin={admin} />}
     {tab === 'invites' && <Invites admin={admin} />}
-    {tab === 'private' && <PrivateCodes admin={admin} />}
+    {tab === 'private' && !isDemo && <PrivateCodes admin={admin} />}
     {tab === 'leads' && <AdminLeads onViewed={n => setLeadUnread(n)} />}
   </div>
 }

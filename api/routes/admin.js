@@ -3,7 +3,7 @@
 // Демо-скоуп (DEMO_MODE=1): демо-владелец/тренер видят только свой клон —
 // списки ниже фильтруются по demo_session (см. demo-scope.js). На проде
 // фильтры неактивны.
-import { scopeAdmins, scopeBranches, scopeOwnerRows, scopeUsers } from '../demo-scope.js';
+import { isDemoAdmin, scopeAdmins, scopeBranches, scopeOwnerRows, scopeUsers } from '../demo-scope.js';
 
 // Фабрика: принимает зависимости и возвращает [{ method, path, handler }].
 // Вынесено из монолита server.js — поведение идентично (импорт, не копия).
@@ -193,7 +193,13 @@ export function createAdminRoutes(deps) {
   { method: 'POST', path: '/api/admin/staff/restore', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['owner']); if (!admin) return;
     const body = await readBody(req);
-    if (!scopeAdmins(admin, await listAdmins()).some(a => a.id === String(body.id || ''))) return json(res, 404, { error: 'admin not found in scope' });
+    // Демо-скоуп: восстанавливать можно только сотрудника СВОЕЙ сессии.
+    // listAdmins скрывает deleted — проверяем по getAdmin (он возвращает
+    // и скрытых), чтобы восстановление работало.
+    if (isDemoAdmin(admin)) {
+      const target = await getAdmin(String(body.id || ''));
+      if (!target || target.demo_session !== admin.demo_session) return json(res, 404, { error: 'admin not found in scope' });
+    }
     try {
       const restored = await restoreAdmin(String(body.id || ''));
       if (!restored) return json(res, 404, { error: 'admin not found' });
