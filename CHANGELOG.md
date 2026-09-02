@@ -1,3 +1,23 @@
+## v1.2.46 — (2026-09-02) — демо-клуб Ф1: POST /api/demo/token (антибот, IP-лимит)
+- api/routes/demo.js: модуль демо-эндпоинтов (новый). POST /api/demo/token
+  выдаёт одноразовый токен (base64url, живёт 15 минут) с лимитом
+  DEMO_TOKENS_PER_IP_PER_HOUR (по умолчанию 5) в час с одного IP — защита
+  от ботов, которые могли бы спавнить демо-клоны без остановки.
+- IP берётся из первого хопа X-Forwarded-For (nginx) с фолбэком на
+  remoteAddress; квота считается строго (issued >= limit, лимит 0 = всё
+  запрещено). Чистые хелперы clientIpOf / demoQuotaReached вынесены наверх
+  модуля для unit-тестов без БД.
+- api/server.js: модуль регистрируется ТОЛЬКО при DEMO_MODE=1 (спред в
+  routeModules) — на проде /api/demo/* физически отсутствует (404),
+  создать токен или клон на боевом инстансе нельзя. Импорт функций
+  demo-слоя (createDemoToken, countDemoTokensSince, takeDemoToken,
+  getDemoSession, createDemoSession, touchDemoSession,
+  listExpiredDemoSessions, deleteDemoSession, purgeDemoTokens).
+- Тесты: +2 чистых в admin-db.test.js (clientIpOf: первый хоп/фолбэк;
+  demoQuotaReached: строгая квота и «лимит 0 = запрещено»). Итог: 58/58
+  (api, полный прогон двух файлов).
+- Проверено на проде: DEMO_MODE выключен → /api/demo/token отвечает 404.
+
 ## v1.2.45 — (2026-09-02) — демо-клуб Ф0: токены и сессии (каркас demo.gym.trfnv.ru)
 - Начало фичи «Демо-клуб» (полный дизайн — docs/demo-club.md): отдельное
   развёртывание demo.gym.trfnv.ru со своей БД, где посетитель с /promo4gym

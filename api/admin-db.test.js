@@ -13,6 +13,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { pool } from './access-db.js';
 import { replaceAthleteMetrics, backfillAthleteMetrics } from './metrics.js';
+import { clientIpOf, demoQuotaReached } from './routes/demo.js';
 
 const USE_DB = !!process.env.DATABASE_URL;
 
@@ -48,6 +49,20 @@ test('роли: roleAllowed', () => {
 });
 test('постоянная серия: горизонт 8 недель', () => {
   assert.equal(recurHorizonDays(), 56);
+});
+
+/* ---- демо-роуты: чистые хелперы (IP и квота) ---- */
+test('демо: clientIpOf берёт первый хоп X-Forwarded-For, иначе remoteAddress', () => {
+  assert.equal(clientIpOf({ headers: { 'x-forwarded-for': '1.2.3.4, 10.0.0.1' }, socket: {} }), '1.2.3.4');
+  assert.equal(clientIpOf({ headers: { 'x-forwarded-for': ' 5.6.7.8 ' }, socket: {} }), '5.6.7.8');
+  assert.equal(clientIpOf({ headers: {}, socket: { remoteAddress: '9.9.9.9' } }), '9.9.9.9');
+  assert.equal(clientIpOf({ headers: {}, socket: {} }), 'unknown');
+});
+test('демо: квота исчерпана строго при issued >= limit', () => {
+  assert.equal(demoQuotaReached(5, 5), true, '5 из 5 — лимит');
+  assert.equal(demoQuotaReached(4, 5), false, '4 из 5 — ещё можно');
+  assert.equal(demoQuotaReached(0, 0), true, 'лимит 0 = всё запрещено (никакого «бесконечного» лимита)');
+  assert.equal(demoQuotaReached(0, 5), false);
 });
 
 /* ---- интеграционные тесты БД ---- */

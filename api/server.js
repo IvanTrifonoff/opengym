@@ -24,6 +24,9 @@ import {
   listDueReminders, markBookingReminded,
   insertLead, findOwnerId, getSetting, setSetting, deleteSetting,
   listPrivateCodes, createPrivateCode, checkPrivateCode, revokePrivateCode,
+  createDemoToken, countDemoTokensSince, takeDemoToken,
+  getDemoSession, createDemoSession, touchDemoSession,
+  listExpiredDemoSessions, deleteDemoSession, purgeDemoTokens,
   listLeads, markLeadsViewed, countUnreadLeads
 } from './admin-db.js';
 import { collectAnalytics, athleteDetail } from './analytics.js';
@@ -34,6 +37,7 @@ import { createLoyaltyRoutes } from './routes/loyalty.js';
 import { createAdminRoutes } from './routes/admin.js';
 import { createTrainerRoutes } from './routes/trainer.js';
 import { createLeadsRoutes } from './routes/leads.js';
+import { createDemoRoutes } from './routes/demo.js';
 import { replaceAthleteMetrics, backfillAthleteMetrics } from './metrics.js';
 
 import {
@@ -790,7 +794,14 @@ const routeModules = [
     insertLead, findOwnerId, saveNotification, sendPush,
     requireAdminAccount, getSetting, setSetting, deleteSetting,
     listLeads, markLeadsViewed, countUnreadLeads
-  })
+  }),
+  // Демо-клуб: эндпоинты есть ТОЛЬКО на демо-развёртывании (DEMO_MODE=1).
+  // На проде массив пуст — /api/demo/* отвечает 404, спавнить клон нельзя.
+  ...(DEMO_MODE ? createDemoRoutes({
+    json, readBody,
+    createDemoToken, countDemoTokensSince, takeDemoToken,
+    getDemoSession, createDemoSession
+  }) : [])
 ];
 for (const r of routeModules) routes[r.method + ' ' + r.path] = r.handler;
 
