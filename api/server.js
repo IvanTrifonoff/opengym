@@ -26,7 +26,7 @@ import {
   listPrivateCodes, createPrivateCode, checkPrivateCode, revokePrivateCode,
   createDemoToken, countDemoTokensSince, takeDemoToken,
   getDemoSession, createDemoSession, touchDemoSession,
-  listExpiredDemoSessions, deleteDemoSession, purgeDemoTokens,
+  listExpiredDemoSessions, deleteDemoSession, purgeDemoTokens, countActiveDemoSessions, countAllActiveDemoSessions,
   listLeads, markLeadsViewed, countUnreadLeads
 } from './admin-db.js';
 import { collectAnalytics, athleteDetail } from './analytics.js';
@@ -823,7 +823,8 @@ const routeModules = [
   ...(DEMO_MODE ? createDemoRoutes({
     json, readBody,
     createDemoToken, countDemoTokensSince, takeDemoToken,
-    createDemoSession, adminSessionCookie, clearAdminCookie, adminSessionPayload,
+    createDemoSession, countActiveDemoSessions, countAllActiveDemoSessions,
+    adminSessionCookie, clearAdminCookie, adminSessionPayload,
     spawnDemoClub, destroyDemoClub,
     db, saveDb, dataDir: DATA
   }) : [])

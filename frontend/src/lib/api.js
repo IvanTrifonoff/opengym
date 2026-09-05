@@ -12,6 +12,26 @@ export async function api(path, opts) {
   return data
 }
 
+// --- Доказательство работы для кнопки «Открыть демо-клуб» (антибот) ---
+// Сервер (routes/demo.js) требует sha256(challenge+nonce), начинающийся с
+// `difficulty` нулевых hex-символов. На десктопе/мобильном это ~0.1–0.5 с —
+// человек не замечает, а бот, плодящий демо-сессии, платит CPU за каждый заход.
+async function sha256Hex(str) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str))
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+export async function solvePoW(challenge, difficulty, maxIters = 2000000) {
+  const d = Math.max(0, Math.min(8, difficulty | 0))
+  if (d === 0) return '0'
+  const target = '0'.repeat(d)
+  for (let nonce = 0; nonce < maxIters; nonce++) {
+    if ((await sha256Hex(challenge + nonce)).slice(0, d) === target) return String(nonce)
+    if (nonce % 500 === 0) await new Promise(r => setTimeout(r, 0)) // не блокируем UI
+  }
+  throw new Error('could not solve proof-of-work')
+}
+
 const bufToB64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 const b64uToBuf = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)).buffer
 

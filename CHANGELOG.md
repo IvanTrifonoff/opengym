@@ -1,3 +1,37 @@
+## v1.2.57 — (2026-09-05) — защита кнопки «Открыть демо-клуб» (PoW + лимиты + Origin)
+
+### Новый модуль api/demo-pow.js (чистые функции, покрыты тестами)
+- Доказательство работы: сервер выдаёт challenge + сложность (по умолч. 4 нулевых
+  hex-символа ≈ 2^16 sha256 ≈ 0.1–0.5 с у человека). Клиент (браузер, WebCrypto)
+  решает nonce, сервер проверяет verifyPow. Человек не замечает, бот платит CPU
+  за каждую попытку открыть демо.
+- originAllowed(): запросы token/enter принимаются только с разрешённых origins
+  (по умолч. https://demo.gym.trfnv.ru). Пустой Origin (curl/тесты) пропускается —
+  главный барьер это PoW + лимиты.
+
+### Новые эндпоинты и ужесточение существующих (routes/demo.js)
+- POST /api/demo/challenge — выдаёт одноразовый challenge (TTL 5 мин).
+- POST /api/demo/token — теперь ТРЕБУЕТ { challenge, nonce } (решение PoW) +
+  проверку Origin; challenge одноразовый. Без PoW — 403.
+- POST /api/demo/enter — проверка лимитов одновременных клонов ДО спавна:
+  DEMO_MAX_SESSIONS_PER_IP (2) и DEMO_MAX_SESSIONS_TOTAL (5) — бот не сможет
+  занять все клоны и ресурсы демо-сервера.
+
+### Фронт (Login.jsx, lib/api.js)
+- Кнопка «Открыть демо-клуб»: challenge → solvePoW (WebCrypto, UI не блокируется)
+  → token → enter. Фронт-тесты 206/206, build OK.
+
+### Инфраструктура
+- docker-compose.demo.yml: переменные DEMO_POW_DIFFICULTY, DEMO_ALLOWED_ORIGINS,
+  DEMO_MAX_SESSIONS_PER_IP, DEMO_MAX_SESSIONS_TOTAL (с дефолтами).
+- api/Dockerfile: добавлен demo-pow.js в COPY (без него api падал 502 —
+  тот же класс ошибки, что demo-scope.js в v1.2.49).
+
+### Проверено
+- api-тесты 70/70 на scratch-PG (+4: PoW решение/отказ, difficulty=0,
+  originAllowed, лимиты сессий по IP/глобально с учётом истечения), остатков 0.
+- Прод пересобран и жив (config 200, web 200). На проде /api/demo/* по-прежнему
+  404 (DEMO_MODE выключен) — защита действует только на demo.gym.trfnv.ru.
 ## v1.2.56 — (2026-09-05) — лояльность: добиты дубли демо/тестов + скоуп для прода
 
 ### Очистка прод-БД (продолжение инцидента 2026-09-02, бэкапы в /opt/backups/)

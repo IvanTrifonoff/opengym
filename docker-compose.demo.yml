@@ -63,6 +63,12 @@ services:
       - DATA_DIR=/data
       - DATABASE_URL=postgresql://${POSTGRES_USER:-opengym}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-opengym}?sslmode=disable
       - REDIS_URL=redis://redis:6379
+      # Защита кнопки «Открыть демо-клуб» (см. api/routes/demo.js, api/demo-pow.js):
+      # PoW-сложность (hex-нулей), разрешённые origins, потолки живых сессий.
+      - DEMO_POW_DIFFICULTY=${DEMO_POW_DIFFICULTY:-4}
+      - DEMO_ALLOWED_ORIGINS=${DEMO_ALLOWED_ORIGINS:-https://demo.gym.trfnv.ru}
+      - DEMO_MAX_SESSIONS_PER_IP=${DEMO_MAX_SESSIONS_PER_IP:-2}
+      - DEMO_MAX_SESSIONS_TOTAL=${DEMO_MAX_SESSIONS_TOTAL:-5}
     volumes:
       - ./data:/data
     depends_on:

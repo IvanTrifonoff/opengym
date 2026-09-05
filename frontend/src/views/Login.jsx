@@ -1,6 +1,6 @@
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
-import { webauthnOK, passkeyLogin, passkeyRegister, api, BIO, IS_APPLE, IS_ANDROID } from '../lib/api.js'
+import { webauthnOK, passkeyLogin, passkeyRegister, api, solvePoW, BIO, IS_APPLE, IS_ANDROID } from '../lib/api.js'
 import { hasData } from '../store/useStore.js'
 import { t } from '../lib/i18n.js'
 import { DEMO, REPO } from '../lib/demo.js'
@@ -92,13 +92,16 @@ export default function Login() {
   const [demoBusy, setDemoBusy] = useState(false)
   // Демо-хост (DEMO_MODE=1, /api/config.demo): узнать, что мы на demo.gym.trfnv.ru.
   useEffect(() => { api('/api/config').then(c => setCfg(c)).catch(() => {}) }, [])
-  // Запуск демо-клуба: одноразовый токен (антибот) -> enter (клон на сессию +
-  // админ-кука владельца) -> панель управления демо-клуба.
+  // Запуск демо-клуба (антибот): challenge (PoW) -> решение в браузере ->
+  // одноразовый токен -> enter (клон на сессию + админ-кука владельца) ->
+  // панель управления демо-клуба.
   const startDemo = async () => {
     if (demoBusy) return
     setDemoBusy(true)
     try {
-      const d = await api('/api/demo/token', { method: 'POST' })
+      const c = await api('/api/demo/challenge', { method: 'POST' })
+      const nonce = await solvePoW(c.challenge, c.difficulty)
+      const d = await api('/api/demo/token', { method: 'POST', body: JSON.stringify({ challenge: c.challenge, nonce }) })
       await api('/api/demo/enter', { method: 'POST', body: JSON.stringify({ token: d.token }) })
       location.href = '/admin'
     } catch (e) { useUI.getState().toast(e.message || t('Could not start the demo')) }

@@ -28,7 +28,8 @@ const {
   softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
   createDemoToken, countDemoTokensSince, takeDemoToken,
   getDemoSession, createDemoSession, touchDemoSession,
-  listExpiredDemoSessions, deleteDemoSession, purgeDemoTokens
+  listExpiredDemoSessions, deleteDemoSession, purgeDemoTokens, countActiveDemoSessions,
+  countAllActiveDemoSessions
 } = db;
 
 const T = (Date.now() % 1e6).toString(36) + Math.random().toString(36).slice(2, 6);
@@ -380,5 +381,25 @@ test('демо-сессии: create/get/touch/expired/delete', async (t) => {
   assert.ok(expired.some(x => x.id === id), 'истёкшая сессия видна cleaner\'у');
   await deleteDemoSession(id);
   assert.equal(await getDemoSession(id), null, 'сессия удалена');
+});
+
+test('демо-сессии: лимиты одновременных (по IP и глобально) считают живые', async (t) => {
+  if (!needDb(t)) return;
+  const ip = '10.123.' + (T.charCodeAt(0) % 200) + '.1';
+  const a = 'ds_cap_a_' + T, b = 'ds_cap_b_' + T, c = 'ds_cap_c_' + T;
+  try {
+    assert.equal(await countActiveDemoSessions(ip), 0, 'пусто до создания');
+    await createDemoSession({ id: a, token: 'dt_cap_a', ip, ttlMs: 60 * 60 * 1000 });
+    await createDemoSession({ id: b, token: 'dt_cap_b', ip, ttlMs: 60 * 60 * 1000 });
+    assert.equal(await countActiveDemoSessions(ip), 2, 'две живые с этого IP');
+    assert.equal(await countActiveDemoSessions('10.9.9.9'), 0, 'чужой IP не видит их');
+    await createDemoSession({ id: c, token: 'dt_cap_c', ip: '10.9.9.9', ttlMs: 60 * 60 * 1000 });
+    assert.equal(await countAllActiveDemoSessions(), 3, 'глобально три');
+    // истёкшая сессия не считается лимитом
+    await pool.query('UPDATE demo_sessions SET expires_at = now() - interval \'1 minute\' WHERE id = $1', [c]);
+    assert.equal(await countAllActiveDemoSessions(), 2, 'истёкшая не в счёт');
+  } finally {
+    await pool.query('DELETE FROM demo_sessions WHERE id IN ($1,$2,$3)', [a, b, c]);
+  }
 });
 

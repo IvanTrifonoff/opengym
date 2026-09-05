@@ -15,6 +15,7 @@ import { buildDemoState, bestWeightsOf } from './demo-seed.js';
 import { spawnDemoClub, destroyDemoClub, demoIds, ownerIdToSession, runDemoCleanupOnce } from './demo-club.js';
 import { getWallet, createDemoToken, takeDemoToken, createDemoSession, getDemoSession,
   listAdmins, listLoyaltyRules, listRewards, listBranches } from './admin-db.js';
+import { verifyPow, solvePow, originAllowed } from './demo-pow.js';
 import { collectAnalytics, canSeeAthlete } from './analytics.js';
 import { scopeAdmins, scopeBranches, scopeOwnerRows, scopeUsers, demoModeOn } from './demo-scope.js';
 
@@ -34,6 +35,33 @@ const gapDays = (S, now = new Date().toISOString().slice(0, 10)) => {
   const last = S.workouts.length ? S.workouts[S.workouts.length - 1].d : now;
   return Math.round((new Date(now) - new Date(last)) / 86400000);
 };
+
+/* ---------- demo-pow: доказательство работы (антибот, чистые функции) ---------- */
+test('PoW: решение под заданный challenge проходит, чужое — нет', () => {
+  const challenge = 'test-challenge-' + T;
+  const nonce = solvePow(challenge, 4);
+  assert.ok(nonce !== null, 'решение найдено');
+  assert.equal(verifyPow({ challenge, nonce, difficulty: 4 }), true, 'валидное решение принято');
+  assert.equal(verifyPow({ challenge, nonce: String(+nonce + 1), difficulty: 4 }), false, 'другое nonce отклонено');
+  assert.equal(verifyPow({ challenge: 'other', nonce, difficulty: 4 }), false, 'другой challenge отклонён');
+  assert.equal(verifyPow({ challenge, nonce: 'abc', difficulty: 4 }), false, 'мусорный nonce отклонён');
+});
+
+test('PoW: difficulty 0 выключена, пустой nonce не проходит при d>0', () => {
+  assert.equal(verifyPow({ challenge: 'c', nonce: '', difficulty: 0 }), true, 'd=0 — проверка выключена');
+  assert.equal(verifyPow({ challenge: 'c', nonce: '', difficulty: 2 }), false, 'пустой nonce отклонён');
+  assert.equal(verifyPow({ challenge: '', nonce: '1', difficulty: 2 }), false, 'пустой challenge отклонён');
+});
+
+test('Origin: из allowlist пропускается, чужой — нет, пустой — пропускается', () => {
+  const allowed = ['https://demo.gym.trfnv.ru'];
+  assert.equal(originAllowed('https://demo.gym.trfnv.ru', allowed), true);
+  assert.equal(originAllowed('https://gym.trfnv.ru', allowed), false, 'чужой origin отклонён');
+  assert.equal(originAllowed('https://evil.example', allowed), false);
+  assert.equal(originAllowed('', allowed), true, 'пустой Origin (curl/тесты) пропускается');
+  assert.equal(originAllowed(null, allowed), true);
+  assert.equal(originAllowed('https://demo.gym.trfnv.ru', []), true, 'пустой allowlist = не мешаем');
+});
 
 /* ---------- demo-seed: чистые генераторы персон ---------- */
 // Фиксируем «сегодня»: генератор детерминирован для заданного now, но от

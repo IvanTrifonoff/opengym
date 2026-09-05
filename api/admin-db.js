@@ -638,6 +638,27 @@ export async function purgeDemoTokens(now = new Date()) {
   await pool.query('DELETE FROM demo_tokens WHERE expires_at <= $1 OR used = true', [now]);
 }
 
+// Живые демо-сессии по IP (для лимита одновременных клонов с одного адреса).
+export async function countActiveDemoSessions(ip, now = new Date()) {
+  await ready();
+  const r = await pool.query(
+    'SELECT count(*)::int AS n FROM demo_sessions WHERE ip = $1 AND expires_at > $2',
+    [ip, now]
+  );
+  return r.rows[0].n;
+}
+
+// Все живые демо-сессии на стеке (глобальный потолок, чтобы бот не занял
+// все ресурсы демо-сервера клонами).
+export async function countAllActiveDemoSessions(now = new Date()) {
+  await ready();
+  const r = await pool.query(
+    'SELECT count(*)::int AS n FROM demo_sessions WHERE expires_at > $1',
+    [now]
+  );
+  return r.rows[0].n;
+}
+
 export async function listLoyaltyRules() {
 
   await ready();
