@@ -60,6 +60,14 @@ const INVITE_ONLY = /^(1|true|yes|on)$/i.test(process.env.INVITE_ONLY || '');
 // На проде (gym.trfnv.ru и self-hosted) флаг выключен — демо-эндпоинты и
 // демо-скоуп в списках/аналитике не регистрируются и не фильтруют.
 const DEMO_MODE = process.env.DEMO_MODE === '1';
+// Безопасность (инцидент 2026-09-02): демо-стек должен иметь СОБСТВЕННУЮ БД.
+// Если DEMO_MODE=1, а DATABASE_URL указывает на общий прод-PG (retail_db),
+// старт запрещён — иначе демо-клоны пишутся в прод-БД и владелец видит
+// «ботов-тренеров». Разворачивай демо по docker-compose.demo.yml (своя БД).
+if (DEMO_MODE && /retail_db/.test(process.env.DATABASE_URL || '')) {
+  console.error('[FATAL] DEMO_MODE=1, но DATABASE_URL указывает на прод-PG (retail_db). Демо-стек обязан использовать свою БД (docker-compose.demo.yml).');
+  process.exit(1);
+}
 // 90 days keeps someone who trains a few times a week permanently signed in without a stolen
 // cookie staying good for a year. Overridable because a family instance and one on the open
 // internet don't want the same number. Only affects cookies minted from now on — the expiry is

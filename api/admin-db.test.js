@@ -36,8 +36,18 @@ const trainer = 'tr_' + T;
 const athlete = 'at_' + T;
 const UID = 'uid_' + T;
 
+// Защита от случайного прогона по ПРОД-БД: интеграционные тесты пишут в БД
+// (тренеры, филиалы, инвайты). Если DATABASE_URL указывает на общий прод-PG
+// (retail_db), тесты отказываются работать, пока явно не задан ALLOW_PROD_DB_TESTS=1
+// (только для диагностики на тестовой копии!). Прогон по прод-БД — причина
+// «ботов-тренеров» 2026-09-02, см. docs/AGENT_GUIDE.md.
+const PROD_DB_GUARD = /retail_db/.test(process.env.DATABASE_URL || '');
 const needDb = (t) => {
   if (!USE_DB) { t.skip('SKIP: задай DATABASE_URL (живая postgres) для интеграционных тестов'); return false; }
+  if (PROD_DB_GUARD && process.env.ALLOW_PROD_DB_TESTS !== '1') {
+    t.skip('SKIP: DATABASE_URL указывает на прод-PG (retail_db). Интеграционные тесты запрещены на проде; задай ALLOW_PROD_DB_TESTS=1 только для тестовой копии.');
+    return false;
+  }
   return true;
 };
 
@@ -112,6 +122,8 @@ test('приглашения админа: getAdminInvite на чужой код
   assert.ok(await getAdminInvite(inv.code));
   // owner нельзя создать invite'ом
   await assert.rejects(() => createAdminInvite({ name: 'X', role: 'owner', createdBy: 'owner1' }), /invalid staff role/);
+  // Подчистка: иначе каждый прогон оставляет мусорные инвайты в БД (видно владельцу).
+  await pool.query('DELETE FROM admin_invites WHERE code = $1', [inv.code]);
 });
 
 test('лояльность: accept → duplicate на повтор, кошелёк возвращает balance', async (t) => {
@@ -191,7 +203,14 @@ test('уведомления: saveNotification идемпотентен по id 
 /* ---- промо-заявки с сайта (тарифы / КП) ---- */
 test('промо-заявки: insertLead + findOwnerId + уведомление владельцу идемпотентно', async (t) => {
   if (!needDb(t)) return;
+  // Самодостаточность: на пустой БД (scratch-PG) findOwnerId() вернёт null и тест
+  // упадёт без причины — создаём временного владельца и убираем в finally.
+  const tmpOwner = 'test-owner-' + T;
   try {
+    await pool.query(
+      `INSERT INTO admin_users (id, name, role) VALUES ($1, 'Тест-владелец', 'owner') ON CONFLICT (id) DO NOTHING`,
+      [tmpOwner]
+    );
     const ownerId = await findOwnerId();
     assert.ok(ownerId, 'в БД есть владелец (роль owner)');
 
@@ -233,6 +252,8 @@ test('промо-заявки: insertLead + findOwnerId + уведомление
   } catch (e) {
     try { await pool.query('DELETE FROM promo_leads WHERE id = $1', ['lead_' + T]); } catch {}
     throw e;
+  } finally {
+    try { await pool.query('DELETE FROM admin_users WHERE id = $1', [tmpOwner]); } catch {}
   }
 });
 
@@ -281,6 +302,8 @@ test('филиалы: save/list/rename/soft delete', async (t) => {
   assert.ok(removed && removed.id === id, 'soft delete returns branch');
   list = await listBranches();
   assert.ok(!list.some(b => b.id === id), 'soft-deleted branch hidden');
+  // Подчистка: soft-delete оставляет строку (deleted_at) — убираем её полностью.
+  await pool.query('DELETE FROM branches WHERE id = $1', [id]);
 });
 
 /* ---- мягкое удаление сотрудника ---- */
@@ -291,16 +314,21 @@ test('сотрудники: softDeleteAdmin скрывает и блокируе
     `INSERT INTO admin_users (id, name, role) VALUES ($1, $2, 'trainer') ON CONFLICT (id) DO NOTHING`,
     [id, 'Тест-тренер ' + T]
   );
-  let admins = await listAdmins();
-  assert.ok(admins.some(a => a.id === id), 'trainer visible before delete');
-  const removed = await softDeleteAdmin(id);
-  assert.ok(removed && removed.deleted_at, 'soft delete stamps deleted_at');
-  admins = await listAdmins();
-  assert.ok(!admins.some(a => a.id === id), 'trainer hidden after delete');
-  await restoreAdmin(id);
-  admins = await listAdmins();
-  assert.ok(admins.some(a => a.id === id), 'trainer visible after restore');
-  await pool.query('DELETE FROM admin_users WHERE id = $1', [id]);
+  try {
+    let admins = await listAdmins();
+    assert.ok(admins.some(a => a.id === id), 'trainer visible before delete');
+    const removed = await softDeleteAdmin(id);
+    assert.ok(removed && removed.deleted_at, 'soft delete stamps deleted_at');
+    admins = await listAdmins();
+    assert.ok(!admins.some(a => a.id === id), 'trainer hidden after delete');
+    await restoreAdmin(id);
+    admins = await listAdmins();
+    assert.ok(admins.some(a => a.id === id), 'trainer visible after restore');
+  } finally {
+    // Подчистка в finally: даже при падении ассерта не оставляем «Тест-тренера»
+    // в БД (именно они выглядели как «боты-тренеры» 2026-09-02).
+    await pool.query('DELETE FROM admin_users WHERE id = $1', [id]);
+  }
 });
 
 /* ---- demo club: токены (антибот) и сессии (клон на одну сессию) ---- */

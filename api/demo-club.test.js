@@ -23,6 +23,10 @@ const T = (Date.now() % 1e6).toString(36) + Math.random().toString(36).slice(2, 
 
 const needDb = (t) => {
   if (!USE_DB) { t.skip('SKIP: задай DATABASE_URL (живая postgres) для интеграционных тестов'); return false; }
+  if (/retail_db/.test(process.env.DATABASE_URL || '') && process.env.ALLOW_PROD_DB_TESTS !== '1') {
+    t.skip('SKIP: DATABASE_URL указывает на прод-PG (retail_db). Демо-тесты пишут клоны в БД — запрещены на проде.');
+    return false;
+  }
   return true;
 };
 
@@ -32,8 +36,14 @@ const gapDays = (S, now = new Date().toISOString().slice(0, 10)) => {
 };
 
 /* ---------- demo-seed: чистые генераторы персон ---------- */
+// Фиксируем «сегодня»: генератор детерминирован для заданного now, но от
+// реальной даты зависит раскладка недель/пропусков (churn на 2026-09-05 даёт
+// 3 тренировки, на 2026-09-02 — 8). Без фиксации тест флакал от календаря.
+const DEMO_NOW = new Date('2026-09-02T12:00:00Z');
+const demoState = persona => buildDemoState({ persona, now: DEMO_NOW });
+
 test('персона regular: глубокая история, прогресс весов, цели, effort', () => {
-  const S = buildDemoState({ persona: 'regular' });
+  const S = demoState('regular');
   assert.ok(S.workouts.length >= 55 && S.workouts.length <= 84, `тренировок ~78 минус пропуски, got ${S.workouts.length}`);
   assert.ok(S.bodyweight.length >= 40, 'взвешивания 2×/нед');
   const first = S.bodyweight[0].w, last = S.bodyweight[S.bodyweight.length - 1].w;
@@ -43,23 +53,23 @@ test('персона regular: глубокая история, прогресс 
   assert.ok(S.routines.length === 3 && Object.keys(S.week).length === 3, '3 программы, расписание пн/ср/пт');
   assert.equal(S.goals.length, 2, 'цели по упражнениям есть');
   assert.equal(S.unit, 'kg');
-  // Детерминизм: тот же seed → тот же профиль (для скриншотов и тестов).
-  assert.equal(JSON.stringify(S), JSON.stringify(buildDemoState({ persona: 'regular' })));
+  // Детерминизм: тот же seed + тот же now → тот же профиль (для скриншотов и тестов).
+  assert.equal(JSON.stringify(S), JSON.stringify(demoState('regular')));
 });
 
 test('персона casual: реже, вялый прогресс, без effort', () => {
-  const S = buildDemoState({ persona: 'casual' });
+  const S = demoState('casual');
   assert.ok(S.workouts.length >= 8 && S.workouts.length <= 22, '10 недель × 2/нед с пропусками');
-  assert.ok(S.workouts.length < buildDemoState({ persona: 'regular' }).workouts.length, 'меньше тренировок, чем regular');
+  assert.ok(S.workouts.length < demoState('regular').workouts.length, 'меньше тренировок, чем regular');
   assert.ok(bestWeightsOf(S)['0025'] < 82, 'цель 80 кг не достигнута (прогресс вялый)');
   assert.equal(S.effort, undefined, 'оценки усилия выключены');
 });
 
 test('персона churn: затухание и длинный разрыв — витрина ухода', () => {
-  const S = buildDemoState({ persona: 'churn' });
+  const S = demoState('churn');
   assert.ok(S.workouts.length >= 4 && S.workouts.length <= 9, '4-5 недель с затуханием');
-  assert.ok(gapDays(S) >= 13, 'последняя тренировка давно — клиент «ушёл»');
-  assert.equal(buildDemoState({ persona: 'churn' }).effort, undefined);
+  assert.ok(gapDays(S, '2026-09-02') >= 13, 'последняя тренировка давно — клиент «ушёл»');
+  assert.equal(demoState('churn').effort, undefined);
 });
 
 test('демо: ownerId → sessionId (для /api/demo/end), и только для демо-владельца', () => {
@@ -90,9 +100,11 @@ test('демо-скоуп: canSeeAthlete и списковые хелперы ф
     assert.deepEqual(scopeBranches(adminA, branches).map(b => b.id), ['demo-ds_a']);
     const owned = [{ id: 'r1', created_by: 'demo-owner-ds_a' }, { id: 'r2', created_by: 'demo-owner-ds_b' }];
     assert.deepEqual(scopeOwnerRows(adminA, owned).map(r => r.id), ['r1']);
-    // вне демо-режима — без фильтрации
+    // вне демо-режима — прод-владелец НЕ видит демо-строки (безопасность:
+    // инцидент 2026-09-02 — демо-клоны попали в прод БД и выглядели как
+    // «боты-тренеры»; даже случайно просочившиеся демо-строки скрываются).
     process.env.DEMO_MODE = '0';
-    assert.equal(scopeAdmins(adminA, rows).length, 3);
+    assert.deepEqual(scopeAdmins(adminA, rows).map(r => r.id), ['3']);
     assert.equal(demoModeOn(), false);
   } finally {
     process.env.DEMO_MODE = prev;

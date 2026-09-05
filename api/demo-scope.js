@@ -13,8 +13,12 @@ export const demoOwnerOf = sid => 'demo-owner-' + sid;
 export const isDemoAdmin = admin => demoModeOn() && !!(admin && admin.demo_session);
 
 // Сотрудники (admin_users: owner + тренеры сессии).
-export const scopeAdmins = (admin, rows) =>
-  isDemoAdmin(admin) ? rows.filter(r => r.demo_session === admin.demo_session) : rows;
+export const scopeAdmins = (admin, rows) => {
+  if (isDemoAdmin(admin)) return rows.filter(r => r.demo_session === admin.demo_session);
+  // Прод-владелец НЕ видит демо-строки: даже если демо-клон случайно попадёт
+  // в прод-БД (инцидент 2026-09-02), «боты-тренеры» не покажутся в UI.
+  return rows.filter(r => !r.demo_session);
+};
 // Филиалы: демо-владелец видит только филиал своего клона.
 export const scopeBranches = (admin, rows) =>
   isDemoAdmin(admin) ? rows.filter(r => r.id === demoBranchOf(admin.demo_session)) : rows;
