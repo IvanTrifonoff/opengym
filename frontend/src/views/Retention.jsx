@@ -10,8 +10,8 @@ const daysAgo = t => {
   return d <= 0 ? 'сегодня' : d === 1 ? 'вчера' : d + ' дн. назад'
 }
 
-const LEVEL_COLORS = { active: 'var(--green)', at_risk: 'var(--yellow)', gone: 'var(--red)' }
-const LEVEL_LABELS = { active: 'Активен', at_risk: 'В зоне риска', gone: 'Ушёл' }
+const LEVEL_COLORS = { active: 'var(--green)', at_risk: 'var(--yellow)', gone: 'var(--red)', new: 'var(--blue)' }
+const LEVEL_LABELS = { active: 'Активен', at_risk: 'В зоне риска', gone: 'Ушёл', new: 'Новый' }
 
 function Tile({ l, v, color }) {
   return <div className="tile"><div className="l">{l}</div><div className="v" style={color ? { color } : undefined}>{v}</div></div>
@@ -43,7 +43,7 @@ export default function Retention({ admin }) {
   const base = funnel.trained || 1
   const surv = (n) => Math.round((n || 0) / base * 100) + '%'
   const generatedLabel = generatedAt ? new Date(generatedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : '—'
-  const FILTERS = [['all', 'Все'], ['active', 'Активен'], ['at_risk', 'В зоне риска'], ['gone', 'Ушёл']]
+  const FILTERS = [['all', 'Все'], ['active', 'Активен'], ['at_risk', 'В зоне риска'], ['gone', 'Ушёл'], ['new', 'Новый']]
 
   return <div style={{ paddingBottom: 40 }}>
     <div className="small dim" style={{ marginBottom: 8 }}>
@@ -55,6 +55,7 @@ export default function Retention({ admin }) {
       <Tile l="Активны" v={summary.active} color="var(--green)" />
       <Tile l="В зоне риска" v={summary.atRisk} color="var(--yellow)" />
       <Tile l="Ушли" v={summary.gone} color="var(--red)" />
+      <Tile l="Новые" v={summary.fresh || 0} color="var(--blue)" />
       <Tile l="Средний перерыв" v={summary.avgGap ? summary.avgGap + ' дн' : '—'} />
       <Tile l="Риск, %" v={summary.atRiskPct + '%'} color="var(--yellow)" />
     </div>
@@ -89,7 +90,7 @@ export default function Retention({ admin }) {
           <div className="grow">
             <div className="tt">{a.name} <span className="tag" style={{ color: lc, borderColor: lc + '55' }}>{label}</span>{a.recurring && <span className="tag" style={{ marginLeft: 6, color: 'var(--acc)', borderColor: 'var(--acc)55' }}>постоянник</span>}</div>
             <div className="ss">
-              {a.workouts ? `${a.workouts} тр · активность ${daysAgo(a.lastWorkout)}` : 'без тренировок'}
+              {a.workouts ? `${a.workouts} тр · активность ${daysAgo(a.lastWorkout)}` : (a.level === 'new' ? 'зарегистрирован, тренировок не было' : 'без тренировок')}
               {a.gapDays != null && ` · перерыв ${a.gapDays} дн`}
               {a.workouts4w != null && ` · 4нед/ранее: ${a.workouts4w}/${a.prev4w}`}
               {a.volume4w ? ` · объём ${fmtV(a.volume4w)} кг` : ''}

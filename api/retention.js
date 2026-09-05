@@ -53,7 +53,12 @@ export function lifetime(state) {
   return { firstActivity: dts[0], lastActivity: dts[dts.length - 1], spanDays: Math.floor((dts[dts.length - 1] - dts[0]) / DAY) };
 }
 
-function levelKey(score) { return score >= 4.5 ? 'gone' : score >= 2 ? 'at_risk' : 'active'; }
+function levelKey(gap, created, now) {
+  if (gap == null) return created && now - tsOf(created) < 90 * 86400000 ? 'new' : 'gone';
+  if (gap < 14) return 'active';
+  if (gap < 30) return 'at_risk';
+  return 'gone';
+}
 
 export function riskLevels() {
   return [
@@ -84,7 +89,7 @@ export async function collectRetention({ users, stateOf, now = Date.now(), recur
       if (w.prevS > 0 && w.curS < w.prevS * 0.6) { score += 1; reasons.push('меньше подходов'); }
       // A client with a locked recurring («постоянная») series has a standing reservation —
       // treat them as at_risk at worst, never «ушёл». The trainer still holds their slot.
-      let level = levelKey(score);
+      let level = levelKey(gap, u.created, now);
       if (rec) { if (level === 'gone') { level = 'at_risk'; score = Math.min(score, 4.4); } }
       const lastBW = S.bodyweight && S.bodyweight.length ? S.bodyweight[S.bodyweight.length - 1] : null;
       const bwDelta = S.bodyweight && S.bodyweight.length >= 2 ? Math.round((S.bodyweight[S.bodyweight.length - 1].w - S.bodyweight[0].w) * 10) / 10 : null;
@@ -106,13 +111,17 @@ export async function collectRetention({ users, stateOf, now = Date.now(), recur
     .filter(Boolean);
 
   const withActivity = athletes.filter(a => a.workouts);
+  const started = athletes.filter(a => a.level !== 'new');
   const summary = {
     total: athletes.length,
     active: athletes.filter(a => a.level === 'active').length,
     atRisk: athletes.filter(a => a.level === 'at_risk').length,
     gone: athletes.filter(a => a.level === 'gone').length,
+    fresh: athletes.filter(a => a.level === 'new').length,
     avgGap: withActivity.length ? Math.round(withActivity.reduce((s, a) => s + (a.gapDays || 0), 0) / withActivity.length) : 0,
-    atRiskPct: athletes.length ? Math.round(athletes.filter(a => a.level !== 'active').length / athletes.length * 100) : 0
+    // Риск считается только среди тех, кто реально начал заниматься — «новые»
+    // (зарегистрировался, но ни одной тренировки) не должны раздувать риск.
+    atRiskPct: started.length ? Math.round(started.filter(a => a.level !== 'active').length / started.length * 100) : 0
   };
   // Retention funnel: of those who ever trained, how many kept going to 4 / 8 weeks.
   // spanDays = time between first and last workout — the honest "how long they held on".

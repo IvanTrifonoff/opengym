@@ -4,6 +4,7 @@ import { api } from '../lib/api.js'
 import { EXIDX } from '../lib/exercises.js'
 import { exName } from '../lib/i18n.js'
 import { fmtDate } from '../lib/format.js'
+import { dateLocale } from '../lib/i18n.js'
 import Icon from '../components/Icon.jsx'
 import NavBar from '../components/NavBar.jsx'
 import { Button } from '../components/ui.jsx'
@@ -24,6 +25,17 @@ const STATUS_ORDER = [['all', 'Все'], ['active', 'Активен'], ['at_risk
 export const StatusTag = ({ status }) => {
   const s = STATUS[status] || { label: status, color: 'var(--label-3)' }
   return <span className="tag" style={{ color: s.color, borderColor: s.color + '55' }}>{s.label}</span>
+}
+
+// Неделя в drill-down: читаемый диапазон дат («16–22 июн»), а не голый «06-20».
+const fmtWeek = label => {
+  const s = new Date(label + 'T12:00:00')
+  const e = new Date(s); e.setDate(e.getDate() + 6)
+  const loc = dateLocale()
+  const sD = s.toLocaleDateString(loc, { day: 'numeric' })
+  const eD = e.toLocaleDateString(loc, { day: 'numeric' })
+  const m = e.toLocaleDateString(loc, { month: 'short' })
+  return sD + '–' + eD + ' ' + m
 }
 
 export const daysAgo = t => {
@@ -131,7 +143,7 @@ export function AthleteCard({ id, admin, trainers, onBack, onProgram }) {
       <h2>Активность по неделям <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· последние 12 недель</span></h2>
       {d.weeks.every(w => !w.visits && !w.workouts) ? <div className="muted small">Нет данных.</div> :
         d.weeks.map(w => <div className="mrow" key={w.key}>
-          <span className="nm">{w.label}</span>
+          <span className="nm">{fmtWeek(w.label)}</span>
           <span className="bar"><i style={{ width: Math.round(w.volume / maxVol * 100) + '%' }} /></span>
           <span className="v">{w.workouts ? w.workouts + ' тр · ' : ''}{w.visits ? w.visits + ' виз · ' : ''}{fmtNum2(w.volume)} {unit}</span>
         </div>)}
@@ -279,7 +291,7 @@ export default function Analytics({ admin }) {
         <div className="list">{list.map(a => <div className="item" key={a.id} onClick={canDrill ? () => setSel(a.id) : undefined} style={canDrill ? { cursor: 'pointer' } : undefined}>
           <div className="grow">
             <div className="tt">{a.name} <StatusTag status={a.status} />{a.recurring && <span className="tag" style={{ marginLeft: 6, color: 'var(--acc)', borderColor: 'var(--acc)55' }}>постоянник</span>}</div>
-            <div className="ss">визиты {a.visits} · тренировки {a.workouts} · серия {a.streak} нед · {a.freq ? a.freq + '/нед' : '—'} · активность {daysAgo(a.lastActivity)}{a.recurring && a.recurringTime ? ' · постоянные слоты: ' + a.recurringTime : ''}</div>
+            <div className="ss">{a.visits != null ? 'визиты ' + a.visits + ' · ' : ''}тренировки {a.workouts} · серия {a.streak} нед · {a.freq ? a.freq + '/нед' : '—'} · активность {daysAgo(a.lastActivity)}{a.recurring && a.recurringTime ? ' · постоянные слоты: ' + a.recurringTime : ''}</div>
             {canManage && a.branch && <div className="small dim">филиал {a.branch}{a.trainerId ? ' · тренер привязан' : ''}</div>}
           </div>
           {admin.role === 'owner' && <button className="btn xs plain" onClick={e => { e.stopPropagation(); impersonate(a) }}>Войти как</button>}

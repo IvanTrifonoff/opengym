@@ -66,7 +66,7 @@ async function pgAggregates(now) {
   if (!pool) return empty;
   const mapOf = rows => rows.reduce((m, r) => { m.set(r.user_id, r); return m; }, new Map());
   try {
-    const [v, acc, ld, rd, ac, ta, bd, m, m30, mp, wk] = await Promise.all([
+    const [v, acc, ld, rd, ac, ta, bd, m, m30, mp, wk, vd, vd30] = await Promise.all([
       pool.query(
         `SELECT user_id, count(*)::int AS n, max(occurred_at) AS last,
                 count(*) FILTER (WHERE occurred_at > $1)::int AS n30,
@@ -93,9 +93,17 @@ async function pgAggregates(now) {
       pool.query('SELECT user_id, COALESCE(sum(workouts)::int, 0) AS w, COALESCE(sum(volume), 0) AS vol, max(day)::text AS last_day FROM athlete_metrics GROUP BY user_id'),
       pool.query('SELECT user_id, COALESCE(sum(workouts)::int, 0) AS w30, COALESCE(sum(volume), 0) AS vol30 FROM athlete_metrics WHERE day >= $1 GROUP BY user_id', [new Date(now - 30 * DAY)]),
       pool.query('SELECT user_id, COALESCE(sum(volume), 0) AS vol_prev FROM athlete_metrics WHERE day >= $1 AND day < $2 GROUP BY user_id', [new Date(now - 60 * DAY), new Date(now - 30 * DAY)]),
-      pool.query("SELECT user_id, to_char(date_trunc('week', day), 'IYYY-IW') AS wk FROM athlete_metrics WHERE workouts > 0 GROUP BY user_id, wk")
+      pool.query("SELECT user_id, to_char(date_trunc('week', day), 'IYYY-IW') AS wk FROM athlete_metrics WHERE workouts > 0 GROUP BY user_id, wk"),
+      // distinct workout DAYS (fallback «visits» when no СКУД integration feeds the visits table)
+      pool.query('SELECT user_id, count(*)::int AS n FROM (SELECT user_id, day FROM athlete_metrics WHERE workouts > 0 GROUP BY user_id, day) d GROUP BY user_id'),
+      pool.query('SELECT user_id, count(*)::int AS n FROM (SELECT user_id, day FROM athlete_metrics WHERE workouts > 0 AND day >= $1 GROUP BY user_id, day) d GROUP BY user_id', [new Date(now - 30 * DAY)])
     ]);
+    // СКУД «включён», только если таблица visits вообще содержит записи. Если турникеты/
+    // интеграция доступа не подключены — visits в списке подменяются на дни тренировок,
+    // иначе тренер видит бессмысленное «визиты 0» рядом с реальными тренировками.
+    const skudActive = v.rows.length > 0;
     return {
+      skudActive,
       visitsByUser: mapOf(v.rows),
       pointsByUser: mapOf(acc.rows),
       ledgerByUser: mapOf(ld.rows),
@@ -106,7 +114,9 @@ async function pgAggregates(now) {
       metricsByUser: mapOf(m.rows),
       metrics30ByUser: mapOf(m30.rows),
       metricsPrevByUser: mapOf(mp.rows),
-      weekKeysByUser: wk.rows.reduce((map, r) => { const set = map.get(r.user_id) || new Set(); set.add(r.wk); map.set(r.user_id, set); return map; }, new Map())
+      weekKeysByUser: wk.rows.reduce((map, r) => { const set = map.get(r.user_id) || new Set(); set.add(r.wk); map.set(r.user_id, set); return map; }, new Map()),
+      visitDaysByUser: mapOf(vd.rows),
+      visitDays30ByUser: mapOf(vd30.rows)
     };
   } catch (error) {
     console.error('analytics aggregates failed:', error.message);
@@ -132,6 +142,10 @@ function athleteRow(u, pg, now, S) {
   const volume30 = m30.vol30 || 0;
   const volume30Prev = mp.vol_prev || 0;
   const vis = pg.visitsByUser.get(u.id);
+  // Без СКУД-интеграции таблица visits пуста — «визитами» считаем дни с тренировками,
+  // чтобы тренер видел осмысленную цифру, а не вечный 0.
+  const visFallback = pg.skudActive ? 0 : ((pg.visitDaysByUser.get(u.id) || {}).n || 0);
+  const visFallback30 = pg.skudActive ? 0 : ((pg.visitDays30ByUser.get(u.id) || {}).n || 0);
   const ld = pg.ledgerByUser.get(u.id);
   const points = pg.pointsByUser.get(u.id);
   const bw = S && S.bodyweight && S.bodyweight.length ? S.bodyweight[S.bodyweight.length - 1] : null;
@@ -147,7 +161,9 @@ function athleteRow(u, pg, now, S) {
     unit,
     branch,
     trainerId: pg.trainerByUser.get(u.id) || null,
-    visits: vis ? vis.n : 0, visits30: vis ? vis.n30 : 0, lastVisit,
+    visits: pg.skudActive ? (vis ? vis.n : 0) : visFallback,
+    visits30: pg.skudActive ? (vis ? vis.n30 : 0) : visFallback30,
+    lastVisit,
     workouts, workouts30, lastWorkout,
     volume: round1(volume), volume30: round1(volume30), volume30Prev: round1(volume30Prev),
     streak: streakFromWeeks(weekKeys || [], now),
@@ -244,7 +260,7 @@ export async function athleteDetail({ user, stateOf, scope, now = Date.now() }) 
   for (let i = 11; i >= 0; i--) {
     const start = new Date(now - i * 7 * DAY);
     const key = weekKeyOf(isoOf(start));
-    weeks.push({ key, label: isoOf(start).slice(5), visits: 0, workouts: 0, volume: 0 });
+    weeks.push({ key, label: isoOf(start), visits: 0, workouts: 0, volume: 0 });
   }
   const wkIndex = new Map(weeks.map((w, i) => [w.key, i]));
   (pg.visitsByUser.get(user.id) ? [] : []); // visits come from detail query below
