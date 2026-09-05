@@ -1,6 +1,23 @@
 /* opengym-api — passkey (WebAuthn) auth + per-user state storage for openGym
    No framework, JSON-file storage, signed session cookies.               */
 import http from 'node:http';
+
+// Краш-гард: неперехваченная ошибка НЕ должна оставлять процесс в живом, но
+// сломанном состоянии (in-memory db может быть испорчена — продолжать работу
+// опасно: атлеты начнут получать чужие данные). Ровно два действия:
+//   1) пишем error.stack в stdout — Docker его сохранит (docker logs),
+//   2) process.exit(1) — Docker (restart: unless-stopped) поднимет контейнер
+//      заново, и сервер стартует с чистым состоянием.
+process.on('uncaughtException', err => {
+  console.error('[FATAL] uncaughtException — exit(1), контейнер перезапустится сам:');
+  console.error(err && err.stack ? err.stack : err);
+  process.exit(1);
+});
+process.on('unhandledRejection', reason => {
+  console.error('[FATAL] unhandledRejection — exit(1), контейнер перезапустится сам:');
+  console.error(reason && reason.stack ? reason.stack : reason);
+  process.exit(1);
+});
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';

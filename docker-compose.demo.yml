@@ -17,6 +17,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-opengym}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-opengym} -d ${POSTGRES_DB:-opengym}"]
       interval: 5s
@@ -30,6 +35,11 @@ services:
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
       - redisdata:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -71,6 +81,11 @@ services:
       - DEMO_MAX_SESSIONS_TOTAL=${DEMO_MAX_SESSIONS_TOTAL:-5}
     volumes:
       - ./data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       db:
         condition: service_healthy

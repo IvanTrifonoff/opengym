@@ -1,3 +1,33 @@
+## v1.2.58 — (2026-09-05) — предрелизное укрепление по ревью архитектора
+
+### Краш-гард (🔴 блокер)
+- server.js: `uncaughtException`/`unhandledRejection` → error.stack в stdout +
+  `process.exit(1)`. Не пытаемся продолжать работу после неперехваченной ошибки
+  (in-memory db может быть испорчена — риск выдачи чужих данных). Docker
+  (restart: unless-stopped) поднимает контейнер сам, лог краша остаётся в docker logs.
+
+### Ротация логов (🔴 блокер)
+- docker-compose.yml и docker-compose.demo.yml: logging json-file с ротацией
+  `max-size: 10m`, `max-file: 3` на api/web/redis/db — защита от No space left
+  on device (иначе логами забивается диск VPS и падает вообще всё, включая PG).
+
+### reset-demo.sh (🟡 желательно)
+- Одна команда «демо в эталон» за ~2 секунды: стоп api/web → TRUNCATE всех
+  таблиц демо-БД → обнуление db.json + удаление state-*.json (secret/vapid.json
+  не трогаются) → старт + проверка /api/config. Прод не задевается никогда.
+
+### Healthcheck для prod-api (🟡 желательно)
+- docker-compose.yml: api получил healthcheck (как у демо) — fetch /api/health
+  каждые 15 с, 5 ретраев.
+
+### Технический долг
+- docs/TECH_DEBT.md: зафиксированы сплит-брэйн JSON+PG (миграция athlete_state)
+  и переезд на фреймворк (Fastify/Express) — НЕ трогать до успешного запуска.
+
+### Проверено
+- api-тесты 70/70, остатков 0; прод config 200, healthcheck starting→healthy,
+  лог-драйвер json-file (10m×3) применён; демо: spawn клона → reset-demo.sh →
+  0 админов → повторный spawn 200.
 ## v1.2.57 — (2026-09-05) — защита кнопки «Открыть демо-клуб» (PoW + лимиты + Origin)
 
 ### Новый модуль api/demo-pow.js (чистые функции, покрыты тестами)
