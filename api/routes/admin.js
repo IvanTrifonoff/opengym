@@ -483,9 +483,11 @@ export function createAdminRoutes(deps) {
       sum.active = rows.filter(r => r.level === 'active').length;
       sum.atRisk = rows.filter(r => r.level === 'at_risk').length;
       sum.gone = rows.filter(r => r.level === 'gone').length;
+      sum.fresh = rows.filter(r => r.level === 'new').length;
       const withAct = rows.filter(r => r.workouts > 0);
       sum.avgGap = withAct.length ? Math.round(withAct.reduce((s, r) => s + (r.gapDays || 0), 0) / withAct.length) : 0;
-      sum.atRiskPct = rows.length ? Math.round((rows.length - sum.active) / rows.length * 100) : 0;
+      const started = rows.length - sum.fresh;
+      sum.atRiskPct = started ? Math.round((started - sum.active) / started * 100) : 0;
       const trained = rows.filter(r => r.spanDays != null);
       const funnel = {
         trained: trained.length,
