@@ -1,3 +1,20 @@
+## v1.2.60 — (2026-09-05) — Фикс языка PWA: lang=ru вместо lang=en
+
+### Причина бага «цып.С» в Chrome на Android
+- В frontend/index.html был <html lang="en"> при русском интерфейсе — Chrome предлагал
+  авто-перевод страницы на русский и коверкал название PWA-приложения («цып.С» вместо «ИмпульС»).
+- В manifest.json отсутствовало поле lang — браузеры не могли определить язык приложения.
+
+### Изменения
+- frontend/index.html: lang=en -> lang=ru; meta description переведён на русский.
+- frontend/public/manifest.json: добавлено "lang": "ru".
+- В репозиторий добавлены ранее не закоммиченные GitHub Actions: ci.yml (автотесты на push в dev)
+  и cd.yml (ручной деплой на прод по workflow_dispatch) — из работы по переносу на impulse.trfnv.ru.
+
+### Проверено
+- Прод (gym.trfnv.ru): <html lang="ru">, manifest c "lang": "ru", api healthy.
+- Promo-страницы уже были lang=ru — не трогались.
+
 ## v1.2.59 — (2026-09-05) — «Постоянные клиенты»: серия из 1–2 дней в неделю
 
 ### Фикс формы постоянных слотов (TrainerBookings.jsx)
