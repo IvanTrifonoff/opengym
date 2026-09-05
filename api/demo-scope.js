@@ -23,8 +23,13 @@ export const scopeAdmins = (admin, rows) => {
 export const scopeBranches = (admin, rows) =>
   isDemoAdmin(admin) ? rows.filter(r => r.id === demoBranchOf(admin.demo_session)) : rows;
 // Правила/награды: созданы демо-владельцем сессии (created_by).
-export const scopeOwnerRows = (admin, rows) =>
-  isDemoAdmin(admin) ? rows.filter(r => r.created_by === demoOwnerOf(admin.demo_session)) : rows;
+export const scopeOwnerRows = (admin, rows) => {
+  if (isDemoAdmin(admin)) return rows.filter(r => r.created_by === demoOwnerOf(admin.demo_session));
+  // Прод-владелец НЕ видит демо-строки (те же «боты-тренеры» в лояльности,
+  // инцидент 2026-09-02): даже случайно попавшие в прод-БД demo-правила и
+  // demo-награды не показываются в UI и не продаются спортсменам.
+  return rows.filter(r => !String(r.created_by || '').startsWith('demo-owner-'));
+};
 // Атлеты (db.users): только своей сессии.
 export const scopeUsers = (admin, users) =>
   isDemoAdmin(admin) ? users.filter(u => u.demo_session === admin.demo_session) : users;

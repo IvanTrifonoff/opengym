@@ -30,13 +30,19 @@ export function createLoyaltyRoutes(deps) {
     },
 
     // Спортсмен: список доступных наград (только активные, с остатком).
+    // На проде скрываем demo-награды (созданы demo-owner-*), даже если они
+    // случайно попали в прод-БД — их не должно быть видно спортсменам.
     {
       method: 'GET',
       path: '/api/loyalty/rewards',
       handler: async (req, res) => {
         const user = readSession(req);
         if (!user) return json(res, 401, { error: 'not signed in' });
-        try { json(res, 200, { rewards: await listRewards(true) }); }
+        try {
+          const all = await listRewards(true);
+          const rewards = all.filter(r => !String(r.created_by || '').startsWith('demo-owner-'));
+          json(res, 200, { rewards });
+        }
         catch (error) { console.error('rewards failed:', error.message); json(res, 503, { error: 'loyalty database unavailable' }); }
       }
     },

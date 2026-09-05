@@ -105,6 +105,11 @@ test('демо-скоуп: canSeeAthlete и списковые хелперы ф
     // «боты-тренеры»; даже случайно просочившиеся демо-строки скрываются).
     process.env.DEMO_MODE = '0';
     assert.deepEqual(scopeAdmins(adminA, rows).map(r => r.id), ['3']);
+    // правила/награды: прод-владелец не видит строки, созданные demo-owner-*
+    const ownedMix = [
+      { id: 'r1', created_by: 'demo-owner-ds_a' }, { id: 'r2', created_by: 'real-owner' }
+    ];
+    assert.deepEqual(scopeOwnerRows(adminA, ownedMix).map(r => r.id), ['r2']);
     assert.equal(demoModeOn(), false);
   } finally {
     process.env.DEMO_MODE = prev;
