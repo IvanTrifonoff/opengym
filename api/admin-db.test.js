@@ -57,6 +57,12 @@ test('роли: roleAllowed', () => {
   assert.equal(roleAllowed('owner', ['owner', 'trainer']), true);
   assert.equal(roleAllowed('trainer', ['owner']), false);
   assert.equal(roleAllowed('athlete', []), false);
+  // Compat-шим (v1.3.x Шаг 1-2): superadmin (владелец платформы) проходит
+  // любую проверку, которую проходил owner; иначе потерял бы доступ.
+  assert.equal(roleAllowed('superadmin', ['owner']), true);
+  assert.equal(roleAllowed('superadmin', ['owner', 'manager']), true);
+  assert.equal(roleAllowed('superadmin', ['trainer']), false);
+  assert.equal(roleAllowed('superadmin', []), false);
 });
 test('постоянная серия: горизонт 8 недель', () => {
   assert.equal(recurHorizonDays(), 56);

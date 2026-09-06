@@ -16,6 +16,11 @@ import Modals from '../components/Modals.jsx'
 import Toast from '../components/Toast.jsx'
 
 const roles = ['owner', 'manager', 'trainer', 'operator']
+// Compat-шим (v1.3.x, Шаг 1-2): superadmin (владелец платформы) в UI ведёт
+// себя как прежний owner. Жёсткое разделение ролей придёт на Шаге 3.
+const isOwner = r => r === 'owner' || r === 'superadmin'
+const ROLE_LABELS = { superadmin: 'Владелец платформы', owner: 'Владелец клуба', manager: 'Менеджер', trainer: 'Тренер', operator: 'Оператор' }
+const roleLabel = r => ROLE_LABELS[r] || r
 const eventTypes = [
   ['visit', 'Посещение'],
   ['workout_completed', 'Завершение тренировки'],
@@ -171,7 +176,7 @@ function Rewards({ canEdit }) {
 
 function Staff({ admin }) {
   const [staff, setStaff] = useState([]); const [name, setName] = useState(''); const [role, setRole] = useState('trainer'); const [invite, setInvite] = useState(null); const [error, setError] = useState('')
-  const canManage = admin.role === 'owner' || admin.role === 'manager'
+  const canManage = isOwner(admin.role) || admin.role === 'manager'
   const load = () => api('/api/admin/staff').then(d => setStaff(d.admins || [])).catch(e => setError(e.message))
   useEffect(() => { load(); }, [])
   const makeInvite = () => api('/api/admin/staff/invite', { method: 'POST', body: JSON.stringify({ name, role }) }).then(d => { setInvite(d.invite); setName(''); load() }).catch(e => setError(e.message))
@@ -181,7 +186,7 @@ function Staff({ admin }) {
     <div className="row between" style={{ marginBottom: 10 }}><div><h2 style={{ margin: 0 }}>Сотрудники</h2><div className="sub">Отдельные passkey и роли доступа</div></div></div>
     {canManage && <div className="card"><h3 style={{ marginTop: 0 }}>Пригласить сотрудника</h3><div className="row" style={{ gap: 8 }}><input className="field" value={name} onChange={e => setName(e.target.value)} placeholder="Имя сотрудника" /><select className="field" value={role} onChange={e => setRole(e.target.value)}>{roles.filter(r => r !== 'owner').map(r => <option key={r}>{r}</option>)}</select><Button variant="primary" size="sm" onClick={makeInvite} disabled={!name.trim()}>Создать</Button></div>{invite && <div className="small" style={{ marginTop: 10 }}>Код: <b>{invite.code}</b><br />Ссылка: <span className="dim">{link}</span><button className="btn xs plain" onClick={() => navigator.clipboard?.writeText(link)}>Копировать</button></div>}</div>}
     <ErrorLine error={error} />
-    <div className="list">{staff.map(s => <div className="item" key={s.id}><div className="grow"><div className="tt">{s.name} {s.disabled && <span className="tag" style={{ color: 'var(--red)' }}>off</span>}</div><div className="ss">{s.role} · {s.passkeys} passkey</div></div>{admin.role === 'owner' && <button className="btn xs plain" onClick={() => impersonate(s)} disabled={s.disabled}>Войти как</button>}<span className="tag acc">{s.role}</span>{admin.role === 'owner' && s.role !== 'owner' && <button className="btn xs plain danger" onClick={() => confirmSheet({
+    <div className="list">{staff.map(s => <div className="item" key={s.id}><div className="grow"><div className="tt">{s.name} {s.disabled && <span className="tag" style={{ color: 'var(--red)' }}>off</span>}</div><div className="ss">{roleLabel(s.role)} · {s.passkeys} passkey</div></div>{isOwner(admin.role) && <button className="btn xs plain" onClick={() => impersonate(s)} disabled={s.disabled}>Войти как</button>}<span className="tag acc">{roleLabel(s.role)}</span>{isOwner(admin.role) && s.role !== 'owner' && s.role !== 'superadmin' && <button className="btn xs plain danger" onClick={() => confirmSheet({
       title: 'Удалить сотрудника ' + s.name + '?', message: 'Профиль скроется из списков, вход будет заблокирован. Данные и статистика останутся — восстановить можно в любой момент.',
       confirmText: 'Удалить', danger: true,
       onConfirm: () => api('/api/admin/staff/delete', { method: 'POST', body: JSON.stringify({ id: s.id }) }).then(load).catch(e => setError(e.message))
@@ -191,7 +196,7 @@ function Staff({ admin }) {
 
 function Branches({ admin }) {
   const [branches, setBranches] = useState([]); const [name, setName] = useState(''); const [error, setError] = useState('')
-  const canEdit = admin.role === 'owner' || admin.role === 'manager'
+  const canEdit = isOwner(admin.role) || admin.role === 'manager'
   const load = () => api('/api/admin/branches').then(d => setBranches(d.branches || [])).catch(e => setError(e.message))
   useEffect(() => { load(); }, [])
   const create = () => api('/api/admin/branches/save', { method: 'POST', body: JSON.stringify({ name }) }).then(() => { setName(''); load() }).catch(e => setError(e.message))
@@ -203,14 +208,14 @@ function Branches({ admin }) {
     <ErrorLine error={error} />
     <div className="list">{branches.length ? branches.map(b => <div className="item" key={b.id}><div className="grow"><div className="tt">{b.name}</div><div className="ss">id: {b.id}</div></div>
       {canEdit && <button className="btn xs plain" onClick={() => { const n = prompt('Новое название филиала:', b.name); if (n && n.trim()) rename(b.id, n.trim()) }}>Переименовать</button>}
-      {admin.role === 'owner' && <button className="iconbtn" onClick={() => del(b)} aria-label="Удалить филиал"><Icon name="trash" /></button>}
+      {isOwner(admin.role) && <button className="iconbtn" onClick={() => del(b)} aria-label="Удалить филиал"><Icon name="trash" /></button>}
     </div>) : <div className="empty small muted">Филиалов пока нет — добавьте первый зал.</div>}</div>
   </>
 }
 
 function Invites({ admin }) {
   const [invites, setInvites] = useState([]); const [note, setNote] = useState(''); const [created, setCreated] = useState(null); const [error, setError] = useState('')
-  const canManage = admin.role === 'owner' || admin.role === 'manager'
+  const canManage = isOwner(admin.role) || admin.role === 'manager'
   const load = () => api('/api/admin/invites').then(d => setInvites(d.invites || [])).catch(e => setError(e.message))
   useEffect(() => { load(); }, [])
   const create = () => api('/api/admin/invites/new', { method: 'POST', body: JSON.stringify({ note, short: true }) }).then(d => { setCreated(d.invite); setNote(''); load() }).catch(e => setError(e.message))
@@ -276,13 +281,13 @@ function AdminDashboard({ admin, onLogout }) {
     .then(() => api('/api/admin/push/status').then(setPush)).catch(() => {})
   const lastPushFail = push?.stats?.failures?.length ? push.stats.failures[push.stats.failures.length - 1] : null
   const pushTile = push ? (push.degraded ? 'сбои' : 'ok') : '—'
-  const canEdit = admin.role === 'owner' || admin.role === 'manager'
+  const canEdit = isOwner(admin.role) || admin.role === 'manager'
   const isDemo = !!admin.demo_session   // демо-клон (demo.gym.trfnv.ru): приватный режим не нужен
   const tabs = [['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ['staff', 'Сотрудники'], ...(canEdit ? [['branches', 'Филиалы'], ['invites', 'Приглашения'], ['leads', 'Заявки']] : [])]
   const back = () => api('/api/admin/impersonate/back', { method: 'POST', body: '{}' }).then(d => { location.href = d.redirect || '/admin' }).catch(() => {})
   return <div className="narrow" style={{ paddingBottom: 40 }}>
-    <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">ИмпульС</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {admin.role}</div></div><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" style={{ position: 'relative' }} onClick={() => nav('/admin/notifications')} aria-label="Уведомления"><Icon name="bell" />{unread > 0 && <span className="notif-badge">{unread > 9 ? '9+' : unread}</span>}</button><button className="iconbtn" onClick={() => nav('/admin/analytics')} aria-label="Аналитика"><Icon name="chart" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
-    {admin.impersonated && <div className="card" style={{ borderColor: 'var(--acc)', marginBottom: 14 }}><div className="row between" style={{ gap: 8 }}><div className="small">Вы смотрите интерфейс от имени <b>{admin.name}</b> · {admin.role}</div><Button size="sm" variant="primary" onClick={back}>Вернуться</Button></div></div>}
+    <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">ИмпульС</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {roleLabel(admin.role)}</div></div><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" style={{ position: 'relative' }} onClick={() => nav('/admin/notifications')} aria-label="Уведомления"><Icon name="bell" />{unread > 0 && <span className="notif-badge">{unread > 9 ? '9+' : unread}</span>}</button><button className="iconbtn" onClick={() => nav('/admin/analytics')} aria-label="Аналитика"><Icon name="chart" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
+    {admin.impersonated && <div className="card" style={{ borderColor: 'var(--acc)', marginBottom: 14 }}><div className="row between" style={{ gap: 8 }}><div className="small">Вы смотрите интерфейс от имени <b>{admin.name}</b> · {roleLabel(admin.role)}</div><Button size="sm" variant="primary" onClick={back}>Вернуться</Button></div></div>}
     <NavBar
       selected={tab}
       badges={{ leads: leadUnread }}
@@ -296,10 +301,10 @@ function AdminDashboard({ admin, onLogout }) {
           { key: 'invites', icon: 'link', label: 'Приглашения', onClick: () => go('invites') },
           { key: 'leads', icon: 'clipboard', label: 'Заявки', onClick: () => go('leads') }
         ] : []),
-        ...(admin.role === 'owner' && !isDemo ? [{ key: 'private', icon: 'lock', label: 'Приватный', onClick: () => go('private') }] : [])
+        ...(isOwner(admin.role) && !isDemo ? [{ key: 'private', icon: 'lock', label: 'Приватный', onClick: () => go('private') }] : [])
       ]}
     />
-    {tab === 'overview' && <><div className="tiles"><div className="tile"><div className="l">Сотрудники</div><div className="v">{staff.length || '—'}</div></div><div className="tile"><div className="l">Правила</div><div className="v">{rules.length || '—'}</div></div><div className="tile"><div className="l">Пуши</div><div className="v" style={{ fontSize: '1rem', color: push?.degraded ? 'var(--red)' : 'var(--green)' }}>{pushTile}</div></div><div className="tile"><div className="l">Роль</div><div className="v" style={{ fontSize: '1rem' }}>{admin.role}</div></div><div className="tile"><div className="l">База</div><div className="v" style={{ fontSize: '1rem', color: 'var(--green)' }}>online</div></div></div>{push?.degraded && <div className="card" style={{ borderColor: 'var(--red)', marginBottom: 12, background: 'color-mix(in srgb,var(--red) 7%,var(--bg-el))' }}><div className="row between" style={{ gap: 10 }}><div className="grow"><div style={{ fontWeight: 600, color: 'var(--red)' }}>Сбои доставки push-уведомлений</div><div className="small dim" style={{ marginTop: 3 }}>не отправлено {push.stats?.failed || 0} шт. за 24 ч{lastPushFail ? ' · последний: ' + lastPushFail.host + (lastPushFail.status ? ' · ' + lastPushFail.status : '') + (lastPushFail.error ? ' · ' + lastPushFail.error : '') : ''}{push.webhookConfigured ? '' : ' · вебхук-алерт не настроен'}</div></div>{canEdit && <Button size="sm" variant="ghost" onClick={resetPush}>Сбросить</Button>}</div></div>}<div className="card"><h2 style={{ marginTop: 0 }}>Быстрый старт</h2><p className="dim">Создайте правило «Посещение» и выдайте сотруднику invite-код. События СКУД начнут начислять баллы после привязки member_key к профилю спортсмена.</p><Button variant="primary" onClick={() => go('loyalty')}>Настроить loyalty</Button></div></>}
+    {tab === 'overview' && <><div className="tiles"><div className="tile"><div className="l">Сотрудники</div><div className="v">{staff.length || '—'}</div></div><div className="tile"><div className="l">Правила</div><div className="v">{rules.length || '—'}</div></div><div className="tile"><div className="l">Пуши</div><div className="v" style={{ fontSize: '1rem', color: push?.degraded ? 'var(--red)' : 'var(--green)' }}>{pushTile}</div></div><div className="tile"><div className="l">Роль</div><div className="v" style={{ fontSize: '1rem' }}>{roleLabel(admin.role)}</div></div><div className="tile"><div className="l">База</div><div className="v" style={{ fontSize: '1rem', color: 'var(--green)' }}>online</div></div></div>{push?.degraded && <div className="card" style={{ borderColor: 'var(--red)', marginBottom: 12, background: 'color-mix(in srgb,var(--red) 7%,var(--bg-el))' }}><div className="row between" style={{ gap: 10 }}><div className="grow"><div style={{ fontWeight: 600, color: 'var(--red)' }}>Сбои доставки push-уведомлений</div><div className="small dim" style={{ marginTop: 3 }}>не отправлено {push.stats?.failed || 0} шт. за 24 ч{lastPushFail ? ' · последний: ' + lastPushFail.host + (lastPushFail.status ? ' · ' + lastPushFail.status : '') + (lastPushFail.error ? ' · ' + lastPushFail.error : '') : ''}{push.webhookConfigured ? '' : ' · вебхук-алерт не настроен'}</div></div>{canEdit && <Button size="sm" variant="ghost" onClick={resetPush}>Сбросить</Button>}</div></div>}<div className="card"><h2 style={{ marginTop: 0 }}>Быстрый старт</h2><p className="dim">Создайте правило «Посещение» и выдайте сотруднику invite-код. События СКУД начнут начислять баллы после привязки member_key к профилю спортсмена.</p><Button variant="primary" onClick={() => go('loyalty')}>Настроить loyalty</Button></div></>}
     {tab === 'loyalty' && <Loyalty canEdit={canEdit} />}
     {tab === 'rewards' && <Rewards canEdit={canEdit} />}
     {tab === 'staff' && <Staff admin={admin} />}

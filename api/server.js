@@ -384,7 +384,7 @@ function analyticsScope(admin) {
   // owner-скоуп «вся сеть» здесь означал бы чужие демо-клоны. Фильтрация
   // по demo_session дальше в canSeeAthlete / retention / списочных путях.
   if (DEMO_MODE && admin.demo_session) return { kind: 'demoSession', session: admin.demo_session };
-  if (admin.role === 'owner') return { kind: 'all' };
+  if (admin.role === 'owner' || admin.role === 'superadmin') return { kind: 'all' };
   if (admin.role === 'manager') return { kind: 'branch', branch: admin.branch_key || null };
   if (admin.role === 'trainer') return { kind: 'trainer', trainerId: admin.id };
   return { kind: 'statuses' };
@@ -399,7 +399,7 @@ async function requireProgramAccess(admin, userId) {
     const u = db.users.find(x => x.id === userId);
     return !!(u && u.demo_session === admin.demo_session);
   }
-  if (admin.role === 'owner' || admin.role === 'manager') return true;
+  if (admin.role === 'owner' || admin.role === 'superadmin' || admin.role === 'manager') return true;
   if (admin.role === 'trainer') {
     const ta = await listTrainerAssignments();
     return ta.some(x => x.user_id === userId && x.trainer_id === admin.id);
@@ -924,7 +924,7 @@ async function notifyRetentionOwner({ prev, next }) {
     const dRisk = (s.atRisk || 0) - (p ? (p.atRisk || 0) : 0);
     if (dGone <= 0 && dRisk <= 0) return;   // no growth -> nothing to say
     const admins = await listAdmins();
-    const owners = admins.filter(a => a.role === 'owner' && !a.disabled);
+    const owners = admins.filter(a => (a.role === 'owner' || a.role === 'superadmin') && !a.disabled);
     if (!owners.length) return;
     const today = new Date().toISOString().slice(0, 10);
     const parts = [];

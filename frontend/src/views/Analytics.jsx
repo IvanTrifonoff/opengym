@@ -13,6 +13,10 @@ import { confirmSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import TrainerProgram from './TrainerProgram.jsx'
 import Retention from './Retention.jsx'
+// Compat-шим (v1.3.x, Шаг 1-2): superadmin в UI ведёт себя как owner.
+const isOwner = r => r === 'owner' || r === 'superadmin'
+const ROLE_LABELS = { superadmin: 'Владелец платформы', owner: 'Владелец клуба', manager: 'Менеджер', trainer: 'Тренер', operator: 'Оператор' }
+const roleLabel = r => ROLE_LABELS[r] || r
 
 const DAY = 86400000
 const STATUS = {
@@ -71,7 +75,7 @@ export function AthleteCard({ id, admin, trainers, onBack, onProgram }) {
   const [err, setErr] = useState('')
   const [tr, setTr] = useState('')
   const [busy, setBusy] = useState(false)
-  const canManage = admin.role === 'owner' || admin.role === 'manager'
+  const canManage = isOwner(admin.role) || admin.role === 'manager'
   useEffect(() => {
     setD(null); setErr('')
     api('/api/admin/analytics/athlete?id=' + encodeURIComponent(id))
@@ -220,10 +224,10 @@ export default function Analytics({ admin }) {
   const [filter, setFilter] = useState('all')
   const [q, setQ] = useState('')
   const [impErr, setImpErr] = useState('')
-  const canManage = admin.role === 'owner' || admin.role === 'manager'
+  const canManage = isOwner(admin.role) || admin.role === 'manager'
   const canDrill = admin.role !== 'operator'
   const impersonate = a => api('/api/admin/impersonate', { method: 'POST', body: JSON.stringify({ kind: 'athlete', id: a.id }) }).then(d => { location.href = d.redirect }).catch(e => setImpErr(e.message))
-  const scopeLabel = admin.role === 'owner' ? 'вся сеть'
+  const scopeLabel = isOwner(admin.role) ? 'вся сеть'
     : admin.role === 'manager' ? (admin.branch_key ? 'филиал ' + admin.branch_key : 'сеть (все филиалы)')
     : admin.role === 'trainer' ? 'свои спортсмены'
     : 'только статусы'
@@ -250,7 +254,7 @@ export default function Analytics({ admin }) {
       <div style={{ flex: 1 }}>
         <div className="small dim">ИмпульС</div>
         <h1 style={{ margin: 0 }}>Аналитика</h1>
-        <div className="sub">{admin.name} · {admin.role} · {scopeLabel}</div>
+        <div className="sub">{admin.name} · {roleLabel(admin.role)} · {scopeLabel}</div>
       </div>
     </div>
 
@@ -307,7 +311,7 @@ export default function Analytics({ admin }) {
             <div className="ss">{a.visits != null ? 'визиты ' + a.visits + ' · ' : ''}тренировки {a.workouts} · серия {a.streak} нед · {a.freq ? a.freq + '/нед' : '—'} · активность {daysAgo(a.lastActivity)}{a.recurring && a.recurringTime ? ' · постоянные слоты: ' + a.recurringTime : ''}</div>
             {canManage && a.branch && <div className="small dim">филиал {a.branch}{a.trainerId ? ' · тренер привязан' : ''}</div>}
           </div>
-          {admin.role === 'owner' && <button className="btn xs plain" onClick={e => { e.stopPropagation(); impersonate(a) }}>Войти как</button>}
+          {isOwner(admin.role) && <button className="btn xs plain" onClick={e => { e.stopPropagation(); impersonate(a) }}>Войти как</button>}
           {canDrill && <Icon name="chevronRight" style={{ color: 'var(--label-3)' }} />}
         </div>)}</div>}
     </>}

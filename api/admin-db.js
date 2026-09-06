@@ -9,7 +9,7 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS admin_users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('owner','manager','trainer','operator')),
+  role TEXT NOT NULL CHECK (role IN ('superadmin','owner','manager','trainer','operator')),
   disabled BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -302,6 +302,24 @@ CREATE TABLE IF NOT EXISTS athlete_metrics (
 CREATE INDEX IF NOT EXISTS athlete_metrics_user_day_idx ON athlete_metrics (user_id, day DESC);
 `;
 
+const MULTITENANT_MIGRATION = `
+CREATE TABLE IF NOT EXISTS clubs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  owner_admin_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at TIMESTAMPTZ
+);
+ALTER TABLE branches ADD COLUMN IF NOT EXISTS club_id TEXT;
+ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS club_id TEXT;
+CREATE INDEX IF NOT EXISTS branches_club_id_idx ON branches (club_id);
+CREATE INDEX IF NOT EXISTS admin_users_club_id_idx ON admin_users (club_id);
+-- Роль superadmin (владелец платформы): club_id у него null, видит все клубы.
+-- CHECK пересоздаётся: без NOT NULL — metadata-only, прод не блокирует.
+ALTER TABLE admin_users DROP CONSTRAINT IF EXISTS admin_users_role_check;
+ALTER TABLE admin_users ADD CONSTRAINT admin_users_role_check CHECK (role IN ('superadmin','owner','manager','trainer','operator'));
+`;
+
 export const adminDbReady = (async () => {
   await integrationDbReady;
   if (!pool) return;
@@ -315,6 +333,7 @@ export const adminDbReady = (async () => {
     await pool.query(METRICS_MIGRATION);
     await pool.query(OUTBOX_MIGRATION);
     await pool.query(DEMO_MIGRATION);
+    await pool.query(MULTITENANT_MIGRATION);
   } catch (error) {
     initError = error;
     console.error('admin database init failed:', error.message);
@@ -327,6 +346,10 @@ async function ready() {
 }
 
 export function roleAllowed(role, allowed) {
+  // Compat-шим (v1.3.x, Шаг 1-2): superadmin (владелец платформы) проходит
+  // все проверки, которые раньше проходил owner. Жёсткое разделение ролей
+  // и клубный скоуп добавятся на Шаге 3 (см. docs/multi-tenant.md).
+  if (role === 'superadmin' && allowed.includes('owner')) return true;
   return allowed.includes(role);
 }
 
