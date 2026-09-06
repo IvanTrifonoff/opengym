@@ -967,7 +967,11 @@ export async function dispatchOutbox({ send, batch = 25 } = {}) {
     await client.query('COMMIT');
     for (const row of rows) {
       try {
-        const payload = row.payload || {};
+        // ПРАВИЛО УВЕДОМЛЕНИЙ: каждый вид несёт payload.kind — машинное имя
+        // источника — чтобы фронтенд повёл получателя к месту события
+        // (см. шапку api/routes/notifications.js). Лояльностные сообщения из
+        // outbox кладутся в центр уведомлений с kind из строки outbox.
+        const payload = { ...(row.payload || {}), kind: row.kind || 'loyalty' };
         // keep every loyalty message in the in-app notification center too (idempotent —
         // a retried send re-claims the same outbox row and must not duplicate the entry)
         await pool.query(
@@ -980,7 +984,7 @@ export async function dispatchOutbox({ send, batch = 25 } = {}) {
           title: 'openGym',
           body: String(payload.message || payload.body || '').slice(0, 300),
           tag: payload.tag || ('loyalty-' + row.id),
-          data: { outbox_id: row.id, rule_id: payload.rule_id, event_id: payload.event_id }
+          data: { outbox_id: row.id, rule_id: payload.rule_id, event_id: payload.event_id, kind: payload.kind }
         });
         await pool.query('UPDATE loyalty_outbox SET delivered_at = now(), claimed_at = NULL, claim_token = NULL, last_error = NULL WHERE id = $1 AND claim_token = $2', [row.id, token]);
         sent++;

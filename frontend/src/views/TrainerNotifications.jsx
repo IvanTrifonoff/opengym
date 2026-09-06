@@ -11,8 +11,10 @@ function fmtWhen(iso) {
   return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
 }
 
-// Trainer notification center (/trainer/notifications): booking requests and their
-// statuses land here — same app_notifications table, scoped to the admin session.
+// Trainer notification center (/trainer/notifications and /admin/notifications):
+// booking requests, retention alerts and site leads land here — same app_notifications
+// table, scoped to the admin session. Every item must lead to its source (rule in
+// api/routes/notifications.js) so the staff member can react in one tap.
 export default function TrainerNotifications() {
   const nav = useNavigate()
   const [items, setItems] = useState(null)
@@ -51,18 +53,33 @@ export default function TrainerNotifications() {
       )}
 
       {items && !err && items.map(n => {
-        // Заявка на запись: проваливаемся в календарь тренера с подсвеченной заявкой.
-        const isBooking = n.payload && n.payload.kind === 'booking' && n.payload.booking_id
+        // ПРАВИЛО УВЕДОМЛЕНИЙ (см. api/routes/notifications.js): тап по
+        // уведомлению ведёт к источнику события. kind → маршрут:
+        //   booking       → /trainer → календарь + подсветка заявки
+        //   retention     → /admin/analytics → «Удержание» + фокус на спортсмене
+        //   retention-net → /admin/analytics → «Удержание»
+        //   promo_lead    → /admin?tab=leads + фокус на заявке
+        const kind = n.payload && n.payload.kind
+        const isBooking = kind === 'booking' && n.payload.booking_id
+        const isRetention = kind === 'retention' && n.payload.athleteId
+        const isRetentionNet = kind === 'retention-net'
+        const isLead = kind === 'promo_lead' && n.payload.lead_id
+        const go = isBooking ? () => nav('/trainer', { state: { tab: 'calendar', focusBooking: n.payload.booking_id } })
+          : isRetention ? () => nav('/admin/analytics', { state: { tab: 'retention', focusAthlete: n.payload.athleteId } })
+          : isRetentionNet ? () => nav('/admin/analytics', { state: { tab: 'retention' } })
+          : isLead ? () => nav('/admin?tab=leads', { state: { focusLead: n.payload.lead_id } })
+          : null
+        const tag = isBooking ? 'Открыть заявку' : isRetention ? 'Удержание' : isRetentionNet ? 'Удержание' : isLead ? 'Заявка с сайта' : null
         return <div key={n.id} className={'card' + (n.read ? '' : ' unread')}
-          style={{ marginBottom: 10, cursor: isBooking ? 'pointer' : 'default' }}
-          onClick={isBooking ? () => nav('/trainer', { state: { tab: 'calendar', focusBooking: n.payload.booking_id } }) : undefined}>
+          style={{ marginBottom: 10, cursor: go ? 'pointer' : 'default' }}
+          onClick={go || undefined}>
           <div className="row between" style={{ gap: 8 }}>
             <div style={{ minWidth: 0 }}>
               <div className="lbl2">{n.title}</div>
               <div className="ttl" style={{ fontSize: 15, lineHeight: 1.4 }}>{n.body}</div>
             </div>
             <div className="row" style={{ gap: 6, flex: 'none' }}>
-              {isBooking && <span className="tag acc">Открыть заявку</span>}
+              {tag && <span className="tag acc">{tag}</span>}
               <span className="small muted" style={{ whiteSpace: 'nowrap' }}>{fmtWhen(n.created_at)}</span>
             </div>
           </div>

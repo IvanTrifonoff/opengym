@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api.js'
 import { EXIDX } from '../lib/exercises.js'
 import { exName } from '../lib/i18n.js'
@@ -198,7 +198,18 @@ const fmtNum2 = n => (Math.round(n * 10) / 10).toLocaleString('ru-RU')
 
 export default function Analytics({ admin }) {
   const nav = useNavigate()
-  const [tab, setTab] = useState('athletes')
+  const loc = useLocation()
+  // ПРАВИЛО УВЕДОМЛЕНИЙ (см. api/routes/notifications.js): переход из
+  // уведомления retention/retention-net приносит state { tab: 'retention',
+  // focusAthlete? } — открываем вкладку «Удержание» и фокусируем спортсмена.
+  const navState = loc.state || {}
+  const [tab, setTab] = useState(navState.tab === 'retention' ? 'retention' : 'athletes')
+  const [focusAthlete, setFocusAthlete] = useState(navState.focusAthlete || null)
+  useEffect(() => {
+    const st = loc.state || {}
+    if (st.tab === 'retention') setTab('retention')
+    if (st.focusAthlete) setFocusAthlete(st.focusAthlete)
+  }, [loc.state])
   const [summary, setSummary] = useState(null)
   const [athletes, setAthletes] = useState([])
   const [leaderboard, setLeaderboard] = useState(null)
@@ -278,7 +289,7 @@ export default function Analytics({ admin }) {
         <button key={v} className={tab === v ? 'on' : ''} onClick={() => setTab(v)}>{label}</button>)}
     </div>
 
-    {tab === 'retention' && <Retention admin={admin} />}
+    {tab === 'retention' && <Retention admin={admin} focusAthlete={focusAthlete} />}
 
     {tab === 'leaderboard' && leaderboard && <Leaderboard lb={leaderboard} />}
 

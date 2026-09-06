@@ -163,6 +163,32 @@ impersonation: `impersonate`, `impersonate/back` ·
 `GET /api/notifications` · `POST /api/notifications/read` · `POST /api/badge/seen` ·
 админ-версии: `admin/notifications`, `admin/notifications/read`
 
+> **ПРАВИЛО УВЕДОМЛЕНИЙ (обязательно для всех агентов):** каждое уведомление
+> ОБЯЗАНО вести к своему источнику — получатель одним тапом должен попасть к
+> событию и отреагировать (подтвердить заявку, посмотреть баллы, открыть
+> спортсмена в «Удержании»). Уведомление без перехода — дефект.
+>
+> При добавлении нового вида:
+> 1. Backend (`api/*`): заполни `payload.kind` (машинное имя источника) и все
+>    id для перехода (`booking_id`, `athlete_id`, `goal_id`, `lead_id`…).
+> 2. Frontend: добавь kind в центр уведомлений получателя —
+>    `frontend/src/views/Notifications.jsx` (атлет) или
+>    `frontend/src/views/TrainerNotifications.jsx` (тренер/админ) — и сопоставь
+>    kind → маршрут + состояние (тап должен доводить до конкретного объекта:
+>    подсветка/фильтр/фокус).
+>
+> Карта «kind → куда ведёт тап» (v1.2.63):
+>
+> | kind | получатель | куда ведёт |
+> |---|---|---|
+> | `booking`, `reminder`, `recurring` | атлет | «Мои записи» (Home → CoachSheet) |
+> | `goal` | атлет | `/stats` — прогресс по целям |
+> | `loyalty` (outbox `ob-*`) | атлет | `/settings` — баллы и награды |
+> | `booking` | тренер | `/trainer` → календарь + подсветка заявки |
+> | `retention` | тренер | `/admin/analytics` → «Удержание» + фокус на спортсмене |
+> | `retention-net` | админ/владелец | `/admin/analytics` → «Удержание» |
+> | `promo_lead` | админ/владелец | `/admin?tab=leads` + фокус на заявке |
+
 ### Вебхуки (`routes/webhook.js`)
 `POST /api/integrations/loyalty/events` · `POST /api/integrations/access/events`
 (идентичны по секрету `*_WEBHOOK_SECRET`)

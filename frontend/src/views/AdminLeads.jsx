@@ -35,12 +35,18 @@ function fmtWhen(iso) {
   return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
 }
 
-export default function AdminLeads({ onViewed }) {
+export default function AdminLeads({ onViewed, focusLead }) {
   const [leads, setLeads] = useState(null)
   const [qr, setQr] = useState(null)
   const [qrUrl, setQrUrl] = useState('')
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  const focusRef = useRef(null)
+  // ПРАВИЛО УВЕДОМЛЕНИЙ (см. api/routes/notifications.js): переход из
+  // уведомления promo_lead несёт lead_id — подсвечиваем карточку заявки.
+  useEffect(() => {
+    if (focusRef.current) focusRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [leads, focusLead])
   const fileRef = useRef(null)
 
   useEffect(() => {
@@ -114,8 +120,11 @@ export default function AdminLeads({ onViewed }) {
         </div>
       )}
 
-      {leads && leads.map(l => (
-        <div key={l.id} className={'card' + (l.viewed ? '' : ' unread')} style={{ marginBottom: 10 }}>
+      {leads && leads.map(l => {
+        const focused = focusLead && l.id === focusLead
+        return (
+        <div key={l.id} ref={focused ? focusRef : undefined} className={'card' + (l.viewed ? '' : ' unread')}
+          style={{ marginBottom: 10, ...(focused ? { border: '1px solid var(--acc)', background: 'color-mix(in srgb, var(--acc) 12%, var(--bg-el))' } : {}) }}>
           <div className="row between" style={{ gap: 10 }}>
             <div style={{ minWidth: 0 }}>
               <div className="lbl2">
@@ -139,7 +148,8 @@ export default function AdminLeads({ onViewed }) {
             <span className="small muted" style={{ whiteSpace: 'nowrap', marginLeft: 8 }}>{fmtWhen(l.created_at)}</span>
           </div>
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
