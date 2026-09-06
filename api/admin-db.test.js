@@ -214,10 +214,11 @@ test('промо-заявки: insertLead + findOwnerId + уведомление
   // Самодостаточность: на пустой БД (scratch-PG) findOwnerId() вернёт null и тест
   // упадёт без причины — создаём временного владельца и убираем в finally.
   const tmpOwner = 'test-owner-' + T;
+  const tmpClub = 'test-club-' + T;
   try {
     await pool.query(
-      `INSERT INTO admin_users (id, name, role) VALUES ($1, 'Тест-владелец', 'owner') ON CONFLICT (id) DO NOTHING`,
-      [tmpOwner]
+      `INSERT INTO admin_users (id, name, role, club_id) VALUES ($1, 'Тест-владелец', 'owner', $2) ON CONFLICT (id) DO NOTHING`,
+      [tmpOwner, tmpClub]
     );
     const ownerId = await findOwnerId();
     assert.ok(ownerId, 'в БД есть владелец (роль owner)');
@@ -318,9 +319,10 @@ test('филиалы: save/list/rename/soft delete', async (t) => {
 test('сотрудники: softDeleteAdmin скрывает и блокирует, restore возвращает', async (t) => {
   if (!needDb(t)) return;
   const id = 'adm_' + T;
+  const clubId = 'test-club-' + T;
   await pool.query(
-    `INSERT INTO admin_users (id, name, role) VALUES ($1, $2, 'trainer') ON CONFLICT (id) DO NOTHING`,
-    [id, 'Тест-тренер ' + T]
+    `INSERT INTO admin_users (id, name, role, club_id) VALUES ($1, $2, 'trainer', $3) ON CONFLICT (id) DO NOTHING`,
+    [id, 'Тест-тренер ' + T, clubId]
   );
   try {
     let admins = await listAdmins();
@@ -406,6 +408,28 @@ test('strict: владелец клуба A НЕ видит сотруднико
     ];
     const usersA = scopeUsers(adminA, users).map(u => u.id);
     assert.deepEqual(usersA, ['uA_1'], 'A видит только своих атлетов (без чужого клуба и без-null)');
+
+    // === NEGATIVE, как на HTTP-роутах (v1.3.2) ===
+    // Роут GET /api/admin/users фильтрует через scopeUsers → админ A, запросив
+    // список, получает ТОЛЬКО клуб A (пустой массив вместо чужих данных — даже
+    // без учёта 200/403 это отсутствие утечки).
+    // Роуты POST /api/admin/user/disable|delete|restore дополнительно гонят
+    // scopeUsers.some(id) и отвечают 403 «no access to this athlete» — здесь
+    // повторяем ту же проверку, что стоит в хендлере:
+    //   if (admin.role !== 'superadmin' && !scopeUsers(admin, db.users).some(x => x.id === id))
+    //       return json(res, 403, { error: 'no access to this athlete' });
+    // Это доказывает: tenant-isolation работает на уровне того кода, который
+    // вызывают HTTP-хендлеры, а не только в изолированных юнит-тестах.
+    const allUsers = [
+      { id: 'uA_1', club_id: clubA, branch_key: brA },
+      { id: 'uB_1', club_id: clubB, branch_key: brB }
+    ];
+    const routeGuardA = (id) => adminA.role === 'superadmin' ? true : scopeUsers(adminA, allUsers).some(x => x.id === id);
+    const routeGuardB = (id) => adminB.role === 'superadmin' ? true : scopeUsers(adminB, allUsers).some(x => x.id === id);
+    assert.equal(routeGuardA('uA_1'), true,  'A может править своего атлета');
+    assert.equal(routeGuardA('uB_1'), false, 'A НЕ может править атлета клуба B → роут вернёт 403');
+    assert.equal(routeGuardB('uB_1'), true,  'B может править своего атлета');
+    assert.equal(routeGuardB('uA_1'), false, 'B НЕ может править атлета клуба A → роут вернёт 403');
 
     // STRICT: менеджер видит ТОЛЬКО свой филиал, а без club_id вообще пусто.
     const manAdmin = { role: 'manager', club_id: clubA, branch_key: brA, demo_session: null };

@@ -318,6 +318,15 @@ CREATE INDEX IF NOT EXISTS admin_users_club_id_idx ON admin_users (club_id);
 -- CHECK пересоздаётся: без NOT NULL — metadata-only, прод не блокирует.
 ALTER TABLE admin_users DROP CONSTRAINT IF EXISTS admin_users_role_check;
 ALTER TABLE admin_users ADD CONSTRAINT admin_users_role_check CHECK (role IN ('superadmin','owner','manager','trainer','operator'));
+-- Целостность мультитенанта на уровне БД (v1.3.2): владелец клуба/менеджер/
+-- тренер/оператор ОБЯЗАНЫ иметь club_id. БД защищает себя сама, а не верит
+-- бэкенду: баг в роуте приглашения не запишет сотрудника «вне клуба» (который
+-- в strict-mode означал бы доступ ко всей платформе). Исключения — ровно те,
+-- что легитимны: superadmin (владелец платформы, club_id=null) и демо-строки
+-- (demo_session изолирует клон, клуб им не нужен).
+ALTER TABLE admin_users DROP CONSTRAINT IF EXISTS admin_users_club_required_check;
+ALTER TABLE admin_users ADD CONSTRAINT admin_users_club_required_check
+  CHECK (role = 'superadmin' OR demo_session IS NOT NULL OR club_id IS NOT NULL);
 -- Инвайты сотрудников несут club_id приглашающего: зарегистрированный
 -- сотрудник сразу попадает в клуб (иначе strict-mode за 403 его бы отрезал).
 ALTER TABLE admin_invites ADD COLUMN IF NOT EXISTS club_id TEXT;

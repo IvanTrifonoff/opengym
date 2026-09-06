@@ -113,36 +113,21 @@ const adminBootstrap = syncAdminOwners(db.users, db.creds, ADMIN_UIDS);
 const isAdmin = user => !!user && (user.admin === true || ADMIN_UIDS.includes(user.id));
 function saveDb() { atomicWrite(dbFile, JSON.stringify(db, null, 2)); }
 
-// Multi-tenant backfill (v1.3.x, Шаг 3): атлеты, зарегистрированные ДО появления
-// клубов (август 2026), не имеют club_id/branch_key в db.json — без этого
-// клубные скоупы (scopeUsers/analytics) не увидели бы их. При старте, после
-// готовности PG, привязываем «исторических» реальных атлетов к первому клубу
-// и его филиалу (единственная живая конфигурация в тот период). Идемпотентно:
-// трогает только users без club_id и без demo_session (демо-клоны изолированы
-// своим demo_session и спавнятся с нуля). Супер-админ (Trfnv) — не атлет клуба,
-// его клубная привязка остаётся null (он видит ВСЁ через role superadmin).
-async function bindLegacyAthletesToClub() {
+// Multi-tenant legacy backfill (v1.3.x, Шаг 3-fix): привязка исторических
+// атлетов вынесена из boot-цикла в ОДНОРАЗОВУЮ миграцию
+// api/migrate-athlete-club.js (запуск: node migrate-athlete-club.js --apply).
+// В boot-цикле — только страховочный гард под флагом RUN_LEGACY_BIND=1
+// (нужен, если восстановлен бэкап до-клубной эпохи); обычный деплой его не
+// зовёт, чтобы мутация db.json не повторялась на каждом рестарте.
+async function runLegacyBindGuard() {
+  if (process.env.RUN_LEGACY_BIND !== '1') return;
   try {
     await adminDbReady;
     if (!pool) return;
-    const r = await pool.query(
-      `SELECT b.id, b.club_id FROM branches b
-       WHERE b.deleted_at IS NULL AND b.club_id IS NOT NULL
-       ORDER BY b.created_at LIMIT 1`
-    ).catch(e => { console.error('legacy bind: branches query failed:', e.message); return null; });
-    if (!r || !r.rows.length) return;   // свежая БД без филиалов — нечего наследовать
-    const { id: branchId, club_id: clubId } = r.rows[0];
-    let n = 0, dirty = false;
-    for (const u of db.users) {
-      if (u.club_id || u.demo_session || isAdmin(u)) continue;
-      u.club_id = clubId;
-      u.branch_key = branchId;
-      n++; dirty = true;
-    }
-    if (dirty) saveDb();
-    console.log('[multitenant] legacy athletes bound to club', clubId, 'branch', branchId, '->', n, 'users');
+    const { migrateLegacyAthletes } = await import('./migrate-athlete-club.js');
+    await migrateLegacyAthletes();
   } catch (e) {
-    console.error('legacy athlete bind failed:', e.message);
+    console.error('legacy bind guard failed:', e.message);
   }
 }
 function atomicWrite(file, content) {
@@ -1058,7 +1043,7 @@ async function runReminders() {
   // (страховка для пользователей, сохранявшихся до появления таблицы).
   adminDbReady.then(() => backfillAthleteMetrics({ users: db.users, stateOf: readState }))
     .catch(e => console.error('metrics backfill failed:', e.message));
-  bindLegacyAthletesToClub();
+  runLegacyBindGuard();
   scheduleRetentionSnapshot({ users: db.users, stateOf: readState, dataDir: DATA,
     hour: parseInt(process.env.RETENTION_RUN_HOUR || '4', 10),
     onSnapshot: async d => { await notifyRetentionTrainers(d); await notifyRetentionOwner(d); } });

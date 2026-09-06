@@ -42,6 +42,29 @@ export function createAdminRoutes(deps) {
     crypto, ORIGIN, RP_ID, RP_NAME, SECURE, DATA, path, fs
   } = deps;
 
+  // Async batched state reader (v1.3.2, Шаг 3-fix): списковые эндпоинты НЕ
+  // читают state-файлы синхронно в цикле (N×readFileSync блокировали бы event
+  // loop при 500 атлетах — «шумный сосед» для других клубов). Чтение идёт
+  // через fs.promises порциями по STATE_READ_BATCH (ограниченная
+  // конкурентность); каждый файл читается не более одного раза за запрос.
+  // Возвращает Map<uid, state|null>.
+  const STATE_READ_BATCH = 20;
+  async function readManyStates(ids) {
+    const out = new Map();
+    const uniq = [...new Set(ids.filter(Boolean))];
+    for (let i = 0; i < uniq.length; i += STATE_READ_BATCH) {
+      const chunk = uniq.slice(i, i + STATE_READ_BATCH);
+      const results = await Promise.allSettled(chunk.map(uid =>
+        fs.promises.readFile(stateFile(uid), 'utf8').then(txt => {
+          try { out.set(uid, JSON.parse(txt)); } catch { out.set(uid, null); }
+        }).catch(() => { out.set(uid, null); })
+      ));
+      for (let j = 0; j < chunk.length; j++) if (!out.has(chunk[j])) out.set(chunk[j], null);
+      if (results.some(r => r.status === 'rejected')) { /* already null-mapped */ }
+    }
+    return out;
+  }
+
   return [
 
   /* ---------- push monitor: статус доставки + алерты ---------- */
@@ -314,11 +337,15 @@ export function createAdminRoutes(deps) {
   } },
 
   /* ---------- users dashboard ---------- */
-  // One row per user, cheap enough for a personal instance (reads each state file once).
+  // Спортсмены клуба. ВАЖНО (v1.3.2): state-файлы читаются АСИНХРОННО,
+  // батчами по STATE_READ_BATCH — синхронный цикл readState по всем атлетам
+  // клуба заблокировал бы event loop (см. readManyStates выше).
   { method: 'GET', path: '/api/admin/users', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
-    const users = scopeUsers(admin, db.users).filter(u => !u.deleted).map(u => {
-      const S = readState(u.id) || {};
+    const visible = scopeUsers(admin, db.users).filter(u => !u.deleted);
+    const states = await readManyStates(visible.map(u => u.id));
+    const users = visible.map(u => {
+      const S = states.get(u.id) || {};
       const workouts = S.workouts || [];
       const last = workouts[workouts.length - 1];
       return {
