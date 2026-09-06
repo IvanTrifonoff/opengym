@@ -306,7 +306,7 @@ function AdminDashboard({ admin, onLogout }) {
   const pushTile = push ? (push.degraded ? 'сбои' : 'ok') : '—'
   const canEdit = isOwner(admin.role) || admin.role === 'manager'
   const isDemo = !!admin.demo_session   // демо-клон (demo.gym.trfnv.ru): приватный режим не нужен
-  const tabs = [['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ['staff', 'Сотрудники'], ...(canEdit ? [['branches', 'Филиалы'], ['invites', 'Приглашения'], ['leads', 'Заявки']] : [])]
+  const tabs = [['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ...(admin.role !== 'superadmin' ? [['staff', 'Сотрудники']] : []), ...(canEdit && admin.role !== 'superadmin' ? [['branches', 'Филиалы']] : []), ...(canEdit ? [['invites', 'Приглашения'], ['leads', 'Заявки']] : [])]
   const back = () => api('/api/admin/impersonate/back', { method: 'POST', body: '{}' }).then(d => { location.href = d.redirect || '/admin' }).catch(() => {})
   return <div className="narrow" style={{ paddingBottom: 40 }}>
     <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">ИмпульС</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {roleLabel(admin.role)}{admin.role === 'superadmin' ? ' · Платформа' : (admin.club_name ? ' · ' + admin.club_name : '')}{admin.branch_name ? ' · ' + admin.branch_name : ''}</div></div><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" style={{ position: 'relative' }} onClick={() => nav('/admin/notifications')} aria-label="Уведомления"><Icon name="bell" />{unread > 0 && <span className="notif-badge">{unread > 9 ? '9+' : unread}</span>}</button><button className="iconbtn" onClick={() => nav('/admin/analytics')} aria-label="Аналитика"><Icon name="chart" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
@@ -318,9 +318,13 @@ function AdminDashboard({ admin, onLogout }) {
         { key: 'overview', icon: 'house', label: 'Обзор', onClick: () => go('overview') },
         { key: 'loyalty', icon: 'crown', label: 'Loyalty', onClick: () => go('loyalty') },
         { key: 'rewards', icon: 'medal', label: 'Награды', onClick: () => go('rewards') },
-        { key: 'staff', icon: 'person', label: 'Сотрудники', onClick: () => go('staff') },
+        // v1.4.5: суперадмин управляет сотрудниками и филиалами внутри «Клубы» —
+        // отдельные вкладки ему не показываем (owner/manager сохраняют их).
+        ...(admin.role !== 'superadmin' ? [{ key: 'staff', icon: 'person', label: 'Сотрудники', onClick: () => go('staff') }] : []),
+        ...(canEdit && admin.role !== 'superadmin' ? [
+          { key: 'branches', icon: 'house', label: 'Филиалы', onClick: () => go('branches') }
+        ] : []),
         ...(canEdit ? [
-          { key: 'branches', icon: 'house', label: 'Филиалы', onClick: () => go('branches') },
           { key: 'invites', icon: 'link', label: 'Приглашения', onClick: () => go('invites') },
           { key: 'leads', icon: 'clipboard', label: 'Заявки', onClick: () => go('leads') }
         ] : []),
@@ -336,7 +340,7 @@ function AdminDashboard({ admin, onLogout }) {
     {tab === 'invites' && <Invites admin={admin} />}
     {tab === 'private' && !isDemo && <PrivateCodes admin={admin} />}
     {tab === 'leads' && <AdminLeads onViewed={n => setLeadUnread(n)} focusLead={loc.state && loc.state.focusLead} />}
-    {tab === 'clubs' && admin.role === 'superadmin' && <Clubs />}
+    {tab === 'clubs' && admin.role === 'superadmin' && <Clubs admin={admin} />}
   </div>
 }
 

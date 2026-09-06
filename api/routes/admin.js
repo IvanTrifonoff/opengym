@@ -178,17 +178,27 @@ export function createAdminRoutes(deps) {
   /* ---------- staff: invite / register / update ---------- */
   // Owner/manager: создать инвайт-код для нового сотрудника (с ролью).
   { method: 'POST', path: '/api/admin/staff/invite', handler: async (req, res) => {
-    const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
+    const admin = await requireAdminAccount(req, res, ['owner', 'manager', 'superadmin']); if (!admin) return;
     const body = await readBody(req);
     try {
-      // Филиал выбирается в форме (Шаг 4). Проверка scope: филиал обязан
-      // принадлежать клубу админа — чужой branch_key (руками в запросе) не пройдёт.
+      // Клуб привязки: у owner/manager — всегда свой club_id (нельзя пригласить
+      // «в чужой клуб»). Суперадмин (без club_id) явно указывает club_id из тела —
+      // он управляет филиалами и сотрудниками прямо из карточки клуба (v1.4.5).
+      let clubId = admin.club_id || String(body.club_id || '').trim() || null;
+      if (admin.role === 'superadmin' && !clubId) return json(res, 400, { error: 'club_id required for platform owner' });
+      // Филиал выбирается в форме. Проверка scope: филиал обязан принадлежать
+      // целевому клубу (чужой branch_key руками в запросе не пройдёт). У
+      // суперадмина нет своего скоупа — проверяем принадлежность к clubId.
       let branchKey = String(body.branch_key || '').trim() || null;
       if (branchKey) {
-        const mine = scopeBranches(admin, await listBranches());
-        if (!mine.some(b => b.id === branchKey)) return json(res, 400, { error: 'branch not in your club' });
+        const all = await listBranches();
+        const target = all.find(b => b.id === branchKey);
+        if (!target) return json(res, 400, { error: 'branch not found' });
+        if (clubId && target.club_id !== clubId) return json(res, 400, { error: 'branch not in the club' });
+        if (admin.role !== 'superadmin' && !scopeBranches(admin, all).some(b => b.id === branchKey))
+          return json(res, 400, { error: 'branch not in your club' });
       }
-      const invite = await createAdminInvite({ name: body.name, role: body.role, createdBy: admin.id, clubId: admin.club_id || null, branchKey });
+      const invite = await createAdminInvite({ name: body.name, role: body.role, createdBy: admin.id, clubId, branchKey });
       json(res, 200, { ok: true, invite });
     } catch (error) { json(res, 400, { error: error.message }); }
   } },
