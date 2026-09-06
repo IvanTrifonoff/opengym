@@ -212,6 +212,23 @@
   footer .r{margin-left:auto;display:flex;gap:18px}
   footer .r a{color:var(--label-3)}
   footer .r a:hover{color:var(--label)}
+
+  /* trial-club self-service card */
+  .trial-card{background:linear-gradient(160deg,color-mix(in srgb,var(--acc) 7%,var(--surface)),var(--surface));border:1px solid var(--acc-line);border-radius:var(--r-lg);padding:24px;margin-top:26px;box-shadow:0 14px 40px rgba(0,0,0,.3)}
+  .trial-h{font-size:20px;font-weight:700;letter-spacing:-.018em;line-height:1.2}
+  .trial-h .acc{color:var(--acc)}
+  .trial-s{color:var(--label-2);font-size:14px;line-height:1.45;margin:8px 0 16px}
+  .trial-grid{display:grid;grid-template-columns:1fr;gap:12px}
+  @media (min-width:700px){.trial-grid{grid-template-columns:1fr 1fr}.trial-grid .tfull{grid-column:1/-1}}
+  .trial-grid label span{display:block;font-size:12.5px;color:var(--label-2);margin-bottom:5px}
+  .trial-grid input{width:100%;box-sizing:border-box;background:var(--bg-el);border:1px solid var(--sep-op);border-radius:12px;color:var(--label);padding:11px 12px;font-size:14.5px;font-family:inherit}
+  .trial-grid input:focus{outline:none;border-color:var(--acc-line)}
+  .trial-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .trial-note{color:var(--label-3);font-size:12.5px;line-height:1.4;margin-top:12px}
+  .trial-status{font-size:13.5px}
+  .trial-ok{color:#5cd48c}
+  .trial-err{color:#ff8a8a}
+
 </style>
 </head>
 <body>
@@ -609,6 +626,20 @@
         </div>
       </form>
     </div>
+
+    <div class="trial-card" id="trial-form">
+      <div class="trial-h">Создайте свой клуб за минуту — <span class="acc">бесплатно на 14 дней</span></div>
+      <div class="trial-s">Мы развернём для вас изолированный клуб с примерами данных (тренер, спортсмены, программа лояльности) и пришлём на почту одноразовую ссылку входа. Смотрите систему изнутри как владелец — без менеджера и обязательств.</div>
+      <form id="trial-form-el" class="trial-grid" novalidate>
+        <label><span>E-mail *</span><input type="email" name="email" id="trial-email" required maxlength="200" placeholder="you@company.ru" autocomplete="email"></label>
+        <label><span>Название клуба</span><input name="gym" id="trial-gym" maxlength="120" placeholder="Мой фитнес-клуб"></label>
+        <div class="tfull trial-actions">
+          <button class="btn primary" type="submit" id="trial-btn">Создать мой клуб</button>
+          <div id="trial-status" class="trial-status"></div>
+        </div>
+      </form>
+      <div class="trial-note">Придёт письмо со ссылкой «Войти в мой клуб». Trial-клуб живёт 14 дней и автоматически удаляется, если вы не продолжите. Данные клуба изолированы — их не видят другие арендаторы.</div>
+    </div>
   </section>
 
 <section class="alt" id="faq">
@@ -713,6 +744,66 @@
       status.textContent = err.message;
     } finally { btn.disabled = false; }
   });
+
+  // --- Trial-клуб (самообслуживание). PoW как на демо-кнопке: challenge из
+  // GET /api/trial/challenge, nonce = sha256(challenge+nonce) с N нулей.
+  function trialHex(buf) {
+    var b = new Uint8Array(buf), out = '';
+    for (var i = 0; i < b.length; i++) out += (b[i] < 16 ? '0' : '') + b[i].toString(16);
+    return out;
+  }
+  async function trialSolvePow(challenge, difficulty) {
+    if (!difficulty) return '0';
+    var enc = new TextEncoder();
+    var base = enc.encode(challenge);
+    var target = '0'.repeat(difficulty);
+    for (var nonce = 0; nonce < 5000000; nonce++) {
+      var n = enc.encode(String(nonce));
+      var buf = new Uint8Array(base.length + n.length);
+      buf.set(base, 0); buf.set(n, base.length);
+      var h = await crypto.subtle.digest('SHA-256', buf);
+      if (trialHex(h).slice(0, difficulty) === target) return String(nonce);
+    }
+    throw new Error('timeout');
+  }
+  var trialForm = document.getElementById('trial-form');
+  document.addEventListener('submit', async function (e) {
+    if (e.target.id !== 'trial-form-el') return;
+    e.preventDefault();
+    var status = document.getElementById('trial-status');
+    var btn = document.getElementById('trial-btn');
+    var email = document.getElementById('trial-email').value.trim();
+    var gym = document.getElementById('trial-gym').value.trim();
+    if (!email) { status.className = 'trial-status trial-err'; status.textContent = 'Укажите e-mail — на него придёт ссылка входа.'; return; }
+    btn.disabled = true; status.className = 'trial-status'; status.textContent = 'Проверяем… секунду';
+    try {
+      var ch = await (await fetch('/api/trial/challenge')).json();
+      status.textContent = 'Создаём ваш клуб… (антибот-проверка)';
+      var nonce = await trialSolvePow(ch.challenge, ch.difficulty || 0);
+      var r = await fetch('/api/trial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, gym: gym, challenge: ch.challenge, nonce: nonce })
+      });
+      var data = {};
+      try { data = await r.json(); } catch (_) {}
+      if (!r.ok) {
+        var msg = data.error === 'too many attempts — try again in an hour' ? 'Слишком много заявок с этого адреса. Попробуйте через час.' :
+                  (data.error === 'trial email quota exceeded — try again later' ? 'Временный лимит заявок исчерпан — попробуйте позже или напишите на ivan@trfnv.ru.' :
+                  (data.error && data.error.indexOf('email') !== -1 ? 'Похоже, адрес не принимает письма. Проверьте e-mail или напишите на ivan@trfnv.ru.' :
+                  'Не удалось создать клуб. Попробуйте ещё раз или напишите на ivan@trfnv.ru'));
+        throw new Error(msg);
+      }
+      trialForm.querySelector('form').style.display = 'none';
+      status.className = 'trial-status trial-ok';
+      status.textContent = 'Клуб создан! Проверьте почту ' + email + ' — мы отправили одноразовую ссылку «Войти в мой клуб».';
+      trialForm.querySelector('.trial-note').style.display = 'none';
+    } catch (err) {
+      status.className = 'trial-status trial-err';
+      status.textContent = err.message || 'Не удалось создать клуб. Попробуйте ещё раз.';
+    } finally { btn.disabled = false; }
+  });
+
 </script>
 </body>
 </html>

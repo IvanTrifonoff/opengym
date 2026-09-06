@@ -26,7 +26,9 @@ export function createAdminRoutes(deps) {
     putChallenge, takeChallenge,
     analyticsScope, requireProgramAccess, bookingNotification,
     adminDbReady, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
-    listAdmins, registerAdmin, updateAdmin, updateAdminCounter, createAdminInvite,
+    listAdmins, listClubs, getClub, setClubStatus, updateClubPlan, listExpiredTrials, listFrozenExpiredGrace,
+    trialEmailBudgetReset, invalidateClubCache,
+    registerAdmin, updateAdmin, updateAdminCounter, createAdminInvite,
     softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
     listPrivateCodes, createPrivateCode, revokePrivateCode,
     setTrainerAssignment, listTrainerAssignments,
@@ -41,6 +43,29 @@ export function createAdminRoutes(deps) {
     b64uToBuf, verifySig,
     crypto, ORIGIN, RP_ID, RP_NAME, SECURE, DATA, path, fs
   } = deps;
+
+  // Async batched state reader (v1.3.2, Шаг 3-fix): списковые эндпоинты НЕ
+  // читают state-файлы синхронно в цикле (N×readFileSync блокировали бы event
+  // loop при 500 атлетах — «шумный сосед» для других клубов). Чтение идёт
+  // через fs.promises порциями по STATE_READ_BATCH (ограниченная
+  // конкурентность); каждый файл читается не более одного раза за запрос.
+  // Возвращает Map<uid, state|null>.
+  const STATE_READ_BATCH = 20;
+  async function readManyStates(ids) {
+    const out = new Map();
+    const uniq = [...new Set(ids.filter(Boolean))];
+    for (let i = 0; i < uniq.length; i += STATE_READ_BATCH) {
+      const chunk = uniq.slice(i, i + STATE_READ_BATCH);
+      const results = await Promise.allSettled(chunk.map(uid =>
+        fs.promises.readFile(stateFile(uid), 'utf8').then(txt => {
+          try { out.set(uid, JSON.parse(txt)); } catch { out.set(uid, null); }
+        }).catch(() => { out.set(uid, null); })
+      ));
+      for (let j = 0; j < chunk.length; j++) if (!out.has(chunk[j])) out.set(chunk[j], null);
+      if (results.some(r => r.status === 'rejected')) { /* already null-mapped */ }
+    }
+    return out;
+  }
 
   return [
 
@@ -155,7 +180,7 @@ export function createAdminRoutes(deps) {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
     const body = await readBody(req);
     try {
-      const invite = await createAdminInvite({ name: body.name, role: body.role, createdBy: admin.id });
+      const invite = await createAdminInvite({ name: body.name, role: body.role, createdBy: admin.id, clubId: admin.club_id || null });
       json(res, 200, { ok: true, invite });
     } catch (error) { json(res, 400, { error: error.message }); }
   } },
@@ -207,6 +232,38 @@ export function createAdminRoutes(deps) {
     } catch (error) { json(res, 400, { error: error.message }); }
   } },
   /* ---------- branches (филиалы/залы) ---------- */
+  // Клубы: пагинированный список (superadmin — все, cursor limit/before;
+  // owner — только свой клуб). Пагинация нужна, когда триалов станет 500+.
+  { method: 'GET', path: '/api/admin/clubs', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['superadmin', 'owner']); if (!admin) return;
+    try {
+      const u = new URL(req.url, 'http://x');
+      const limit = Math.max(1, Math.min(200, +(u.searchParams.get('limit') || 50)));
+      const before = u.searchParams.get('before') || null;
+      let clubs = await listClubs({ limit, before });
+      if (admin.role !== 'superadmin') clubs = clubs.filter(c => c.id === admin.club_id);
+      const hasMore = clubs.length > limit;
+      json(res, 200, { clubs: hasMore ? clubs.slice(0, limit) : clubs, has_more: hasMore });
+    } catch (error) { console.error('clubs list failed:', error.message); json(res, 503, { error: 'unavailable' }); }
+  } },
+  // Kill-switch (superadmin-only): заморозить/разморозить клуб. Инвалидирует
+  // кэш статуса НЕМЕДЛЕННО — у замороженного владельца нет ни секунды доступа.
+  { method: 'POST', path: '/api/admin/clubs/status', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['superadmin']); if (!admin) return;
+    const body = await readBody(req);
+    try {
+      const club = await setClubStatus(String(body.id || ''), String(body.status || ''), String(body.note || '').slice(0, 200));
+      invalidateClubCache(club.id);   // мгновенная инвалидация — следующий запрос персонала уже 403
+      json(res, 200, { ok: true, club });
+    } catch (error) { json(res, 400, { error: error.message }); }
+  } },
+  // Ручной сброс месячного бюджета писем триалов (superadmin) — страховка от
+  // «прод встал, потому что упёрлись в хардкод».
+  { method: 'POST', path: '/api/admin/trial/budget/reset', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['superadmin']); if (!admin) return;
+    try { await trialEmailBudgetReset(); json(res, 200, { ok: true }); }
+    catch (error) { json(res, 400, { error: error.message }); }
+  } },
   { method: 'GET', path: '/api/admin/branches', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
     json(res, 200, { branches: scopeBranches(admin, await listBranches()) });
@@ -215,7 +272,18 @@ export function createAdminRoutes(deps) {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
     const body = await readBody(req);
     try {
-      const branch = await saveBranch({ id: body.id, name: body.name });
+      // Филиал привязывается к клубу вызывающего (owner/manager). Пустой club_id
+      // на проде — только у демо-филиалов (изоляция по префиксу id). «Сиротский»
+      // филиал (club_id=null) недопустим в мультитенантной модели — страховка:
+      // если у реального филиала нет клуба, он «домается» в первый клуб платформы,
+      // чтобы супер-админ, создающий филиал до UI-выбора клуба (Шаг 4), не породил
+      // невидимую для всех клубов ветку.
+      let clubId = body.club_id || admin.club_id || null;
+      if (!clubId) {
+        const clubs = await listClubs();
+        clubId = (clubs[0] || {}).id || null;
+      }
+      const branch = await saveBranch({ id: body.id, name: body.name, clubId });
       json(res, 200, { ok: true, branch });
     } catch (error) { json(res, 400, { error: error.message }); }
   } },
@@ -294,11 +362,15 @@ export function createAdminRoutes(deps) {
   } },
 
   /* ---------- users dashboard ---------- */
-  // One row per user, cheap enough for a personal instance (reads each state file once).
+  // Спортсмены клуба. ВАЖНО (v1.3.2): state-файлы читаются АСИНХРОННО,
+  // батчами по STATE_READ_BATCH — синхронный цикл readState по всем атлетам
+  // клуба заблокировал бы event loop (см. readManyStates выше).
   { method: 'GET', path: '/api/admin/users', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
-    const users = db.users.filter(u => !u.deleted).map(u => {
-      const S = readState(u.id) || {};
+    const visible = scopeUsers(admin, db.users).filter(u => !u.deleted);
+    const states = await readManyStates(visible.map(u => u.id));
+    const users = visible.map(u => {
+      const S = states.get(u.id) || {};
       const workouts = S.workouts || [];
       const last = workouts[workouts.length - 1];
       return {
@@ -319,6 +391,10 @@ export function createAdminRoutes(deps) {
     const id = new URL(req.url, 'http://x').searchParams.get('id');
     const u = db.users.find(x => x.id === id);
     if (!u) return json(res, 404, { error: 'no such user' });
+    // Multi-tenant (v1.3.x): атлет не из своего клуба недоступен (кроме superadmin).
+    if (admin.role !== 'superadmin' && !scopeUsers(admin, db.users).some(x => x.id === id)) {
+      return json(res, 403, { error: 'no access to this athlete' });
+    }
     const S = readState(u.id) || {};
     json(res, 200, {
       user: { id: u.id, name: u.name, created: u.created || null, disabled: !!u.disabled, admin: isAdmin(u), invitedBy: u.invitedBy || null },
@@ -335,6 +411,9 @@ export function createAdminRoutes(deps) {
     const body = await readBody(req);
     const u = db.users.find(x => x.id === body.id);
     if (!u) return json(res, 404, { error: 'no such user' });
+    if (admin.role !== 'superadmin' && !scopeUsers(admin, db.users).some(x => x.id === body.id)) {
+      return json(res, 403, { error: 'no access to this athlete' });
+    }
     if (isAdmin(u)) return json(res, 400, { error: 'cannot disable an admin' });
     u.disabled = !!body.disabled;
     if (u.disabled) presence.delete(u.id);   // drop them off "training now" at once
@@ -348,6 +427,9 @@ export function createAdminRoutes(deps) {
     const body = await readBody(req);
     const u = db.users.find(x => x.id === body.id);
     if (!u) return json(res, 404, { error: 'no such user' });
+    if (admin.role !== 'superadmin' && !scopeUsers(admin, db.users).some(x => x.id === body.id)) {
+      return json(res, 403, { error: 'no access to this athlete' });
+    }
     if (isAdmin(u)) return json(res, 400, { error: 'cannot delete an admin' });
     u.deleted = true;
     u.disabled = true;
@@ -360,6 +442,9 @@ export function createAdminRoutes(deps) {
     const body = await readBody(req);
     const u = db.users.find(x => x.id === body.id);
     if (!u) return json(res, 404, { error: 'no such user' });
+    if (admin.role !== 'superadmin' && !scopeUsers(admin, db.users).some(x => x.id === body.id)) {
+      return json(res, 403, { error: 'no access to this athlete' });
+    }
     u.deleted = false;
     u.disabled = false;
     saveDb();
@@ -466,10 +551,14 @@ export function createAdminRoutes(deps) {
         snap = built.snap;
       }
       let rows = snap.athletes;
-      // scope filtering for trainers (their own athletes) & the network-wide default
+      // scope filtering (v1.3.x): trainer — свои атлеты; club/branch — атлеты
+      // своего клуба/филиала; всё через filterRetention(rows, scope, userIds).
       if (scope.kind === 'trainer') {
         const ta = await listTrainerAssignments();
         const mine = new Set(ta.filter(x => x.trainer_id === admin.id).map(x => x.user_id));
+        rows = rows.filter(r => mine.has(r.id));
+      } else if (scope.kind === 'club' || scope.kind === 'branch' || scope.kind === 'demoSession') {
+        const mine = new Set(scopeUsers(admin, db.users).map(u => u.id));
         rows = rows.filter(r => mine.has(r.id));
       }
       // Демо-клон: владелец видит удержание ТОЛЬКО своих атлетов (не чужие клоны).
@@ -930,7 +1019,26 @@ export function createAdminRoutes(deps) {
       if (!admins.some(a => a.id === trainerId && a.role === 'trainer' && !a.disabled))
         return json(res, 400, { error: 'not a trainer' });
     }
-    const invite = { code, note: String(body.note || '').slice(0, 60), createdBy: admin.id, created: new Date().toISOString(), trainerId };
+    // Multi-tenant (v1.3.x): атлет наследует клуб/филиал при регистрации
+    // (server.js), чтобы аналитика клуба была точной с первой тренировки.
+    // Клуб/филиал берутся от НАЗНАЧЕННОГО ТРЕНЕРА (с ним атлет и тренируется):
+    // если инвайт создал менеджер для спортсмена тренера X, привязка обязана
+    // быть тренера X, а не менеджера. Без тренера — контекст создателя.
+    let clubId = admin.club_id || null, branchKey = admin.branch_key || null;
+    if (trainerId) {
+      const trRow = (await listAdmins()).find(a => a.id === trainerId);
+      if (trRow) {
+        clubId = trRow.club_id || clubId;
+        branchKey = trRow.branch_key || branchKey;
+      }
+    }
+    const invite = {
+      code, note: String(body.note || '').slice(0, 60),
+      createdBy: admin.id, created: new Date().toISOString(),
+      trainerId,
+      club_id: clubId,
+      branch_key: branchKey
+    };
     db.invites.push(invite);
     saveDb();
     json(res, 200, { invite });

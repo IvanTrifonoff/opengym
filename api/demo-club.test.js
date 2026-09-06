@@ -116,7 +116,17 @@ test('демо-скоуп: canSeeAthlete и списковые хелперы ф
     assert.equal(canSeeAthlete({ kind: 'demoSession', session: 'ds_a' }, { demoSession: 'ds_a' }), true);
     assert.equal(canSeeAthlete({ kind: 'demoSession', session: 'ds_a' }, { demoSession: 'ds_b' }), false);
     assert.equal(canSeeAthlete({ kind: 'demoSession', session: 'ds_a' }, { demoSession: null }), false);
-    assert.equal(canSeeAthlete({ kind: 'all' }, { demoSession: 'ds_b' }), true, 'owner-скоуп прода не тронут');
+    assert.equal(canSeeAthlete({ kind: 'all' }, { demoSession: 'ds_b' }), true, 'superadmin-скоуп не тронут');
+    // Multi-tenant (v1.3.x Шаг 3): club/branch-скоупы строгие — атлет виден
+    // только если его клуб/филиал совпадают; пустой клуб/филиал и неизвестный
+    // kind НЕ означают «всю сеть» (иначе владелец увидел бы чужой клуб).
+    assert.equal(canSeeAthlete({ kind: 'club', club: 'c1' }, { club: 'c1', branch: 'b1' }), true);
+    assert.equal(canSeeAthlete({ kind: 'club', club: 'c1' }, { club: 'c2', branch: 'b1' }), false, 'чужой клуб — нет');
+    assert.equal(canSeeAthlete({ kind: 'club', club: 'c1' }, { club: null }), false, 'атлет без клуба — нет');
+    assert.equal(canSeeAthlete({ kind: 'club', club: null }, { club: 'c1' }), false, 'владелец без club_id — пусто (strict)');
+    assert.equal(canSeeAthlete({ kind: 'branch', branch: 'b1' }, { club: 'c1', branch: 'b1' }), true);
+    assert.equal(canSeeAthlete({ kind: 'branch', branch: 'b1' }, { club: 'c1', branch: 'b2' }), false, 'чужой филиал — нет');
+    assert.equal(canSeeAthlete({ kind: 'statuses' }, { club: 'c1' }), false, 'неизвестный kind — доступ запрещён');
     // списковые хелперы: demo-админ видит только свою сессию
     const adminA = { demo_session: 'ds_a' };
     const rows = [
@@ -128,16 +138,34 @@ test('демо-скоуп: canSeeAthlete и списковые хелперы ф
     assert.deepEqual(scopeBranches(adminA, branches).map(b => b.id), ['demo-ds_a']);
     const owned = [{ id: 'r1', created_by: 'demo-owner-ds_a' }, { id: 'r2', created_by: 'demo-owner-ds_b' }];
     assert.deepEqual(scopeOwnerRows(adminA, owned).map(r => r.id), ['r1']);
-    // вне демо-режима — прод-владелец НЕ видит демо-строки (безопасность:
-    // инцидент 2026-09-02 — демо-клоны попали в прод БД и выглядели как
-    // «боты-тренеры»; даже случайно просочившиеся демо-строки скрываются).
+    // вне демо-режима — прод-админ (клубный owner) НЕ видит демо-строки
+    // (безопасность: инцидент 2026-09-02 — демо-клоны попали в прод БД и
+    // выглядели как «боты-тренеры»; даже случайно просочившиеся демо-строки
+    // скрываются). С v1.3.x (Шаг 3, strict mode) прод-админ обязан иметь
+    // role + club_id — иначе scopeAdmins/scopeUsers отдают ПУСТО, а не «всё».
     process.env.DEMO_MODE = '0';
-    assert.deepEqual(scopeAdmins(adminA, rows).map(r => r.id), ['3']);
-    // правила/награды: прод-владелец не видит строки, созданные demo-owner-*
-    const ownedMix = [
-      { id: 'r1', created_by: 'demo-owner-ds_a' }, { id: 'r2', created_by: 'real-owner' }
+    const prodAdmin = { role: 'owner', club_id: 'club-1', demo_session: null };
+    const prodRows = [
+      { id: '1', club_id: 'club-1', demo_session: null },
+      { id: '2', club_id: 'club-2', demo_session: null },
+      { id: '3', demo_session: 'ds_a' }
     ];
-    assert.deepEqual(scopeOwnerRows(adminA, ownedMix).map(r => r.id), ['r2']);
+    // свой клуб — видно; чужой клуб и демо-строки — скрыты
+    assert.deepEqual(scopeAdmins(prodAdmin, prodRows).map(r => r.id), ['1']);
+    assert.deepEqual(scopeUsers(prodAdmin, prodRows).map(r => r.id), ['1']);
+    // STRICT MODE (архитектор, Шаг 3): у owner/manager пустой club_id —
+    // пустой список, НИКОГДА не «вся сеть» (иначе утечка чужих клубов)
+    const noClub = { role: 'owner', club_id: null, demo_session: null };
+    assert.deepEqual(scopeAdmins(noClub, prodRows), []);
+    assert.deepEqual(scopeUsers(noClub, prodRows), []);
+    assert.deepEqual(scopeBranches(noClub, [{ id: 'b1' }]), []);
+    // правила/награды: прод-админ не видит строки, созданные demo-owner-*;
+    // с клубным скоупом видит только строки своего клуба (staffIds)
+    const ownedMix = [
+      { id: 'r1', created_by: 'demo-owner-ds_a' }, { id: 'r2', created_by: 'club-owner-1' }
+    ];
+    assert.deepEqual(scopeOwnerRows(prodAdmin, ownedMix, new Set(['club-owner-1'])).map(r => r.id), ['r2']);
+    assert.deepEqual(scopeOwnerRows(noClub, ownedMix), []);
     assert.equal(demoModeOn(), false);
   } finally {
     process.env.DEMO_MODE = prev;

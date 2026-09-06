@@ -9,7 +9,7 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS admin_users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('owner','manager','trainer','operator')),
+  role TEXT NOT NULL CHECK (role IN ('superadmin','owner','manager','trainer','operator')),
   disabled BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -302,6 +302,73 @@ CREATE TABLE IF NOT EXISTS athlete_metrics (
 CREATE INDEX IF NOT EXISTS athlete_metrics_user_day_idx ON athlete_metrics (user_id, day DESC);
 `;
 
+const MULTITENANT_MIGRATION = `
+CREATE TABLE IF NOT EXISTS clubs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  owner_admin_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at TIMESTAMPTZ
+);
+ALTER TABLE branches ADD COLUMN IF NOT EXISTS club_id TEXT;
+ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS club_id TEXT;
+CREATE INDEX IF NOT EXISTS branches_club_id_idx ON branches (club_id);
+CREATE INDEX IF NOT EXISTS admin_users_club_id_idx ON admin_users (club_id);
+-- Роль superadmin (владелец платформы): club_id у него null, видит все клубы.
+-- CHECK пересоздаётся: без NOT NULL — metadata-only, прод не блокирует.
+ALTER TABLE admin_users DROP CONSTRAINT IF EXISTS admin_users_role_check;
+ALTER TABLE admin_users ADD CONSTRAINT admin_users_role_check CHECK (role IN ('superadmin','owner','manager','trainer','operator'));
+-- Целостность мультитенанта на уровне БД (v1.3.2): владелец клуба/менеджер/
+-- тренер/оператор ОБЯЗАНЫ иметь club_id. БД защищает себя сама, а не верит
+-- бэкенду: баг в роуте приглашения не запишет сотрудника «вне клуба» (который
+-- в strict-mode означал бы доступ ко всей платформе). Исключения — ровно те,
+-- что легитимны: superadmin (владелец платформы, club_id=null) и демо-строки
+-- (demo_session изолирует клон, клуб им не нужен).
+ALTER TABLE admin_users DROP CONSTRAINT IF EXISTS admin_users_club_required_check;
+ALTER TABLE admin_users ADD CONSTRAINT admin_users_club_required_check
+  CHECK (role = 'superadmin' OR demo_session IS NOT NULL OR club_id IS NOT NULL);
+-- Инвайты сотрудников несут club_id приглашающего: зарегистрированный
+-- сотрудник сразу попадает в клуб (иначе strict-mode за 403 его бы отрезал).
+ALTER TABLE admin_invites ADD COLUMN IF NOT EXISTS club_id TEXT;
+`;
+
+// v1.4.x (Шаг 4-5, дизайн docs/design-step4-5.md): жизненный цикл клуба.
+// status — рубильник (kill-switch) «заморозить клуб»: замороженный клуб не
+// удаляется (данные целы для возврата клиента), но requireAdminAccount
+// отдаёт 403 всему персоналу. trial_until/plan — Trial-клубы (Шаг 5):
+// GC-воркер переводит просроченный trial в frozen, grace-период — в deleted.
+const CLUB_LIFECYCLE_MIGRATION = `
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'
+  CHECK (status IN ('active','frozen','deleted'));
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS trial_until TIMESTAMPTZ;
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'trial'
+  CHECK (plan IN ('trial','start','network','selfhosted'));
+-- Email владельца trial-клуба (собран на промо-форме) — на него шлём
+-- magic-link регистрации и уведомление об истечении триала. У платных клубов
+-- может быть пустым (владелец известен по passkey).
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS owner_email TEXT;
+CREATE INDEX IF NOT EXISTS clubs_status_trial_idx ON clubs (status, trial_until);
+-- is_seed: записи, созданные спавнером демо/trial-клуба (фейковые тренеры и
+-- атлеты). Отличает «тестового Василия» от реального клиента владельца —
+-- purge-seed удаляет ровно is_seed=true, аналитика может исключать их.
+ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS is_seed BOOLEAN NOT NULL DEFAULT false;
+-- Rate-limit публичного trial-эндпоинта по IP в БД (не in-memory — переживает
+-- рестарты и несколько инстансов). Записи живут сутки, чистит воркер.
+CREATE TABLE IF NOT EXISTS trial_requests (
+  ip TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS trial_requests_ip_created_idx ON trial_requests (ip, created_at);
+`;
+
+// Отдельный идемпотентный шаг: owner_email добавили после первого выката
+// lifecycle-миграции — отдельной ADD COLUMN IF NOT EXISTS, чтобы БД, где
+// CLUB_LIFECYCLE_MIGRATION уже выполнен (prod/демо/test-pg), тоже получили
+// колонку без пересоздания.
+const CLUB_OWNER_EMAIL_MIGRATION = `
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS owner_email TEXT;
+`;
+
 export const adminDbReady = (async () => {
   await integrationDbReady;
   if (!pool) return;
@@ -315,6 +382,9 @@ export const adminDbReady = (async () => {
     await pool.query(METRICS_MIGRATION);
     await pool.query(OUTBOX_MIGRATION);
     await pool.query(DEMO_MIGRATION);
+    await pool.query(MULTITENANT_MIGRATION);
+    await pool.query(CLUB_LIFECYCLE_MIGRATION);
+    await pool.query(CLUB_OWNER_EMAIL_MIGRATION);
   } catch (error) {
     initError = error;
     console.error('admin database init failed:', error.message);
@@ -327,6 +397,10 @@ async function ready() {
 }
 
 export function roleAllowed(role, allowed) {
+  // Compat-шим (v1.3.x, Шаг 1-2): superadmin (владелец платформы) проходит
+  // все проверки, которые раньше проходил owner. Жёсткое разделение ролей
+  // и клубный скоуп добавятся на Шаге 3 (см. docs/multi-tenant.md).
+  if (role === 'superadmin' && allowed.includes('owner')) return true;
   return allowed.includes(role);
 }
 
@@ -338,7 +412,7 @@ export async function syncAdminOwners(users, credentials, ownerIds) {
       if (!user) continue;
       await pool.query(
         `INSERT INTO admin_users (id, name, role)
-         VALUES ($1, $2, 'owner') ON CONFLICT (id) DO NOTHING`,
+         VALUES ($1, $2, 'superadmin') ON CONFLICT (id) DO NOTHING`,
         [user.id, user.name]
       );
       for (const credential of credentials.filter(item => item.userId === user.id)) {
@@ -357,7 +431,7 @@ export async function syncAdminOwners(users, credentials, ownerIds) {
 export async function getAdmin(id) {
   await ready();
   const result = await pool.query(
-    `SELECT id, name, role, branch_key, demo_session, disabled, created_at, updated_at FROM admin_users WHERE id = $1`, [id]
+    `SELECT id, name, role, branch_key, club_id, demo_session, disabled, created_at, updated_at FROM admin_users WHERE id = $1`, [id]
   );
   return result.rows[0] || null;
 }
@@ -365,7 +439,7 @@ export async function getAdmin(id) {
 export async function getAdminCredential(credentialId) {
   await ready();
   const result = await pool.query(
-    `SELECT c.id, c.admin_id, c.public_key, c.counter, c.transports, a.name, a.role, a.disabled
+    `SELECT c.id, c.admin_id, c.public_key, c.counter, c.transports, a.name, a.role, a.club_id, a.disabled
      FROM admin_credentials c JOIN admin_users a ON a.id = c.admin_id WHERE c.id = $1`, [credentialId]
   );
   return result.rows[0] || null;
@@ -379,7 +453,7 @@ export async function updateAdminCounter(credentialId, counter) {
 export async function listAdmins() {
   await ready();
   const result = await pool.query(
-    `SELECT a.id, a.name, a.role, a.branch_key, a.demo_session, a.disabled, a.deleted_at, a.created_at, a.updated_at,
+    `SELECT a.id, a.name, a.role, a.branch_key, a.club_id, a.demo_session, a.disabled, a.deleted_at, a.created_at, a.updated_at,
             count(c.id)::int AS passkeys
      FROM admin_users a LEFT JOIN admin_credentials c ON c.admin_id = a.id
      WHERE a.deleted_at IS NULL
@@ -388,14 +462,31 @@ export async function listAdmins() {
   return result.rows;
 }
 
-export async function createAdminInvite({ name, role, createdBy }) {
+export async function createAdminInvite({ name, role, createdBy, clubId = null }) {
   await ready();
   if (!ROLES.has(role) || role === 'owner') throw new Error('invalid staff role');
   const code = crypto.randomBytes(12).toString('hex').toUpperCase();
   const result = await pool.query(
-    `INSERT INTO admin_invites (code, name, role, created_by) VALUES ($1, $2, $3, $4)
-     RETURNING code, name, role, created_at`,
-    [code, String(name).trim().slice(0, 80), role, createdBy]
+    `INSERT INTO admin_invites (code, name, role, created_by, club_id) VALUES ($1, $2, $3, $4, $5)
+     RETURNING code, name, role, club_id, created_at`,
+    [code, String(name).trim().slice(0, 80), role, createdBy, clubId]
+  );
+  return result.rows[0];
+}
+
+// Trial magic-link (Шаг 5): инвайт для владельца НОВОГО trial-клуба. Штатный
+// createAdminInvite запрещает роль owner (сотрудники не могут плодить
+// владельцев) — здесь роль owner разрешена, потому что код создаёт системный
+// процесс (не сотрудник) строго для club_id свежесозданного trial-клуба.
+// Повышение привилегий невозможно: по этому коду регистрируется ровно роль
+// owner и ровно этого club_id.
+export async function createTrialOwnerInvite({ name, createdBy, clubId }) {
+  await ready();
+  const code = crypto.randomBytes(12).toString('hex').toUpperCase();
+  const result = await pool.query(
+    `INSERT INTO admin_invites (code, name, role, created_by, club_id) VALUES ($1, $2, 'owner', $3, $4)
+     RETURNING code, name, role, club_id, created_at`,
+    [code, String(name || 'Владелец клуба').trim().slice(0, 80), createdBy || 'system', clubId]
   );
   return result.rows[0];
 }
@@ -403,7 +494,7 @@ export async function createAdminInvite({ name, role, createdBy }) {
 export async function getAdminInvite(code) {
   await ready();
   const result = await pool.query(
-    `SELECT code, name, role, created_by, created_at FROM admin_invites WHERE code = $1 AND used_at IS NULL`, [code]
+    `SELECT code, name, role, club_id, created_by, created_at FROM admin_invites WHERE code = $1 AND used_at IS NULL`, [code]
   );
   return result.rows[0] || null;
 }
@@ -422,13 +513,13 @@ export async function registerAdmin({ id, name, role, credentialId, publicKey, c
   try {
     await client.query('BEGIN');
     const invite = await client.query(
-      `SELECT code, name, role FROM admin_invites WHERE code = $1 AND used_at IS NULL FOR UPDATE`, [inviteCode]
+      `SELECT code, name, role, club_id FROM admin_invites WHERE code = $1 AND used_at IS NULL FOR UPDATE`, [inviteCode]
     );
     if (!invite.rowCount) throw new Error('invite expired or already used');
     const data = invite.rows[0];
     await client.query(
-      `INSERT INTO admin_users (id, name, role) VALUES ($1, $2, $3)`,
-      [id, name || data.name, role || data.role]
+      `INSERT INTO admin_users (id, name, role, club_id) VALUES ($1, $2, $3, $4)`,
+      [id, name || data.name, role || data.role, data.club_id || null]
     );
     await client.query(
       `INSERT INTO admin_credentials (id, admin_id, public_key, counter, transports)
@@ -482,24 +573,142 @@ export async function restoreAdmin(id) {
 }
 
 /* ---------- branches (филиалы/залы) ---------- */
-export async function listBranches() {
+export async function listClubs({ limit = 50, before = null } = {}) {
   await ready();
+  const lim = Math.max(1, Math.min(200, +limit || 50));
+  // Keyset-пагинация: сортировка по id DESC (id — случайные hex/base64, курсор
+  // стабилен при вставках). LIMIT lim+1 → has_more считает вызывающий.
   const result = await pool.query(
-    'SELECT id, name, deleted_at, created_at FROM branches WHERE deleted_at IS NULL ORDER BY name'
+    `SELECT id, name, owner_admin_id, owner_email, status, plan, trial_until, created_at
+     FROM clubs
+     WHERE deleted_at IS NULL AND ($2::text IS NULL OR id < $2)
+     ORDER BY id DESC LIMIT $1`,
+    [lim + 1, before]
   );
   return result.rows;
 }
 
-export async function saveBranch({ id, name }) {
+export async function getClub(id) {
+  await ready();
+  const result = await pool.query(
+    `SELECT id, name, owner_admin_id, owner_email, status, plan, trial_until, created_at
+     FROM clubs WHERE id = $1 AND deleted_at IS NULL`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+// Kill-switch: статус клуба. frozen блокирует доступ всему персоналу (403 в
+// requireAdminAccount). deleted — финальное удаление (после grace-периода).
+export async function setClubStatus(id, status, note = '') {
+  await ready();
+  if (!['active', 'frozen', 'deleted'].includes(status)) throw new Error('invalid club status');
+  const result = await pool.query(
+    `UPDATE clubs SET status = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id, name, status`,
+    [id, status]
+  );
+  if (!result.rows[0]) throw new Error('club not found');
+  return result.rows[0];
+}
+
+// Обновить план/trial (апгрейд триала до тарифа, продление TTL).
+export async function updateClubPlan(id, { plan, trialUntil = null } = {}) {
+  await ready();
+  const result = await pool.query(
+    `UPDATE clubs SET plan = COALESCE($2, plan), trial_until = $3
+     WHERE id = $1 AND deleted_at IS NULL RETURNING id, name, plan, status, trial_until`,
+    [id, plan || null, trialUntil]
+  );
+  return result.rows[0] || null;
+}
+
+// Просроченные trial-клубы (для GC-воркера Шага 5).
+export async function listExpiredTrials(now = new Date()) {
+  await ready();
+  const result = await pool.query(
+    `SELECT id, name, owner_admin_id, plan, status, trial_until FROM clubs
+     WHERE deleted_at IS NULL AND plan = 'trial' AND trial_until IS NOT NULL
+       AND trial_until < $1 AND status = 'active'`,
+    [now]
+  );
+  return result.rows;
+}
+
+// Замороженные клубы, чей grace-период истёк (кандидаты на полное удаление).
+export async function listFrozenExpiredGrace(graceMs, now = new Date()) {
+  await ready();
+  // Сравниваем trial_until с готовым timestamp (cutoff), а НЕ вычитаем интервал
+  // из параметра в SQL: `$1 - $2::interval` падает с «operator does not exist:
+  // timestamp with time zone < interval» (unknown-тип параметра в этом месте).
+  const cutoff = new Date(now.getTime() - Math.max(0, graceMs));
+  const result = await pool.query(
+    `SELECT id, name FROM clubs
+     WHERE deleted_at IS NULL AND status = 'frozen'
+       AND (trial_until IS NOT NULL AND trial_until < $1)
+     LIMIT 50`,
+    [cutoff]
+  );
+  return result.rows;
+}
+
+// --- Rate-limit по IP для публичного trial-эндпоинта (в БД, не in-memory) ---
+export async function countTrialRequestsSince(ip, since) {
+  await ready();
+  const result = await pool.query(
+    `SELECT count(*)::int AS n FROM trial_requests WHERE ip = $1 AND created_at > $2`,
+    [ip, since]
+  );
+  return result.rows[0] ? result.rows[0].n : 0;
+}
+
+export async function addTrialRequest(ip) {
+  await ready();
+  await pool.query('INSERT INTO trial_requests (ip) VALUES ($1)', [ip]);
+}
+
+export async function purgeOldTrialRequests(hoursAgo = 24) {
+  await ready();
+  await pool.query(`DELETE FROM trial_requests WHERE created_at < now() - ($1::int || ' hours')::interval`, [hoursAgo]);
+}
+
+// --- Глобальный месячный бюджет писем (Resend) с авто-сбросом по месяцу ---
+// Хранится в app_settings (getSetting/setSetting уже есть) ключом
+// `resend_budget_YYYY-MM` — каждый месяц новый ключ, «обнуление» наступает
+// само; супер-админ может удалить ключ = ручной сброс.
+export async function trialEmailBudgetUsed() {
+  const v = await getSetting('trial_email_' + new Date().toISOString().slice(0, 7));
+  return v ? +v || 0 : 0;
+}
+
+export async function trialEmailBudgetIncrement(by = 1) {
+  const key = 'trial_email_' + new Date().toISOString().slice(0, 7);
+  const used = await trialEmailBudgetUsed();
+  await setSetting(key, String(used + by));
+}
+
+// Ручной сброс бюджета (супер-админ): deleteSetting ключа месяца.
+export async function trialEmailBudgetReset() {
+  await deleteSetting('trial_email_' + new Date().toISOString().slice(0, 7));
+}
+
+export async function listBranches() {
+  await ready();
+  const result = await pool.query(
+    'SELECT id, name, club_id, deleted_at, created_at FROM branches WHERE deleted_at IS NULL ORDER BY name'
+  );
+  return result.rows;
+}
+
+export async function saveBranch({ id, name, clubId = null }) {
   await ready();
   const bid = String(id || '').trim() || crypto.randomBytes(8).toString('hex');
   const bname = String(name || '').trim().slice(0, 80);
   if (!bname) throw new Error('branch name is required');
   const result = await pool.query(
-    `INSERT INTO branches (id, name) VALUES ($1, $2)
-     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
-     RETURNING id, name, created_at`,
-    [bid, bname]
+    `INSERT INTO branches (id, name, club_id) VALUES ($1, $2, $3)
+     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, club_id = COALESCE(EXCLUDED.club_id, branches.club_id)
+     RETURNING id, name, club_id, created_at`,
+    [bid, bname, clubId]
   );
   return result.rows[0];
 }
@@ -1336,8 +1545,12 @@ export async function insertLead({ id, name, contact, gym = '', message = '', pl
 // о новых заявках с промо-страницы (админка trfnv).
 export async function findOwnerId() {
   await ready();
+  // Multi-tenant (v1.3.x): заявки с сайта уходят владельцу ПЛАТФОРМЫ (superadmin),
+  // а если его нет — первому владельцу клуба (owner).
   const r = await pool.query(
-    `SELECT id FROM admin_users WHERE role = 'owner' ORDER BY created_at LIMIT 1`
+    `SELECT id FROM admin_users
+     WHERE role IN ('superadmin', 'owner') AND disabled = false
+     ORDER BY (role = 'superadmin') DESC, created_at LIMIT 1`
   );
   return r.rows[0] ? r.rows[0].id : null;
 }

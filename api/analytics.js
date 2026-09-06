@@ -154,11 +154,15 @@ function athleteRow(u, pg, now, S) {
   const lastLedger = ld && ld.last ? tsOf(ld.last) : null;
   const lastActivity = [lastVisit, lastWorkout, lastLedger].filter(Boolean).reduce((a, b) => Math.max(a, b), 0) || null;
   const freqN = Math.max(vis ? vis.n30 : 0, workouts30);
-  const branch = (vis && vis.branch) || (pg.branchByUser.get(u.id) || {}).branch_key || null;
+  // Multi-tenant (v1.3.x): клуб/филиал атлета — из профиля (club_id/branch_key,
+  // проставлены при регистрации по инвайту/тренеру); филиал из визитов/СКУД —
+  // запасной вариант, если профиль ещё не привязан.
+  const club = u.club_id || null;
+  const branch = u.branch_key || (vis && vis.branch) || (pg.branchByUser.get(u.id) || {}).branch_key || null;
   const row = {
     id: u.id, name: u.name, created: u.created || null, disabled: !!u.disabled,
     demoSession: u.demo_session || null,
-    unit,
+    club, unit,
     branch,
     trainerId: pg.trainerByUser.get(u.id) || null,
     visits: pg.skudActive ? (vis ? vis.n : 0) : visFallback,
@@ -188,13 +192,17 @@ function statusOf(row, now) {
 }
 
 /* ---------- scope filtering ---------- */
-// scope: { kind: 'all' } | { kind: 'branch', branch } | { kind: 'trainer', trainerId } | { kind: 'statuses' }
+// scope: { kind: 'all' } | { kind: 'club', club } | { kind: 'branch', branch }
+//      | { kind: 'trainer', trainerId }
+// СТРОГО (v1.3.x): пустой club/branch в скоупе НЕ означает «вся сеть» — доступ
+// запрещён. Только superadmin получает kind 'all'.
 export function canSeeAthlete(scope, row) {
   if (scope.kind === 'all') return true;
   if (scope.kind === 'demoSession') return row.demoSession === scope.session;
-  if (scope.kind === 'branch') return !scope.branch || row.branch === scope.branch;
+  if (scope.kind === 'club') return !!scope.club && row.club === scope.club;
+  if (scope.kind === 'branch') return !!scope.branch && row.branch === scope.branch;
   if (scope.kind === 'trainer') return row.trainerId === scope.trainerId;
-  return true; // statuses: same list, frontend gates what it renders
+  return false;
 }
 export function filterAthletes(rows, scope) {
   return scope.kind === 'all' ? rows : rows.filter(r => canSeeAthlete(scope, r));

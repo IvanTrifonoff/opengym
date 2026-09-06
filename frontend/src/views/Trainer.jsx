@@ -7,6 +7,7 @@ import { Button } from '../components/ui.jsx'
 import { AthleteCard, StatusTag, daysAgo } from './Analytics.jsx'
 import TrainerProgram from './TrainerProgram.jsx'
 import TrainerBookings from './TrainerBookings.jsx'
+import Retention from './Retention.jsx'
 import { trainerHelpSheet } from '../components/TrainerHelp.jsx'
 import { refreshTrainerBadge, clearBadge } from '../lib/badge.js'
 import { pushSupported, enablePush, disablePush } from '../lib/push.js'
@@ -19,12 +20,20 @@ export default function Trainer({ admin, onLogout }) {
   const loc = useLocation()
   const [tab, setTab] = useState('athletes')
   const [focusBooking, setFocusBooking] = useState(null)
-  // Глубокий переход из уведомления: открыть вкладку «Календарь» и подсветить заявку.
+  const [retentionFocus, setRetentionFocus] = useState(null)
+  // Глубокий переход из уведомления:
+  //   calendar  → вкладка «Календарь» + подсветка заявки;
+  //   retention → вкладка «Удержание» (только МОИ атлеты) + фокус на спортсмене.
+  // Роль тренера не должна вытаскивать его в интерфейс владельца — поэтому
+  // retention-уведомление ведёт сюда, в /trainer, а не в /admin/analytics.
   useEffect(() => {
     const st = loc.state
     if (st && st.tab === 'calendar') {
       setTab('calendar')
       if (st.focusBooking) setFocusBooking(st.focusBooking)
+    } else if (st && st.tab === 'retention') {
+      setTab('retention')
+      setRetentionFocus(st.focusAthlete || null)
     }
   }, [loc.state])
   const [athletes, setAthletes] = useState([])
@@ -46,6 +55,9 @@ export default function Trainer({ admin, onLogout }) {
   const [pushOn, setPushOn] = useState(false)
   const [pushBusy, setPushBusy] = useState(false)
 
+  // Ручной переход по вкладкам (нижний бар): стираем глубокий фокус из уведомления —
+  // повторное открытие «Удержания» не должно каждый раз прыгать к тому же спортсмену.
+  const go = next => { setTab(next); setRetentionFocus(null) }
   const load = () => api('/api/admin/analytics/athletes').then(d => setAthletes(d.athletes || [])).catch(e => setError(e.message))
   useEffect(() => { load() }, [tab])
 
@@ -107,17 +119,16 @@ export default function Trainer({ admin, onLogout }) {
 
   if (prog) return <TrainerProgram athlete={prog} onBack={() => setProg(null)} />
   if (sel) return <AthleteCard id={sel} admin={admin} trainers={[]} onBack={() => setSel(null)} onProgram={() => setProg({ id: sel, name: (athletes.find(x => x.id === sel) || {}).name || 'Спортсмен' })} />
-
   const list = athletes.filter(a =>
     (filter === 'all' || a.status === filter) &&
     (!q.trim() || (a.name || '').toLowerCase().includes(q.trim().toLowerCase())))
 
   return <div className="narrow" style={{ paddingBottom: 40 }}>
     <div className="hdr">
-      <button className="iconbtn" onClick={() => nav('/admin')} aria-label="Назад"><Icon name="chevronLeft" /></button>
+      {admin.impersonated && <button className="iconbtn" onClick={back} aria-label="Вернуться к владельцу"><Icon name="chevronLeft" /></button>}
       <div style={{ flex: 1 }}>
         <div className="small dim">Тренерский портал</div>
-        <h1 style={{ margin: 0 }}>Мои спортсмены</h1>
+        <h1 style={{ margin: 0 }}>{tab === 'retention' ? 'Удержание' : tab === 'calendar' ? 'Календарь' : tab === 'add' ? 'Добавить' : 'Мои спортсмены'}</h1>
         <div className="sub">{admin.name} · тренер</div>
       </div>
       <button className="btn xs tinted" style={{ alignSelf: 'center', flex: 'none' }} onClick={trainerHelpSheet}>Инструкция</button>{pushSupported() && <button className={'btn xs ' + (pushOn ? 'tinted' : 'plain')} style={{ alignSelf: 'center', flex: 'none' }} onClick={togglePush} disabled={pushBusy}>{pushBusy ? '…' : pushOn ? 'Пуши: вкл' : 'Вкл. пуши'}</button>}<button className="iconbtn" style={{ position: 'relative' }} onClick={() => nav('/trainer/notifications')} aria-label="Уведомления"><Icon name="bell" />{unread > 0 && <span className="notif-badge">{unread > 9 ? '9+' : unread}</span>}</button><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button>
@@ -129,9 +140,10 @@ export default function Trainer({ admin, onLogout }) {
       selected={tab}
       badges={{ calendar: pendingCount, notifications: unread }}
       items={[
-        { key: 'athletes', icon: 'person', label: 'Спортсмены', onClick: () => setTab('athletes') },
-        { key: 'calendar', icon: 'calendar', label: 'Календарь', onClick: () => setTab('calendar') },
-        { key: 'add', icon: 'plus', label: 'Добавить', onClick: () => setTab('add') },
+        { key: 'athletes', icon: 'person', label: 'Спортсмены', onClick: () => go('athletes') },
+        { key: 'calendar', icon: 'calendar', label: 'Календарь', onClick: () => go('calendar') },
+        { key: 'retention', icon: 'shield', label: 'Удержание', onClick: () => go('retention') },
+        { key: 'add', icon: 'plus', label: 'Добавить', onClick: () => go('add') },
         { key: 'notifications', icon: 'bell', label: 'Уведомления', to: '/trainer/notifications' }
       ]}
     />
@@ -151,6 +163,8 @@ export default function Trainer({ admin, onLogout }) {
           <Icon name="chevronRight" style={{ color: 'var(--label-3)' }} />
         </div>)}</div>}
     </>}
+
+    {tab === 'retention' && <Retention admin={admin} focusAthlete={retentionFocus} />}
 
     {tab === 'calendar' && <TrainerBookings admin={admin} focusBookingId={focusBooking} />}
 

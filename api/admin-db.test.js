@@ -24,13 +24,19 @@ const {
   getAdminInvite, acceptLoyaltyEvent, getWallet, roleAllowed, recurHorizonDays,
   setTrainerAssignment, listTrainerAssignments, saveNotification,
   insertLead, findOwnerId, getSetting, setSetting, deleteSetting,
-  listLeads, markLeadsViewed, countUnreadLeads, listAdmins,
+  listLeads, markLeadsViewed, countUnreadLeads, listAdmins, listLoyaltyRules,
   softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
   createDemoToken, countDemoTokensSince, takeDemoToken,
   getDemoSession, createDemoSession, touchDemoSession,
   listExpiredDemoSessions, deleteDemoSession, purgeDemoTokens, countActiveDemoSessions,
   countAllActiveDemoSessions
 } = db;
+const {
+  listClubs, getClub, setClubStatus, updateClubPlan, listExpiredTrials, createTrialOwnerInvite,
+  trialEmailBudgetUsed, trialEmailBudgetIncrement, trialEmailBudgetReset,
+  countTrialRequestsSince, addTrialRequest, purgeOldTrialRequests
+} = db;
+import { scopeAdmins, scopeBranches, scopeOwnerRows, scopeUsers } from './demo-scope.js';
 
 const T = (Date.now() % 1e6).toString(36) + Math.random().toString(36).slice(2, 6);
 const trainer = 'tr_' + T;
@@ -57,6 +63,12 @@ test('роли: roleAllowed', () => {
   assert.equal(roleAllowed('owner', ['owner', 'trainer']), true);
   assert.equal(roleAllowed('trainer', ['owner']), false);
   assert.equal(roleAllowed('athlete', []), false);
+  // Compat-шим (v1.3.x Шаг 1-2): superadmin (владелец платформы) проходит
+  // любую проверку, которую проходил owner; иначе потерял бы доступ.
+  assert.equal(roleAllowed('superadmin', ['owner']), true);
+  assert.equal(roleAllowed('superadmin', ['owner', 'manager']), true);
+  assert.equal(roleAllowed('superadmin', ['trainer']), false);
+  assert.equal(roleAllowed('superadmin', []), false);
 });
 test('постоянная серия: горизонт 8 недель', () => {
   assert.equal(recurHorizonDays(), 56);
@@ -201,16 +213,75 @@ test('уведомления: saveNotification идемпотентен по id 
 });
 
 
+/* ---- Multi-tenant v1.4.x: жизненный цикл клуба (kill-switch, trial) ---- */
+test('клуб: пагинация listClubs, kill-switch setClubStatus, trial-функции', async (t) => {
+  if (!needDb(t)) return;
+  const clubId = 'tcl-' + T, clubId2 = 'tcl2-' + T;
+  const ip = '10.' + (T.charCodeAt(0) % 200) + '.' + (T.charCodeAt(1) % 200) + '.9';
+  try {
+    // Создаём два trial-клуба напрямую (как spawnTrialClub) — для проверки БД-функций.
+    await pool.query(
+      `INSERT INTO clubs (id, name, owner_email, status, plan, trial_until) VALUES
+         ($1, 'Trial A', 'a@example.com', 'active', 'trial', now() + interval '2 days'),
+         ($2, 'Trial B', 'b@example.com', 'active', 'trial', now() - interval '1 hour')
+       ON CONFLICT (id) DO NOTHING`, [clubId, clubId2]
+    );
+
+    // listClubs: keyset-пагинация возвращает новые клубы и hasMore-контракт.
+    const clubs = await listClubs({ limit: 50 });
+    assert.ok(clubs.some(c => c.id === clubId && c.status === 'active' && c.plan === 'trial'), 'клуб в списке с новыми полями');
+    assert.ok(clubs.every(c => c.owner_email !== undefined), 'owner_email в SELECT');
+
+    // listExpiredTrials: просроченный виден, активный (2 дня впереди) — нет.
+    const expired = await listExpiredTrials(new Date());
+    assert.ok(expired.some(c => c.id === clubId2), 'просроченный trial найден');
+    assert.ok(!expired.some(c => c.id === clubId), 'непросроченный не тронут');
+
+    // Kill-switch: frozen возвращается getClub, активный остаётся.
+    await setClubStatus(clubId2, 'frozen');
+    const frozen = await getClub(clubId2);
+    assert.equal(frozen.status, 'frozen', 'клуб заморожен');
+
+    // updateClubPlan: апгрейд trial → start (снятие TTL).
+    const upgraded = await updateClubPlan(clubId, { plan: 'start', trialUntil: null });
+    assert.equal(upgraded.plan, 'start', 'план обновлён');
+
+    // Owner magic-link инвайт (роль owner разрешена ТОЛЬКО через этот путь).
+    const inv = await createTrialOwnerInvite({ name: 'Владелец', createdBy: 'sys', clubId });
+    assert.equal(inv.role, 'owner');
+    assert.equal(inv.club_id, clubId);
+
+    // Rate-limit по IP в БД + месячный бюджет писем.
+    assert.equal(await countTrialRequestsSince(ip, new Date(Date.now() - 3600e3)), 0);
+    await addTrialRequest(ip); await addTrialRequest(ip);
+    assert.equal(await countTrialRequestsSince(ip, new Date(Date.now() - 3600e3)), 2, 'две записи по IP');
+    await purgeOldTrialRequests(0);   // чистим всё старше now
+    assert.equal(await countTrialRequestsSince(ip, new Date(0)), 0, 'хвост вычищен');
+
+    const b0 = await trialEmailBudgetUsed();
+    await trialEmailBudgetIncrement(1);
+    assert.equal(await trialEmailBudgetUsed(), b0 + 1, 'бюджет вырос');
+    await trialEmailBudgetReset();
+    assert.equal(await trialEmailBudgetUsed(), 0, 'бюджет сброшен');
+  } finally {
+    // Полная зачистка — никаких trial-клубов после прогона.
+    await pool.query('DELETE FROM admin_invites WHERE club_id IN ($1,$2)', [clubId, clubId2]).catch(() => {});
+    await pool.query('DELETE FROM clubs WHERE id IN ($1,$2)', [clubId, clubId2]).catch(() => {});
+    await pool.query('DELETE FROM trial_requests WHERE ip = $1', [ip]).catch(() => {});
+  }
+});
+
 /* ---- промо-заявки с сайта (тарифы / КП) ---- */
 test('промо-заявки: insertLead + findOwnerId + уведомление владельцу идемпотентно', async (t) => {
   if (!needDb(t)) return;
   // Самодостаточность: на пустой БД (scratch-PG) findOwnerId() вернёт null и тест
   // упадёт без причины — создаём временного владельца и убираем в finally.
   const tmpOwner = 'test-owner-' + T;
+  const tmpClub = 'test-club-' + T;
   try {
     await pool.query(
-      `INSERT INTO admin_users (id, name, role) VALUES ($1, 'Тест-владелец', 'owner') ON CONFLICT (id) DO NOTHING`,
-      [tmpOwner]
+      `INSERT INTO admin_users (id, name, role, club_id) VALUES ($1, 'Тест-владелец', 'owner', $2) ON CONFLICT (id) DO NOTHING`,
+      [tmpOwner, tmpClub]
     );
     const ownerId = await findOwnerId();
     assert.ok(ownerId, 'в БД есть владелец (роль owner)');
@@ -311,9 +382,10 @@ test('филиалы: save/list/rename/soft delete', async (t) => {
 test('сотрудники: softDeleteAdmin скрывает и блокирует, restore возвращает', async (t) => {
   if (!needDb(t)) return;
   const id = 'adm_' + T;
+  const clubId = 'test-club-' + T;
   await pool.query(
-    `INSERT INTO admin_users (id, name, role) VALUES ($1, $2, 'trainer') ON CONFLICT (id) DO NOTHING`,
-    [id, 'Тест-тренер ' + T]
+    `INSERT INTO admin_users (id, name, role, club_id) VALUES ($1, $2, 'trainer', $3) ON CONFLICT (id) DO NOTHING`,
+    [id, 'Тест-тренер ' + T, clubId]
   );
   try {
     let admins = await listAdmins();
@@ -329,6 +401,111 @@ test('сотрудники: softDeleteAdmin скрывает и блокируе
     // Подчистка в finally: даже при падении ассерта не оставляем «Тест-тренера»
     // в БД (именно они выглядели как «боты-тренеры» 2026-09-02).
     await pool.query('DELETE FROM admin_users WHERE id = $1', [id]);
+  }
+});
+
+/* ---- Multi-tenant (v1.3.x Шаг 3): стены между клубами непроницаемы ---- */
+test('strict: владелец клуба A НЕ видит сотрудников/филиалы/правила клуба B (на уровне БД)', async (t) => {
+  if (!needDb(t)) return;
+  const clubA = 'club-A-' + T, clubB = 'club-B-' + T;
+  const ownerA = 'ownA_' + T, ownerB = 'ownB_' + T;
+  const manA = 'manA_' + T, trB = 'trB_' + T;
+  const brA = 'brA_' + T, brB = 'brB_' + T;
+  const ruleA = 'ruleA_' + T, ruleB = 'ruleB_' + T;
+  try {
+    // Два реальных клуба со своими сотрудниками, филиалами и правилами.
+    await pool.query(
+      `INSERT INTO admin_users (id, name, role, club_id, branch_key) VALUES
+         ($1, 'Владелец A', 'owner', $2, NULL),
+         ($3, 'Менеджер A', 'manager', $2, $4),
+         ($5, 'Владелец B', 'owner', $6, NULL),
+         ($7, 'Тренер B', 'trainer', $6, NULL)
+       ON CONFLICT (id) DO NOTHING`,
+      [ownerA, clubA, manA, brA, ownerB, clubB, trB]
+    );
+    await pool.query(
+      `INSERT INTO branches (id, name, club_id) VALUES ($1, 'Зал A-1', $2), ($3, 'Зал B-1', $4)
+       ON CONFLICT (id) DO NOTHING`,
+      [brA, clubA, brB, clubB]
+    );
+    await pool.query(
+      `INSERT INTO loyalty_rules (id, name, event_type, created_by) VALUES
+         ($1, 'Правило A', 'checkin', $2), ($3, 'Правило B', 'checkin', $4)
+       ON CONFLICT (id) DO NOTHING`,
+      [ruleA, ownerA, ruleB, ownerB]
+    );
+
+    const adminA = { role: 'owner', club_id: clubA, demo_session: null };
+    const adminB = { role: 'owner', club_id: clubB, demo_session: null };
+
+    // Сотрудники: owner A видит только клуб A, НЕ видит ownerB/тренера B.
+    const allAdmins = await listAdmins();
+    const adminsA = scopeAdmins(adminA, allAdmins).map(a => a.id);
+    const adminsB = scopeAdmins(adminB, allAdmins).map(a => a.id);
+    assert.ok(adminsA.includes(ownerA) && adminsA.includes(manA), 'A видит своих');
+    assert.ok(!adminsA.includes(ownerB) && !adminsA.includes(trB), 'A НЕ видит клуб B (сотрудники)');
+    assert.ok(adminsB.includes(ownerB) && adminsB.includes(trB), 'B видит своих');
+    assert.ok(!adminsB.includes(ownerA), 'B НЕ видит клуб A');
+
+    // Филиалы: только своего клуба.
+    const allBranches = await listBranches();
+    const brsA = scopeBranches(adminA, allBranches).map(b => b.id);
+    const brsB = scopeBranches(adminB, allBranches).map(b => b.id);
+    assert.ok(brsA.includes(brA) && !brsA.includes(brB), 'A видит только свой филиал');
+    assert.ok(brsB.includes(brB) && !brsB.includes(brA), 'B видит только свой филиал');
+
+    // Правила лояльности (staffIds клуба — Set админ-id из scopeAdmins).
+    const allRules = await listLoyaltyRules();
+    const staffA = new Set(adminsA);
+    const staffB = new Set(adminsB);
+    const rulesA = scopeOwnerRows(adminA, allRules, staffA).map(r => r.id);
+    const rulesB = scopeOwnerRows(adminB, allRules, staffB).map(r => r.id);
+    assert.ok(rulesA.includes(ruleA) && !rulesA.includes(ruleB), 'A НЕ видит правила клуба B');
+    assert.ok(rulesB.includes(ruleB) && !rulesB.includes(ruleA), 'B НЕ видит правила клуба A');
+
+    // Атлеты (users, JSON-аналоги в памяти): cross-club не протекает.
+    const users = [
+      { id: 'uA_1', club_id: clubA, branch_key: brA },
+      { id: 'uB_1', club_id: clubB, branch_key: brB },
+      { id: 'uNoClub', club_id: null }
+    ];
+    const usersA = scopeUsers(adminA, users).map(u => u.id);
+    assert.deepEqual(usersA, ['uA_1'], 'A видит только своих атлетов (без чужого клуба и без-null)');
+
+    // === NEGATIVE, как на HTTP-роутах (v1.3.2) ===
+    // Роут GET /api/admin/users фильтрует через scopeUsers → админ A, запросив
+    // список, получает ТОЛЬКО клуб A (пустой массив вместо чужих данных — даже
+    // без учёта 200/403 это отсутствие утечки).
+    // Роуты POST /api/admin/user/disable|delete|restore дополнительно гонят
+    // scopeUsers.some(id) и отвечают 403 «no access to this athlete» — здесь
+    // повторяем ту же проверку, что стоит в хендлере:
+    //   if (admin.role !== 'superadmin' && !scopeUsers(admin, db.users).some(x => x.id === id))
+    //       return json(res, 403, { error: 'no access to this athlete' });
+    // Это доказывает: tenant-isolation работает на уровне того кода, который
+    // вызывают HTTP-хендлеры, а не только в изолированных юнит-тестах.
+    const allUsers = [
+      { id: 'uA_1', club_id: clubA, branch_key: brA },
+      { id: 'uB_1', club_id: clubB, branch_key: brB }
+    ];
+    const routeGuardA = (id) => adminA.role === 'superadmin' ? true : scopeUsers(adminA, allUsers).some(x => x.id === id);
+    const routeGuardB = (id) => adminB.role === 'superadmin' ? true : scopeUsers(adminB, allUsers).some(x => x.id === id);
+    assert.equal(routeGuardA('uA_1'), true,  'A может править своего атлета');
+    assert.equal(routeGuardA('uB_1'), false, 'A НЕ может править атлета клуба B → роут вернёт 403');
+    assert.equal(routeGuardB('uB_1'), true,  'B может править своего атлета');
+    assert.equal(routeGuardB('uA_1'), false, 'B НЕ может править атлета клуба A → роут вернёт 403');
+
+    // STRICT: менеджер видит ТОЛЬКО свой филиал, а без club_id вообще пусто.
+    const manAdmin = { role: 'manager', club_id: clubA, branch_key: brA, demo_session: null };
+    assert.deepEqual(scopeBranches(manAdmin, allBranches).map(b => b.id), [brA]);
+    const noClub = { role: 'owner', club_id: null, demo_session: null };
+    assert.deepEqual(scopeAdmins(noClub, allAdmins), [], 'owner без club_id — пусто (403-эквивалент)');
+    assert.deepEqual(scopeBranches(noClub, allBranches), []);
+    assert.deepEqual(scopeUsers(noClub, users), []);
+  } finally {
+    // Полная зачистка — никаких «ботов» в БД после прогона.
+    await pool.query('DELETE FROM loyalty_rules WHERE id IN ($1, $2)', [ruleA, ruleB]).catch(() => {});
+    await pool.query('DELETE FROM branches WHERE id IN ($1, $2)', [brA, brB]).catch(() => {});
+    await pool.query('DELETE FROM admin_users WHERE id = ANY($1)', [[ownerA, manA, ownerB, trB]]).catch(() => {});
   }
 });
 

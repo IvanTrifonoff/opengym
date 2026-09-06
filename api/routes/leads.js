@@ -7,14 +7,35 @@
 // (3) дублируется push, если у владельца есть подписка.
 //
 // Фабрика: принимает зависимости и возвращает [{ method, path, handler }].
+import crypto from 'node:crypto';
 import { sendEmail } from '../email.js';
+import { verifyPow } from '../demo-pow.js';
+import { requestTrialClub } from '../trial-club.js';
 
 export function createLeadsRoutes(deps) {
   const {
     json, readBody, adminDbReady, insertLead, findOwnerId, saveNotification, sendPush,
     requireAdminAccount, getSetting, setSetting, deleteSetting,
-    listLeads, markLeadsViewed, countUnreadLeads
+    listLeads, markLeadsViewed, countUnreadLeads,
+    db, saveDb, dataDir, clientIpOf
   } = deps;
+
+  // PoW для публичного trial-эндпоинта (как на демо-стенде): challenge
+  // выдаёт GET /api/trial/challenge, клиент считает nonce, одноразово тратит.
+  const trialChallenges = new Map();
+  const TRIAL_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+  const trialPowDifficulty = Math.max(0, Math.min(8, +(process.env.TRIAL_POW_DIFFICULTY || 3)));
+  // Дополнительный in-memory предохранитель (основной лимит — в БД, trialRateLimited):
+  // не больше 3 попыток trial-запроса с IP в час, чтобы не молотить MX/DNS.
+  const trialAttempts = new Map();
+  const trialAttemptLimited = (ip) => {
+    const now = Date.now();
+    const arr = (trialAttempts.get(ip) || []).filter(ts => now - ts < 3600e3);
+    if (arr.length >= 3) return true;
+    arr.push(now);
+    trialAttempts.set(ip, arr);
+    return false;
+  };
 
   // Простейший per-IP лимит: не больше 5 заявок с одного адреса в час.
   const hits = new Map();
@@ -83,7 +104,7 @@ export function createLeadsRoutes(deps) {
               payload: { kind: 'promo_lead', lead_id: id, contact, payment }
             });
             if (created) {
-              await sendPush(ownerId, { title, body: detail, tag: 'promo-' + id, url: '/trainer/notifications' })
+              await sendPush(ownerId, { title, body: detail, tag: 'promo-' + id, url: '/admin/notifications' })
                 .catch(() => {});
               // Email-уведомление владельцу (ivan@trfnv.ru) — не блокирует ответ,
               // если почта не настроена (RESEND_API_KEY пуст) или сервис недоступен.
@@ -101,6 +122,54 @@ export function createLeadsRoutes(deps) {
           json(res, 200, { ok: true });
         } catch (error) {
           console.error('lead save failed:', error.message);
+          json(res, 503, { error: 'service unavailable' });
+        }
+      }
+    },
+
+    // PoW-challenge для /api/trial (антибот перед дорогим спавном + MX-проверкой).
+    {
+      method: 'GET',
+      path: '/api/trial/challenge',
+      handler: async (req, res) => {
+        const challenge = crypto.randomBytes(18).toString('base64url');
+        trialChallenges.set(challenge, Date.now() + TRIAL_CHALLENGE_TTL_MS);
+        json(res, 200, { challenge, difficulty: trialPowDifficulty, ttl_s: TRIAL_CHALLENGE_TTL_MS / 1000 });
+      }
+    },
+
+    // Публичная заявка Trial-клуба (промо-страница, «Создать мой клуб»).
+    // Многослойная защита от спама/разорения Resend (docs/design-step4-5.md):
+    //  1) PoW (challenge выше);  2) лимит попыток с IP (in-memory + БД);
+    //  3) email: синтаксис + блок-лист + MX-проверка с таймаутом;
+    //  4) месячный бюджет писем (app_settings, сбрасывается супер-админом).
+    {
+      method: 'POST',
+      path: '/api/trial',
+      handler: async (req, res) => {
+        const ip = clientIpOf ? clientIpOf(req) : ((req.socket && req.socket.remoteAddress) || 'unknown');
+        try {
+          const body = await readBody(req);
+          const challenge = String(body.challenge || '').trim();
+          const nonce = String(body.nonce || '').trim();
+          const exp = trialChallenges.get(challenge);
+          if (!exp || exp < Date.now() || !verifyPow({ challenge, nonce, difficulty: trialPowDifficulty })) {
+            return json(res, 403, { error: 'proof-of-work required or expired' });
+          }
+          trialChallenges.delete(challenge);   // одноразовое решение
+          if (trialAttemptLimited(ip)) {
+            return json(res, 429, { error: 'too many attempts — try again in an hour' });
+          }
+          await adminDbReady;
+          const result = await requestTrialClub({
+            email: String(body.email || ''), gymName: String(body.gym || ''),
+            ip, db, saveDb, dataDir,
+            origin: (req.headers['x-forwarded-proto'] || 'https') + '://' + (req.headers.host || 'gym.trfnv.ru')
+          });
+          const status = result.status || (result.ok ? 200 : 400);
+          json(res, status, result.ok ? { ok: true, email: result.email_sent } : { error: result.error });
+        } catch (error) {
+          console.error('trial request failed:', error.message);
           json(res, 503, { error: 'service unavailable' });
         }
       }

@@ -27,12 +27,16 @@ import {
 } from '@simplewebauthn/server';
 import webpush from 'web-push';
 import {
-  acceptAccessEvent, bindExternalMember, integrationDbReady, integrationDbStatus, listExternalMembers
+  acceptAccessEvent, bindExternalMember, integrationDbReady, integrationDbStatus, listExternalMembers,
+  pool
 } from './access-db.js';
 import {
   acceptLoyaltyEvent, adminDbReady, applyLoyaltyRules, countUnreadNotifications, createAdminInvite, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
-  listAdmins, listLoyaltyRules, listNotifications, markBadgeSeen, markNotificationsRead, registerAdmin, roleAllowed, saveLoyaltyRule, saveNotification, deleteLoyaltyRule, dispatchOutbox,
+  listAdmins, listClubs, listLoyaltyRules, listNotifications, markBadgeSeen, markNotificationsRead, registerAdmin, roleAllowed, saveLoyaltyRule, saveNotification, deleteLoyaltyRule, dispatchOutbox,
   softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
+  getClub, setClubStatus, updateClubPlan, listExpiredTrials, listFrozenExpiredGrace,
+  trialEmailBudgetUsed, trialEmailBudgetIncrement, trialEmailBudgetReset,
+  countTrialRequestsSince, addTrialRequest, purgeOldTrialRequests,
   syncAdminOwners, updateAdmin, updateAdminCounter, getWallet, listRewards, saveReward, deleteReward, redeemReward, listRedemptions, updateRedemption,
   setTrainerAssignment, listTrainerAssignments,
   getTrainerAvailability, setTrainerAvailability, listBookings, createBooking,
@@ -54,8 +58,10 @@ import { createLoyaltyRoutes } from './routes/loyalty.js';
 import { createAdminRoutes } from './routes/admin.js';
 import { createTrainerRoutes } from './routes/trainer.js';
 import { createLeadsRoutes } from './routes/leads.js';
+import { clientIpOf } from './routes/demo.js';
 import { createDemoRoutes } from './routes/demo.js';
 import { spawnDemoClub, destroyDemoClub, startDemoCleaner } from './demo-club.js';
+import { startTrialCleaner } from './trial-club.js';
 import { replaceAthleteMetrics, backfillAthleteMetrics } from './metrics.js';
 
 import {
@@ -111,6 +117,40 @@ db.invites = db.invites || [];
 const adminBootstrap = syncAdminOwners(db.users, db.creds, ADMIN_UIDS);
 const isAdmin = user => !!user && (user.admin === true || ADMIN_UIDS.includes(user.id));
 function saveDb() { atomicWrite(dbFile, JSON.stringify(db, null, 2)); }
+
+// Клубный kill-switch: кэш статусов (active/frozen), чтобы requireAdminAccount
+// не дёргал PG на каждый запрос. TTL короткий (CLUB_STATUS_TTL_MS, по умолчанию
+// 60 c) — но POST /api/admin/clubs/status инвалидирует запись СРАЗУ (см.
+// invalidateClubCache): после «заморозить» у владельца нет ни секунды с живым
+// кэшем, чтобы выгрузить базу.
+const CLUB_STATUS_TTL_MS = Math.max(1000, +(process.env.CLUB_STATUS_TTL_MS || 60000));
+const clubStatusCache = new Map(); // club_id -> { status, at }
+function clubStatusCached(clubId) {
+  const c = clubStatusCache.get(clubId);
+  if (c && Date.now() - c.at < CLUB_STATUS_TTL_MS) return c.status;
+  return null; // miss -> прочитать из PG
+}
+function invalidateClubCache(clubId) {
+  if (clubId) clubStatusCache.delete(clubId);
+}
+
+// Multi-tenant legacy backfill (v1.3.x, Шаг 3-fix): привязка исторических
+// атлетов вынесена из boot-цикла в ОДНОРАЗОВУЮ миграцию
+// api/migrate-athlete-club.js (запуск: node migrate-athlete-club.js --apply).
+// В boot-цикле — только страховочный гард под флагом RUN_LEGACY_BIND=1
+// (нужен, если восстановлен бэкап до-клубной эпохи); обычный деплой его не
+// зовёт, чтобы мутация db.json не повторялась на каждом рестарте.
+async function runLegacyBindGuard() {
+  if (process.env.RUN_LEGACY_BIND !== '1') return;
+  try {
+    await adminDbReady;
+    if (!pool) return;
+    const { migrateLegacyAthletes } = await import('./migrate-athlete-club.js');
+    await migrateLegacyAthletes();
+  } catch (e) {
+    console.error('legacy bind guard failed:', e.message);
+  }
+}
 function atomicWrite(file, content) {
   const tmp = file + '.tmp';
   fs.writeFileSync(tmp, content);
@@ -367,6 +407,30 @@ async function requireAdminAccount(req, res, roles = ['owner', 'manager', 'train
     const admin = await getAdmin(id);
     if (!admin || admin.disabled) { json(res, 403, { error: 'admin account disabled' }); return null; }
     if (!roleAllowed(admin.role, roles)) { json(res, 403, { error: 'insufficient admin role' }); return null; }
+    // Kill-switch (v1.4.x): замороженный клуб = 403 ВСЕМУ персоналу на КАЖДЫЙ
+    // запрос. Супер-админ (без club_id) и демо-сессии не замораживаются.
+    // Кэш с мгновенной инвалидацией: после setClubStatus('frozen') доступ
+    // закрывается немедленно (роут инвалидирует запись кэша), а не через TTL.
+    if (admin.club_id && !admin.demo_session) {
+      let st = clubStatusCached(admin.club_id);
+      if (!st) {
+        try {
+          const club = await getClub(admin.club_id);
+          st = club ? club.status : 'deleted';
+          clubStatusCache.set(admin.club_id, { status: st, at: Date.now() });
+        } catch (e) { console.error('club status lookup failed:', e.message); st = 'active'; }
+      }
+      if (st === 'frozen') { json(res, 403, { error: 'club suspended — contact the platform owner' }); return null; }
+      if (st === 'deleted') { json(res, 403, { error: 'club no longer active' }); return null; }
+    }
+    // Multi-tenant strict-mode (v1.3.x, Шаг 3): owner/manager БЕЗ club_id не
+    // получают «всю сеть» — 403. Ошибка базы/старая сессия не должна давать
+    // доступ к чужим клубам. Демо-сессии изолированы отдельно (demo_session),
+    // superadmin живёт без клуба (club_id=null) — оба пропускаются.
+    if ((admin.role === 'owner' || admin.role === 'manager') && !admin.club_id && !admin.demo_session) {
+      json(res, 403, { error: 'account has no club assigned — contact the platform owner' });
+      return null;
+    }
     return admin;
   } catch (error) {
     console.error('admin auth failed:', error.message);
@@ -375,19 +439,24 @@ async function requireAdminAccount(req, res, roles = ['owner', 'manager', 'train
   }
 }
 
-// Which slice of the network an admin may see in analytics. Owner sees everything;
-// a manager is scoped to their branch (null branch_key = whole network); a trainer sees
-// only athletes assigned to them; an operator gets statuses only (frontend decides what
-// to render — the data returned is the same list).
+// Which slice of the network an admin may see in analytics.
+// Multi-tenant (v1.3.x, Шаг 3):
+//   · superadmin (платформа) — всё;
+//   · owner (клуб) — только свой club_id;
+//   · manager — свой филиал (branch_key), без него — свой клуб;
+//   · trainer — только назначенные ему атлеты;
+//   · operator — свой клуб (read-only; фронт прячет кнопки редактирования).
+// Никакой скоуп-кинд кроме 'all' не означает «вся сеть».
 function analyticsScope(admin) {
   // Демо-клон (DEMO_MODE=1): владелец/тренер сессии видят ТОЛЬКО свой клон —
   // owner-скоуп «вся сеть» здесь означал бы чужие демо-клоны. Фильтрация
   // по demo_session дальше в canSeeAthlete / retention / списочных путях.
   if (DEMO_MODE && admin.demo_session) return { kind: 'demoSession', session: admin.demo_session };
-  if (admin.role === 'owner') return { kind: 'all' };
-  if (admin.role === 'manager') return { kind: 'branch', branch: admin.branch_key || null };
+  if (admin.role === 'superadmin') return { kind: 'all' };
+  if (admin.role === 'owner') return { kind: 'club', club: admin.club_id || null };
+  if (admin.role === 'manager') return admin.branch_key ? { kind: 'branch', branch: admin.branch_key } : { kind: 'club', club: admin.club_id || null };
   if (admin.role === 'trainer') return { kind: 'trainer', trainerId: admin.id };
-  return { kind: 'statuses' };
+  return { kind: 'club', club: admin.club_id || null }; // operator
 }
 
 // Trainer program access: owner/manager see any athlete; a trainer only their
@@ -399,7 +468,13 @@ async function requireProgramAccess(admin, userId) {
     const u = db.users.find(x => x.id === userId);
     return !!(u && u.demo_session === admin.demo_session);
   }
-  if (admin.role === 'owner' || admin.role === 'manager') return true;
+  const scope = analyticsScope(admin);
+  const u = db.users.find(x => x.id === userId);
+  // СТРОГО: владелец/менеджер/оператор видят программу только атлетов СВОЕГО
+  // клуба; супер-админ — любого. Тренер — только своих назначенных.
+  if (scope.kind === 'all') return true;
+  if (scope.kind === 'club') return !!(u && u.club_id && u.club_id === scope.club);
+  if (scope.kind === 'branch') return !!(u && u.club_id && u.club_id === (admin.club_id) && (u.branch_key === scope.branch));
   if (admin.role === 'trainer') {
     const ta = await listTrainerAssignments();
     return ta.some(x => x.user_id === userId && x.trainer_id === admin.id);
@@ -573,7 +648,14 @@ const routes = {
       if (!invite) return json(res, 403, { error: 'invite code is no longer valid — ask for a new one' });
     }
     const user = { id: c.uid, name: c.name, created: new Date().toISOString() };
-    if (invite) { user.invitedBy = invite.code; invite.usedBy = user.id; invite.usedAt = user.created; }
+    if (invite) {
+      user.invitedBy = invite.code; invite.usedBy = user.id; invite.usedAt = user.created;
+      // Multi-tenant (v1.3.x): атлет привязывается к клубу/филиалу при регистрации
+      // (из инвайта или наследуется от тренера ниже) — аналитика клуба читает
+      // club_id из профиля мгновенно, без пересчёта из событий визитов.
+      if (invite.club_id) user.club_id = invite.club_id;
+      if (invite.branch_key) user.branch_key = invite.branch_key;
+    }
     db.users.push(user);
     db.creds.push({
       id: credential.id, userId: user.id,
@@ -582,7 +664,17 @@ const routes = {
       transports: body.credential?.response?.transports || []
     });
     if (invite && invite.trainerId) {
-      try { await setTrainerAssignment({ userId: user.id, trainerId: invite.trainerId }); }
+      try {
+        await setTrainerAssignment({ userId: user.id, trainerId: invite.trainerId });
+        // Клуб/филиал тренера наследуются атлету, если инвайт не нёс своих.
+        if (!user.club_id) {
+          const tr = await getAdmin(invite.trainerId);
+          if (tr) {
+            user.club_id = tr.club_id || null;
+            if (!user.branch_key) user.branch_key = tr.branch_key || null;
+          }
+        }
+      }
       catch (e) { console.error('invite auto-assign failed:', e.message); }
     }
     saveDb();
@@ -787,7 +879,7 @@ const routeModules = [
     json, readBody, readSession, requireAdminAccount,
     getWallet, listRewards, redeemReward,
     saveReward, deleteReward, listRedemptions, updateRedemption,
-    listLoyaltyRules, saveLoyaltyRule, deleteLoyaltyRule
+    listLoyaltyRules, saveLoyaltyRule, deleteLoyaltyRule, listAdmins
   }),
   ...createAdminRoutes({
     json, readBody,
@@ -801,7 +893,9 @@ const routeModules = [
     putChallenge, takeChallenge,
     analyticsScope, requireProgramAccess, bookingNotification,
     adminDbReady, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
-    listAdmins, registerAdmin, updateAdmin, updateAdminCounter, createAdminInvite,
+    listAdmins, listClubs, getClub, setClubStatus, updateClubPlan, listExpiredTrials, listFrozenExpiredGrace,
+    trialEmailBudgetReset, invalidateClubCache,
+    registerAdmin, updateAdmin, updateAdminCounter, createAdminInvite,
     softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
     listPrivateCodes, createPrivateCode, revokePrivateCode,
     setTrainerAssignment, listTrainerAssignments,
@@ -833,7 +927,8 @@ const routeModules = [
     json, readBody, adminDbReady,
     insertLead, findOwnerId, saveNotification, sendPush,
     requireAdminAccount, getSetting, setSetting, deleteSetting,
-    listLeads, markLeadsViewed, countUnreadLeads
+    listLeads, markLeadsViewed, countUnreadLeads,
+    db, saveDb, dataDir: DATA, clientIpOf
   }),
   // Демо-клуб: эндпоинты есть ТОЛЬКО на демо-развёртывании (DEMO_MODE=1).
   // На проде массив пуст — /api/demo/* отвечает 404, спавнить клон нельзя.
@@ -848,10 +943,15 @@ const routeModules = [
 ];
 for (const r of routeModules) routes[r.method + ' ' + r.path] = r.handler;
 
+// Trial GC (v1.4.x): просроченные trial-клубы → frozen (доступ закрыт
+// kill-switch'ем), frozen + grace-период → полное удаление. Работает и на
+// проде (триалы создаются через публичный /api/trial), и на демо. Интервал
+// env TRIAL_GC_INTERVAL_MIN (по умолчанию 15 мин).
+startTrialCleaner({ db, saveDb, dataDir: DATA, intervalMs: Math.max(1, +(process.env.TRIAL_GC_INTERVAL_MIN || 15)) * 60000 });
+
 // Демо-чистильщик (только DEMO_MODE=1, demo.gym.trfnv.ru): каждый прогон
 // находит сессии с истёкшим TTL и полностью удаляет их клоны (state-файлы,
 // профили, правила, метрики), а также протухшие/использованные токены.
-// Первый прогон — сразу при старте (чистка наследия после перезапуска).
 if (DEMO_MODE) {
   startDemoCleaner({ db, saveDb, dataDir: DATA, intervalMs: 5 * 60 * 1000 });
   console.log('[demo] demo-club cleaner active (DEMO_MODE=1)');
@@ -924,7 +1024,7 @@ async function notifyRetentionOwner({ prev, next }) {
     const dRisk = (s.atRisk || 0) - (p ? (p.atRisk || 0) : 0);
     if (dGone <= 0 && dRisk <= 0) return;   // no growth -> nothing to say
     const admins = await listAdmins();
-    const owners = admins.filter(a => a.role === 'owner' && !a.disabled);
+    const owners = admins.filter(a => (a.role === 'owner' || a.role === 'superadmin') && !a.disabled);
     if (!owners.length) return;
     const today = new Date().toISOString().slice(0, 10);
     const parts = [];
@@ -988,6 +1088,7 @@ async function runReminders() {
   // (страховка для пользователей, сохранявшихся до появления таблицы).
   adminDbReady.then(() => backfillAthleteMetrics({ users: db.users, stateOf: readState }))
     .catch(e => console.error('metrics backfill failed:', e.message));
+  runLegacyBindGuard();
   scheduleRetentionSnapshot({ users: db.users, stateOf: readState, dataDir: DATA,
     hour: parseInt(process.env.RETENTION_RUN_HOUR || '4', 10),
     onSnapshot: async d => { await notifyRetentionTrainers(d); await notifyRetentionOwner(d); } });

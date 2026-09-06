@@ -138,10 +138,14 @@ export async function collectRetention({ users, stateOf, now = Date.now(), recur
   };
 }
 
-/* scope filtering: mirror of analytics `scope` shapes — {kind:'all'} | {kind:'trainer',trainerId} |
-   | {kind:'branch',branch}. Since the snapshot is network-wide, the caller passes an id set. */
+/* scope filtering: mirror of analytics `scope` shapes — {kind:'all'} |
+   {kind:'club',club} | {kind:'branch',branch} | {kind:'trainer',trainerId}.
+   Since the snapshot is network-wide, the caller passes an id set (userIds)
+   of athletes visible to the caller; club/branch/trainer всё фильтруют по нему. */
 export function filterRetention(rows, scope, userIds) {
   if (scope.kind === 'all') return rows;
-  if (scope.kind === 'trainer') return rows.filter(r => userIds && userIds.has(r.id));
+  if (scope.kind === 'club' || scope.kind === 'branch' || scope.kind === 'trainer' || scope.kind === 'demoSession') {
+    return rows.filter(r => userIds && userIds.has(r.id));
+  }
   return rows;
 }
