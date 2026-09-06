@@ -1061,9 +1061,14 @@ h4.sec{
   .cols .tiles{grid-template-columns:1fr 1fr}
   #navbar{
     left:50%;right:auto;bottom:auto;top:14px;transform:translateX(-50%);
-    width:auto;border:var(--hair) solid var(--sep-op);border-radius:var(--r-xl);
+    width:auto;max-width:calc(100vw - 16px);
+    border:var(--hair) solid var(--sep-op);border-radius:var(--r-xl);
     padding:6px 10px;box-shadow:0 12px 40px -10px rgba(0,0,0,.5);
     align-items:center;justify-content:center;gap:4px;
+    /* Суперадмин имеет 9 разделов — пилюля не должна обрезаться по краям
+       (overflow-x:clip на #app прятал последний пункт «Клубы»). Разрешаем
+       перенос на вторую строку, чтобы все разделы оставались видимыми. */
+    flex-wrap:wrap;
   }
   #navbar button{
     flex:0 0 auto;flex-direction:row;align-items:center;gap:7px;
@@ -1082,8 +1087,10 @@ h4.sec{
   #navbar button.start span{color:var(--acc);font-size:14px;font-weight:600}
   #navbar button.start.rec .cir{background:var(--orange)}
   #navbar button .tab-badge{top:-4px;right:-4px}
-  /* контент больше не приподнимается над нижним баром — даём отступ от верхней пилюли */
-  #app{padding-top:calc(var(--sat) + 96px)}
+  /* контент больше не приподнимается над нижним баром — даём отступ от верхней пилюли.
+     Суперадмин с 9 разделами может переносить пилюлю на 2 строки (~118px) — отступ
+     больше, чтобы вторая строка не наезжала на заголовок страницы. */
+  #app{padding-top:calc(var(--sat) + 132px)}
   .sheet{left:50%;right:auto;margin-left:-320px;width:640px;border-radius:var(--r-xl) var(--r-xl) 0 0}
   .center{width:340px}
   #timer{left:50%;right:auto;margin-left:-260px;width:520px;bottom:112px}
