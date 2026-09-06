@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
 import { fmtDate } from '../lib/format.js'
 import Icon from '../components/Icon.jsx'
@@ -24,14 +24,29 @@ function Bar({ pct, color }) {
 
 const fmtV = n => (Math.round(n * 10) / 10).toLocaleString('ru-RU')
 
-export default function Retention({ admin }) {
+export default function Retention({ admin, focusAthlete }) {
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
   const [level, setLevel] = useState('all')
   const [q, setQ] = useState('')
+  const focusRef = useRef(null)
   useEffect(() => {
     api('/api/admin/analytics/retention').then(d => setData(d)).catch(e => setErr(e.message || 'Удержание недоступно'))
   }, [])
+  // ПРАВИЛО УВЕДОМЛЕНИЙ (см. api/routes/notifications.js): переход из
+  // уведомления retention несёт athleteId — ставим фильтр по его статусу,
+  // ищем по имени и подсвечиваем карточку, чтобы тренер сразу отреагировал.
+  useEffect(() => {
+    if (!focusAthlete || !data) return
+    const a = (data.athletes || []).find(x => x.id === focusAthlete)
+    if (!a) return
+    if (a.level) setLevel(a.level)
+    if (a.name) setQ(a.name)
+  }, [focusAthlete, data])
+  useEffect(() => {
+    // deps включают level/q: скроллим уже ПОСЛЕ того, как фильтр отрисовал строку
+    if (focusRef.current) focusRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [focusAthlete, data, level, q])
 
   if (err) return <div className="card empty">{err}</div>
   if (!data) return <div className="narrow" style={{ paddingTop: '42vh', textAlign: 'center' }}><Icon name="dumbbell" style={{ color: 'var(--label-3)', fontSize: 30 }} /></div>
@@ -90,7 +105,9 @@ export default function Retention({ admin }) {
       <div className="list">{list.map(a => {
         const lc = LEVEL_COLORS[a.level] || 'var(--label-3)'
         const label = LEVEL_LABELS[a.level] || a.level
-        return <div className="item" key={a.id}>
+        const focused = focusAthlete && a.id === focusAthlete
+        return <div className="item" key={a.id} ref={focused ? focusRef : undefined}
+          style={focused ? { background: 'color-mix(in srgb, var(--acc) 12%, var(--bg-el))', border: '1px solid var(--acc)', borderRadius: 10 } : undefined}>
           <div className="grow">
             <div className="tt">{a.name} <span className="tag" style={{ color: lc, borderColor: lc + '55' }}>{label}</span>{a.recurring && <span className="tag" style={{ marginLeft: 6, color: 'var(--acc)', borderColor: 'var(--acc)55' }}>постоянник</span>}</div>
             <div className="ss">

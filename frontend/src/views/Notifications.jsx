@@ -57,19 +57,30 @@ export default function Notifications() {
       )}
 
       {items && !err && items.map(n => {
-        // Запись к тренеру (заявка/подтверждение/напоминание): открываем «Мои записи».
-        const isBooking = n.payload && (n.payload.kind === 'booking' || n.payload.kind === 'reminder')
+        // ПРАВИЛО УВЕДОМЛЕНИЙ (см. api/routes/notifications.js): тап по
+        // уведомлению ведёт к источнику события. kind → маршрут:
+        //   booking/reminder/recurring → «Мои записи» (CoachSheet)
+        //   goal                       → /stats (прогресс по целям)
+        //   loyalty (outbox ob-*)      → /settings (баллы и награды)
+        const kind = n.payload && n.payload.kind
+        const isBooking = kind === 'booking' || kind === 'reminder' || kind === 'recurring'
+        // Старые лояльностные уведомления (до v1.2.63) не имели kind —
+        // распознаём их по префиксу id из outbox.
+        const isLoyalty = kind === 'loyalty' || (n.id && n.id.indexOf('ob-') === 0)
+        const isGoal = kind === 'goal'
         const openBooking = () => { if (user) openCoachSheet(user); else nav('/home') }
+        const jump = isBooking ? openBooking : isGoal ? (() => nav('/stats')) : isLoyalty ? (() => nav('/settings')) : null
+        const tag = isBooking ? t('My bookings') : isGoal ? t('Goals') : isLoyalty ? t('Points & rewards') : null
         return <div key={n.id} className={'card' + (n.read ? '' : ' unread')}
-          style={{ marginBottom: 10, cursor: isBooking ? 'pointer' : 'default' }}
-          onClick={isBooking ? openBooking : undefined}>
+          style={{ marginBottom: 10, cursor: jump ? 'pointer' : 'default' }}
+          onClick={jump || undefined}>
           <div className="row between" style={{ gap: 8 }}>
             <div style={{ minWidth: 0 }}>
               <div className="lbl2">{(n.title === 'ИмпульС' || n.title === 'openGym') ? t('impulseGym') : n.title}</div>
               <div className="ttl" style={{ fontSize: 15, lineHeight: 1.4 }}>{n.body}</div>
             </div>
             <div className="row" style={{ gap: 6, flex: 'none' }}>
-              {isBooking && <span className="tag acc">{t('My bookings')}</span>}
+              {tag && <span className="tag acc">{tag}</span>}
               <span className="small muted" style={{ whiteSpace: 'nowrap' }}>{fmtWhen(n.created_at)}</span>
             </div>
           </div>

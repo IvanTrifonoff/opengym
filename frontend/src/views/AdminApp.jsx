@@ -250,6 +250,7 @@ function PrivateCodes({ admin }) {
 
 function AdminDashboard({ admin, onLogout }) {
   const nav = useNavigate()
+  const loc = useLocation()
   const [sp] = useSearchParams(); const [staff, setStaff] = useState([]); const [rules, setRules] = useState([]); const [push, setPush] = useState(null)
   const [unread, setUnread] = useState(0)
   const [leadUnread, setLeadUnread] = useState(0)
@@ -305,7 +306,7 @@ function AdminDashboard({ admin, onLogout }) {
     {tab === 'branches' && <Branches admin={admin} />}
     {tab === 'invites' && <Invites admin={admin} />}
     {tab === 'private' && !isDemo && <PrivateCodes admin={admin} />}
-    {tab === 'leads' && <AdminLeads onViewed={n => setLeadUnread(n)} />}
+    {tab === 'leads' && <AdminLeads onViewed={n => setLeadUnread(n)} focusLead={loc.state && loc.state.focusLead} />}
   </div>
 }
 
