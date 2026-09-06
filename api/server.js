@@ -32,7 +32,7 @@ import {
 } from './access-db.js';
 import {
   acceptLoyaltyEvent, adminDbReady, applyLoyaltyRules, countUnreadNotifications, createAdminInvite, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
-  listAdmins, listClubs, listLoyaltyRules, listNotifications, markBadgeSeen, markNotificationsRead, registerAdmin, roleAllowed, saveLoyaltyRule, saveNotification, deleteLoyaltyRule, dispatchOutbox,
+  listAdmins, listClubs, createClub, listLoyaltyRules, listNotifications, markBadgeSeen, markNotificationsRead, registerAdmin, roleAllowed, saveLoyaltyRule, saveNotification, deleteLoyaltyRule, dispatchOutbox,
   softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
   getClub, setClubStatus, updateClubPlan, listExpiredTrials, listFrozenExpiredGrace,
   trialEmailBudgetUsed, trialEmailBudgetIncrement, trialEmailBudgetReset,
@@ -893,7 +893,7 @@ const routeModules = [
     putChallenge, takeChallenge,
     analyticsScope, requireProgramAccess, bookingNotification,
     adminDbReady, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
-    listAdmins, listClubs, getClub, setClubStatus, updateClubPlan, listExpiredTrials, listFrozenExpiredGrace,
+    listAdmins, listClubs, createClub, getClub, setClubStatus, updateClubPlan, listExpiredTrials, listFrozenExpiredGrace,
     trialEmailBudgetReset, invalidateClubCache,
     purgeSeedData,
     registerAdmin, updateAdmin, updateAdminCounter, createAdminInvite,

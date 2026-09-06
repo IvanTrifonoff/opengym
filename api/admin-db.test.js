@@ -33,7 +33,7 @@ const {
   countAllActiveDemoSessions
 } = db;
 const {
-  listClubs, getClub, setClubStatus, updateClubPlan, listExpiredTrials, createTrialOwnerInvite,
+  listClubs, createClub, getClub, setClubStatus, updateClubPlan, listExpiredTrials, createTrialOwnerInvite,
   trialEmailBudgetUsed, trialEmailBudgetIncrement, trialEmailBudgetReset,
   countTrialRequestsSince, addTrialRequest, purgeOldTrialRequests
 } = db;
@@ -216,6 +216,28 @@ test('уведомления: saveNotification идемпотентен по id 
 
 
 /* ---- Multi-tenant v1.4.x: жизненный цикл клуба (kill-switch, trial) ---- */
+test('клуб: createClub создаёт активный клуб + owner-инвайт (v1.4.6)', async (t) => {
+  if (!needDb(t)) return;
+  let clubId = null;
+  try {
+    const club = await createClub({ name: 'Новый клуб ' + T, ownerName: 'Иван', createdBy: 'sys' });
+    clubId = club.id;
+    assert.ok(club.id.startsWith('club-'), 'id клуба в формате club-*');
+    assert.equal(club.status, 'active', 'клуб активен');
+    assert.equal(club.plan, 'start', 'план start (не trial)');
+    assert.equal(club.invite.role, 'owner', 'инвайт роли owner');
+    assert.equal(club.invite.club_id, club.id, 'инвайт привязан к созданному клубу');
+    // Повторный список — клуб на месте.
+    const clubs = await listClubs({ limit: 200 });
+    assert.ok(clubs.some(c => c.id === club.id), 'созданный клуб в списке');
+  } finally {
+    if (clubId) {
+      await pool.query('DELETE FROM admin_invites WHERE club_id = $1', [clubId]).catch(() => {});
+      await pool.query('DELETE FROM clubs WHERE id = $1', [clubId]).catch(() => {});
+    }
+  }
+});
+
 test('клуб: пагинация listClubs, kill-switch setClubStatus, trial-функции', async (t) => {
   if (!needDb(t)) return;
   const clubId = 'tcl-' + T, clubId2 = 'tcl2-' + T;

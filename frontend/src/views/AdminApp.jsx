@@ -306,7 +306,7 @@ function AdminDashboard({ admin, onLogout }) {
   const pushTile = push ? (push.degraded ? 'сбои' : 'ok') : '—'
   const canEdit = isOwner(admin.role) || admin.role === 'manager'
   const isDemo = !!admin.demo_session   // демо-клон (demo.gym.trfnv.ru): приватный режим не нужен
-  const tabs = [['overview', 'Обзор'], ['loyalty', 'Loyalty'], ['rewards', 'Награды'], ...(admin.role !== 'superadmin' ? [['staff', 'Сотрудники']] : []), ...(canEdit && admin.role !== 'superadmin' ? [['branches', 'Филиалы']] : []), ...(canEdit ? [['invites', 'Приглашения'], ['leads', 'Заявки']] : [])]
+  const tabs = [['overview', 'Обзор'], ...(admin.role !== 'superadmin' ? [['loyalty', 'Loyalty'], ['rewards', 'Награды'], ['staff', 'Сотрудники']] : [['rewards', 'Награды']]), ...(canEdit && admin.role !== 'superadmin' ? [['branches', 'Филиалы']] : []), ...(canEdit ? [['invites', 'Приглашения'], ['leads', 'Заявки']] : []), ...(admin.role === 'superadmin' ? [['clubs', 'Клубы']] : [])]
   const back = () => api('/api/admin/impersonate/back', { method: 'POST', body: '{}' }).then(d => { location.href = d.redirect || '/admin' }).catch(() => {})
   return <div className="narrow" style={{ paddingBottom: 40 }}>
     <div className="hdr"><div style={{ flex: 1 }}><div className="small dim">ИмпульС</div><h1 style={{ margin: 0 }}>Панель управления</h1><div className="sub">{admin.name} · {roleLabel(admin.role)}{admin.role === 'superadmin' ? ' · Платформа' : (admin.club_name ? ' · ' + admin.club_name : '')}{admin.branch_name ? ' · ' + admin.branch_name : ''}</div></div><button className="iconbtn" onClick={() => nav('/admin/help')} aria-label="Справка"><Icon name="info" /></button><button className="iconbtn" style={{ position: 'relative' }} onClick={() => nav('/admin/notifications')} aria-label="Уведомления"><Icon name="bell" />{unread > 0 && <span className="notif-badge">{unread > 9 ? '9+' : unread}</span>}</button><button className="iconbtn" onClick={() => nav('/admin/analytics')} aria-label="Аналитика"><Icon name="chart" /></button><button className="iconbtn" onClick={onLogout} aria-label="Выйти"><Icon name="signOut" /></button></div>
@@ -315,24 +315,33 @@ function AdminDashboard({ admin, onLogout }) {
       selected={tab}
       badges={{ leads: leadUnread }}
       items={[
-        { key: 'overview', icon: 'house', label: 'Обзор', onClick: () => go('overview') },
-        { key: 'loyalty', icon: 'crown', label: 'Loyalty', onClick: () => go('loyalty') },
-        { key: 'rewards', icon: 'medal', label: 'Награды', onClick: () => go('rewards') },
-        // v1.4.5: суперадмин управляет сотрудниками и филиалами внутри «Клубы» —
-        // отдельные вкладки ему не показываем (owner/manager сохраняют их).
-        ...(admin.role !== 'superadmin' ? [{ key: 'staff', icon: 'person', label: 'Сотрудники', onClick: () => go('staff') }] : []),
-        ...(canEdit && admin.role !== 'superadmin' ? [
-          { key: 'branches', icon: 'house', label: 'Филиалы', onClick: () => go('branches') }
-        ] : []),
-        ...(canEdit ? [
-          { key: 'invites', icon: 'link', label: 'Приглашения', onClick: () => go('invites') },
-          { key: 'leads', icon: 'clipboard', label: 'Заявки', onClick: () => go('leads') }
-        ] : []),
-        ...(isOwner(admin.role) && !isDemo ? [{ key: 'private', icon: 'lock', label: 'Приватный', onClick: () => go('private') }] : []),
-        ...(admin.role === 'superadmin' ? [{ key: 'clubs', icon: 'grid', label: 'Клубы', onClick: () => go('clubs') }] : [])
+        ...(admin.role === 'superadmin'
+          // v1.4.6: суперадмин управляет всем внутри «Клубы» (лояльность, филиалы,
+          // сотрудники). «Клубы» — в центре меню. Отдельные вкладки Loyalty /
+          // Сотрудники / Филиалы ему не показываем (owner/manager сохраняют их).
+          ? [
+              { key: 'overview', icon: 'house', label: 'Обзор', onClick: () => go('overview') },
+              { key: 'rewards', icon: 'medal', label: 'Награды', onClick: () => go('rewards') },
+              { key: 'invites', icon: 'link', label: 'Приглашения', onClick: () => go('invites') },
+              { key: 'clubs', icon: 'grid', label: 'Клубы', onClick: () => go('clubs') },
+              { key: 'leads', icon: 'clipboard', label: 'Заявки', onClick: () => go('leads') },
+              ...(isOwner(admin.role) && !isDemo ? [{ key: 'private', icon: 'lock', label: 'Приватный', onClick: () => go('private') }] : [])
+            ]
+          : [
+              { key: 'overview', icon: 'house', label: 'Обзор', onClick: () => go('overview') },
+              { key: 'loyalty', icon: 'crown', label: 'Loyalty', onClick: () => go('loyalty') },
+              { key: 'rewards', icon: 'medal', label: 'Награды', onClick: () => go('rewards') },
+              { key: 'staff', icon: 'person', label: 'Сотрудники', onClick: () => go('staff') },
+              ...(canEdit ? [
+                { key: 'branches', icon: 'house', label: 'Филиалы', onClick: () => go('branches') },
+                { key: 'invites', icon: 'link', label: 'Приглашения', onClick: () => go('invites') },
+                { key: 'leads', icon: 'clipboard', label: 'Заявки', onClick: () => go('leads') }
+              ] : []),
+              ...(isOwner(admin.role) && !isDemo ? [{ key: 'private', icon: 'lock', label: 'Приватный', onClick: () => go('private') }] : [])
+            ])
       ]}
     />
-    {tab === 'overview' && <>{canEdit && hasSeed && !isDemo && <div className="card" style={{ borderColor: 'var(--acc-line)', marginBottom: 14, background: 'color-mix(in srgb,var(--acc) 6%,var(--bg-el))' }}><div className="row between" style={{ gap: 10 }}><div className="grow"><div style={{ fontWeight: 600 }}>В клубе есть демо-данные</div><div className="small dim" style={{ marginTop: 3 }}>При создании trial-клуба мы добавили примеры: тренера и спортсменов с историей, чтобы вы сразу увидели систему изнутри. Реальные клиенты не затрагиваются — удалятся только демо-профили.</div></div><Button size="sm" variant="ghost" onClick={() => confirmSheet({ title: 'Очистить демо-данные?', message: 'Будут удалены демо-тренер и демо-спортсмены (is_seed) с их статистикой и историей. Ваши настоящие клиенты, филиалы, правила и награды останутся.', confirmText: 'Очистить', danger: true, onConfirm: () => api('/api/admin/club/purge-seed', { method: 'POST', body: '{}' }).then(() => { setHasSeed(false); api('/api/admin/staff').then(d => setStaff(d.admins || [])) }).catch(e => alert(e.message)) })}>Очистить демо-данные</Button></div></div>}<div className="tiles"><div className="tile"><div className="l">Сотрудники</div><div className="v">{staff.length || '—'}</div></div><div className="tile"><div className="l">Правила</div><div className="v">{rules.length || '—'}</div></div><div className="tile"><div className="l">Пуши</div><div className="v" style={{ fontSize: '1rem', color: push?.degraded ? 'var(--red)' : 'var(--green)' }}>{pushTile}</div></div><div className="tile"><div className="l">Роль</div><div className="v" style={{ fontSize: '1rem' }}>{roleLabel(admin.role)}</div></div><div className="tile"><div className="l">База</div><div className="v" style={{ fontSize: '1rem', color: 'var(--green)' }}>online</div></div></div>{push?.degraded && <div className="card" style={{ borderColor: 'var(--red)', marginBottom: 12, background: 'color-mix(in srgb,var(--red) 7%,var(--bg-el))' }}><div className="row between" style={{ gap: 10 }}><div className="grow"><div style={{ fontWeight: 600, color: 'var(--red)' }}>Сбои доставки push-уведомлений</div><div className="small dim" style={{ marginTop: 3 }}>не отправлено {push.stats?.failed || 0} шт. за 24 ч{lastPushFail ? ' · последний: ' + lastPushFail.host + (lastPushFail.status ? ' · ' + lastPushFail.status : '') + (lastPushFail.error ? ' · ' + lastPushFail.error : '') : ''}{push.webhookConfigured ? '' : ' · вебхук-алерт не настроен'}</div></div>{canEdit && <Button size="sm" variant="ghost" onClick={resetPush}>Сбросить</Button>}</div></div>}<div className="card"><h2 style={{ marginTop: 0 }}>Быстрый старт</h2><p className="dim">Создайте правило «Посещение» и выдайте сотруднику invite-код. События СКУД начнут начислять баллы после привязки member_key к профилю спортсмена.</p><Button variant="primary" onClick={() => go('loyalty')}>Настроить loyalty</Button></div></>}
+    {tab === 'overview' && <>{canEdit && hasSeed && !isDemo && <div className="card" style={{ borderColor: 'var(--acc-line)', marginBottom: 14, background: 'color-mix(in srgb,var(--acc) 6%,var(--bg-el))' }}><div className="row between" style={{ gap: 10 }}><div className="grow"><div style={{ fontWeight: 600 }}>В клубе есть демо-данные</div><div className="small dim" style={{ marginTop: 3 }}>При создании trial-клуба мы добавили примеры: тренера и спортсменов с историей, чтобы вы сразу увидели систему изнутри. Реальные клиенты не затрагиваются — удалятся только демо-профили.</div></div><Button size="sm" variant="ghost" onClick={() => confirmSheet({ title: 'Очистить демо-данные?', message: 'Будут удалены демо-тренер и демо-спортсмены (is_seed) с их статистикой и историей. Ваши настоящие клиенты, филиалы, правила и награды останутся.', confirmText: 'Очистить', danger: true, onConfirm: () => api('/api/admin/club/purge-seed', { method: 'POST', body: '{}' }).then(() => { setHasSeed(false); api('/api/admin/staff').then(d => setStaff(d.admins || [])) }).catch(e => alert(e.message)) })}>Очистить демо-данные</Button></div></div>}<div className="tiles"><div className="tile"><div className="l">Сотрудники</div><div className="v">{staff.length || '—'}</div></div><div className="tile"><div className="l">Правила</div><div className="v">{rules.length || '—'}</div></div><div className="tile"><div className="l">Пуши</div><div className="v" style={{ fontSize: '1rem', color: push?.degraded ? 'var(--red)' : 'var(--green)' }}>{pushTile}</div></div><div className="tile"><div className="l">Роль</div><div className="v" style={{ fontSize: '1rem' }}>{roleLabel(admin.role)}</div></div><div className="tile"><div className="l">База</div><div className="v" style={{ fontSize: '1rem', color: 'var(--green)' }}>online</div></div></div>{push?.degraded && <div className="card" style={{ borderColor: 'var(--red)', marginBottom: 12, background: 'color-mix(in srgb,var(--red) 7%,var(--bg-el))' }}><div className="row between" style={{ gap: 10 }}><div className="grow"><div style={{ fontWeight: 600, color: 'var(--red)' }}>Сбои доставки push-уведомлений</div><div className="small dim" style={{ marginTop: 3 }}>не отправлено {push.stats?.failed || 0} шт. за 24 ч{lastPushFail ? ' · последний: ' + lastPushFail.host + (lastPushFail.status ? ' · ' + lastPushFail.status : '') + (lastPushFail.error ? ' · ' + lastPushFail.error : '') : ''}{push.webhookConfigured ? '' : ' · вебхук-алерт не настроен'}</div></div>{canEdit && <Button size="sm" variant="ghost" onClick={resetPush}>Сбросить</Button>}</div></div>}<div className="card"><h2 style={{ marginTop: 0 }}>Быстрый старт</h2><p className="dim">Создайте правило «Посещение» и выдайте сотруднику invite-код. События СКУД начнут начислять баллы после привязки member_key к профилю спортсмена.</p><Button variant="primary" onClick={() => go(admin.role === 'superadmin' ? 'clubs' : 'loyalty')}>Настроить loyalty</Button></div></>}
     {tab === 'loyalty' && <Loyalty canEdit={canEdit} admin={admin} />}
     {tab === 'rewards' && <Rewards canEdit={canEdit} admin={admin} />}
     {tab === 'staff' && <Staff admin={admin} />}

@@ -609,6 +609,24 @@ export async function restoreAdmin(id) {
 }
 
 /* ---------- branches (филиалы/залы) ---------- */
+// Ручное создание клуба суперадмином (v1.4.6). Клуб появляется с активным
+// статусом (не trial), без TTL. Сразу создаётся owner-инвайт (роль owner строго
+// для этого club_id — повышение привилегий невозможно), чтобы владелец клуба
+// мог зарегистрировать свой admin passkey и войти в панель.
+export async function createClub({ name, ownerName = null, createdBy = 'system' }) {
+  await ready();
+  const clubId = 'club-' + crypto.randomBytes(8).toString('hex');
+  const cname = String(name || '').trim().slice(0, 80);
+  if (!cname) throw new Error('club name is required');
+  await pool.query(
+    `INSERT INTO clubs (id, name, owner_email, owner_admin_id, status, plan, trial_until)
+     VALUES ($1, $2, NULL, NULL, 'active', 'start', NULL)`,
+    [clubId, cname]
+  );
+  const invite = await createTrialOwnerInvite({ name: ownerName || 'Владелец клуба', createdBy, clubId });
+  return { id: clubId, name: cname, status: 'active', plan: 'start', invite };
+}
+
 export async function listClubs({ limit = 50, before = null } = {}) {
   await ready();
   const lim = Math.max(1, Math.min(200, +limit || 50));

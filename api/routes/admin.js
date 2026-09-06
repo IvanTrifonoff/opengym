@@ -26,7 +26,7 @@ export function createAdminRoutes(deps) {
     putChallenge, takeChallenge,
     analyticsScope, requireProgramAccess, bookingNotification,
     adminDbReady, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
-    listAdmins, listClubs, getClub, setClubStatus, updateClubPlan, listExpiredTrials, listFrozenExpiredGrace,
+    listAdmins, listClubs, createClub, getClub, setClubStatus, updateClubPlan, listExpiredTrials, listFrozenExpiredGrace,
     trialEmailBudgetReset, invalidateClubCache,
     purgeSeedData,
     registerAdmin, updateAdmin, updateAdminCounter, createAdminInvite,
@@ -257,6 +257,15 @@ export function createAdminRoutes(deps) {
   /* ---------- branches (филиалы/залы) ---------- */
   // Клубы: пагинированный список (superadmin — все, cursor limit/before;
   // owner — только свой клуб). Пагинация нужна, когда триалов станет 500+.
+  // Создание клуба суперадмином (v1.4.6): активный клуб + owner-инвайт.
+  { method: 'POST', path: '/api/admin/clubs/create', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['superadmin']); if (!admin) return;
+    const body = await readBody(req);
+    try {
+      const club = await createClub({ name: body.name, ownerName: body.ownerName, createdBy: admin.id });
+      json(res, 200, { ok: true, club });
+    } catch (error) { json(res, 400, { error: error.message }); }
+  } },
   { method: 'GET', path: '/api/admin/clubs', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['superadmin', 'owner']); if (!admin) return;
     try {
