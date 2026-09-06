@@ -83,7 +83,7 @@ export function createLeadsRoutes(deps) {
               payload: { kind: 'promo_lead', lead_id: id, contact, payment }
             });
             if (created) {
-              await sendPush(ownerId, { title, body: detail, tag: 'promo-' + id, url: '/trainer/notifications' })
+              await sendPush(ownerId, { title, body: detail, tag: 'promo-' + id, url: '/admin/notifications' })
                 .catch(() => {});
               // Email-уведомление владельцу (ivan@trfnv.ru) — не блокирует ответ,
               // если почта не настроена (RESEND_API_KEY пуст) или сервис недоступен.

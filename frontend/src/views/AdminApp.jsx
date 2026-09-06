@@ -340,16 +340,20 @@ export default function AdminApp() {
   if (register) return <AdminRegister />
   if (admin === undefined) return <div className="narrow" style={{ paddingTop: '42vh', textAlign: 'center' }}><Icon name="dumbbell" style={{ color: 'var(--label-3)', fontSize: 30 }} /></div>
   if (!admin) return <AdminLogin onLogin={setAdmin} />
+  // РОЛЕВАЯ ИЗОЛЯЦИЯ (см. docs/AGENT_GUIDE.md «Роли»): тренер живёт только в
+  // своём портале /trainer — у него нет доступа к панели владельца (/admin,
+  // /admin/analytics, /admin?tab=…), он отвечает лишь за своих атлетов.
+  // Общая справка /admin/help остаётся доступной (кнопка «?» в портале).
+  if (admin.role === 'trainer') {
+    if (loc.pathname.startsWith('/trainer/notifications')) return <TrainerNotifications />
+    if (loc.pathname.startsWith('/trainer')) return <Trainer admin={admin} onLogout={() => api('/api/admin/auth/logout', { method: 'POST', body: '{}' }).then(() => { setAdmin(null); nav('/trainer') })} />
+    if (loc.pathname.startsWith('/admin/help')) return <AdminHelp />
+    return <Navigate to="/trainer" replace />
+  }
   if (loc.pathname.startsWith('/admin/analytics')) return <Analytics admin={admin} />
   if (loc.pathname.startsWith('/admin/help')) return <AdminHelp />
   if (loc.pathname.startsWith('/admin/notifications')) return <TrainerNotifications />
-  if (loc.pathname.startsWith('/trainer/notifications')) {
-    if (admin.role !== 'trainer') return <Navigate to="/admin" replace />
-    return <TrainerNotifications />
-  }
-  if (loc.pathname.startsWith('/trainer')) {
-    if (admin.role !== 'trainer') return <Navigate to="/admin" replace />
-    return <Trainer admin={admin} onLogout={() => api('/api/admin/auth/logout', { method: 'POST', body: '{}' }).then(() => { setAdmin(null); nav('/admin') })} />
-  }
+  if (loc.pathname.startsWith('/trainer/notifications')) return <Navigate to="/admin/notifications" replace />
+  if (loc.pathname.startsWith('/trainer')) return <Navigate to="/admin" replace />
   return <AdminDashboard admin={admin} onLogout={() => api('/api/admin/auth/logout', { method: 'POST', body: '{}' }).then(() => { setAdmin(null); nav('/admin') })} />
 }
