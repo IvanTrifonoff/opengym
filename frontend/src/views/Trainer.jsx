@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api.js'
 import Icon from '../components/Icon.jsx'
 import NavBar from '../components/NavBar.jsx'
@@ -16,7 +16,17 @@ const STATUS_ORDER = [['all', 'Все'], ['active', 'Активен'], ['at_risk
 // Trainer portal (/trainer): own athletes + adding new (invite link) or existing (search) athletes.
 export default function Trainer({ admin, onLogout }) {
   const nav = useNavigate()
+  const loc = useLocation()
   const [tab, setTab] = useState('athletes')
+  const [focusBooking, setFocusBooking] = useState(null)
+  // Глубокий переход из уведомления: открыть вкладку «Календарь» и подсветить заявку.
+  useEffect(() => {
+    const st = loc.state
+    if (st && st.tab === 'calendar') {
+      setTab('calendar')
+      if (st.focusBooking) setFocusBooking(st.focusBooking)
+    }
+  }, [loc.state])
   const [athletes, setAthletes] = useState([])
   const [sel, setSel] = useState(null)
   const [prog, setProg] = useState(null)
@@ -142,7 +152,7 @@ export default function Trainer({ admin, onLogout }) {
         </div>)}</div>}
     </>}
 
-    {tab === 'calendar' && <TrainerBookings admin={admin} />}
+    {tab === 'calendar' && <TrainerBookings admin={admin} focusBookingId={focusBooking} />}
 
     {tab === 'add' && <>
       <div className="card">

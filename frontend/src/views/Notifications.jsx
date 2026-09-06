@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api.js'
 import { t, dateLocale } from '../lib/i18n.js'
 import { refreshBadge } from '../lib/badge.js'
+import { useStore } from '../store/useStore.js'
+import { openCoachSheet } from '../components/CoachSheet.jsx'
 import Icon from '../components/Icon.jsx'
 
 function fmtWhen(iso) {
@@ -15,6 +17,7 @@ function fmtWhen(iso) {
 
 export default function Notifications() {
   const nav = useNavigate()
+  const user = useStore(s => s.user)
   const [items, setItems] = useState(null)
   const [err, setErr] = useState(false)
 
@@ -53,17 +56,25 @@ export default function Notifications() {
         </div>
       )}
 
-      {items && !err && items.map(n => (
-        <div key={n.id} className={'card' + (n.read ? '' : ' unread')} style={{ marginBottom: 10 }}>
-          <div className="row between">
+      {items && !err && items.map(n => {
+        // Запись к тренеру (заявка/подтверждение/напоминание): открываем «Мои записи».
+        const isBooking = n.payload && (n.payload.kind === 'booking' || n.payload.kind === 'reminder')
+        const openBooking = () => { if (user) openCoachSheet(user); else nav('/home') }
+        return <div key={n.id} className={'card' + (n.read ? '' : ' unread')}
+          style={{ marginBottom: 10, cursor: isBooking ? 'pointer' : 'default' }}
+          onClick={isBooking ? openBooking : undefined}>
+          <div className="row between" style={{ gap: 8 }}>
             <div style={{ minWidth: 0 }}>
               <div className="lbl2">{(n.title === 'ИмпульС' || n.title === 'openGym') ? t('impulseGym') : n.title}</div>
               <div className="ttl" style={{ fontSize: 15, lineHeight: 1.4 }}>{n.body}</div>
             </div>
-            <span className="small muted" style={{ whiteSpace: 'nowrap', marginLeft: 10 }}>{fmtWhen(n.created_at)}</span>
+            <div className="row" style={{ gap: 6, flex: 'none' }}>
+              {isBooking && <span className="tag acc">{t('My bookings')}</span>}
+              <span className="small muted" style={{ whiteSpace: 'nowrap' }}>{fmtWhen(n.created_at)}</span>
+            </div>
           </div>
         </div>
-      ))}
+      })}
     </div>
   )
 }

@@ -50,17 +50,24 @@ export default function TrainerNotifications() {
         </div>
       )}
 
-      {items && !err && items.map(n => (
-        <div key={n.id} className={'card' + (n.read ? '' : ' unread')} style={{ marginBottom: 10 }}>
-          <div className="row between">
+      {items && !err && items.map(n => {
+        // Заявка на запись: проваливаемся в календарь тренера с подсвеченной заявкой.
+        const isBooking = n.payload && n.payload.kind === 'booking' && n.payload.booking_id
+        return <div key={n.id} className={'card' + (n.read ? '' : ' unread')}
+          style={{ marginBottom: 10, cursor: isBooking ? 'pointer' : 'default' }}
+          onClick={isBooking ? () => nav('/trainer', { state: { tab: 'calendar', focusBooking: n.payload.booking_id } }) : undefined}>
+          <div className="row between" style={{ gap: 8 }}>
             <div style={{ minWidth: 0 }}>
               <div className="lbl2">{n.title}</div>
               <div className="ttl" style={{ fontSize: 15, lineHeight: 1.4 }}>{n.body}</div>
             </div>
-            <span className="small muted" style={{ whiteSpace: 'nowrap', marginLeft: 10 }}>{fmtWhen(n.created_at)}</span>
+            <div className="row" style={{ gap: 6, flex: 'none' }}>
+              {isBooking && <span className="tag acc">Открыть заявку</span>}
+              <span className="small muted" style={{ whiteSpace: 'nowrap' }}>{fmtWhen(n.created_at)}</span>
+            </div>
           </div>
         </div>
-      ))}
+      })}
     </div>
   )
 }
