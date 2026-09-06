@@ -13,7 +13,8 @@ export function createLoyaltyRoutes(deps) {
     json, readBody, readSession, requireAdminAccount,
     getWallet, listRewards, redeemReward,
     saveReward, deleteReward, listRedemptions, updateRedemption,
-    listLoyaltyRules, saveLoyaltyRule, deleteLoyaltyRule
+    listLoyaltyRules, saveLoyaltyRule, deleteLoyaltyRule,
+    listAdmins
   } = deps;
 
   return [
