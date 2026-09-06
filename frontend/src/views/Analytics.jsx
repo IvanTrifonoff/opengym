@@ -7,6 +7,7 @@ import { fmtDate } from '../lib/format.js'
 import { dateLocale } from '../lib/i18n.js'
 import Icon from '../components/Icon.jsx'
 import NavBar from '../components/NavBar.jsx'
+import InfoTip from '../components/InfoTip.jsx'
 import { Button } from '../components/ui.jsx'
 import { confirmSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
@@ -44,8 +45,8 @@ export const daysAgo = t => {
   return d <= 0 ? 'сегодня' : d === 1 ? 'вчера' : d + ' дн. назад'
 }
 
-function Tile({ l, v, color }) {
-  return <div className="tile"><div className="l">{l}</div><div className="v" style={color ? { color } : undefined}>{v}</div></div>
+function Tile({ l, v, color, hint }) {
+  return <div className="tile"><div className="l">{l}{hint && <InfoTip text={hint} />}</div><div className="v" style={color ? { color } : undefined}>{v}</div></div>
 }
 
 function Leaderboard({ lb }) {
@@ -266,21 +267,22 @@ export default function Analytics({ admin }) {
     {impErr && <div className="small" style={{ color: 'var(--red)', marginBottom: 10 }}>{impErr}</div>}
 
     {summary && <div className="tiles">
-      <Tile l="Спортсмены" v={summary.total} />
-      <Tile l="Активны" v={summary.active} color="var(--green)" />
-      <Tile l="В зоне риска" v={summary.atRisk ? summary.atRisk + ' · ' + summary.atRiskPct + '%' : '0'} color="var(--yellow)" />
-      <Tile l="Ушли" v={summary.gone} color="var(--red)" />
-      <Tile l="Частота / нед" v={summary.avgFreq || '—'} />
-      <Tile l="Визиты 30д" v={summary.visits30} />
-      <Tile l="Тренировки 30д" v={summary.workouts30} />
+      <Tile l="Спортсмены" v={summary.total} hint="Все спортсмены в вашей зоне видимости: вся сеть, филиал или только привязанные к вам." />
+      <Tile l="Активны" v={summary.active} color="var(--green)" hint="Тренировались или посещали зал за последние 14 дней." />
+      <Tile l="В зоне риска" v={summary.atRisk ? summary.atRisk + ' · ' + summary.atRiskPct + '%' : '0'} color="var(--yellow)" hint="Без активности 14–30 дней — клиента ещё можно вернуть. Процент — доля риска среди тех, у кого активность была." />
+      <Tile l="Ушли" v={summary.gone} color="var(--red)" hint="Нет активности больше 30 дней. Попробуйте вернуть акцией или персональным предложением." />
+      <Tile l="Частота / нед" v={summary.avgFreq || '—'} hint="Среднее число тренировок в неделю у тех, кто занимался в последние 30 дней." />
+      <Tile l="Визиты 30д" v={summary.visits30} hint="Посещений зала за 30 дней. Если СКУД не подключён — считаются дни с тренировками." />
+      <Tile l="Тренировки 30д" v={summary.workouts30} hint="Число завершённых тренировок за последние 30 дней." />
       <Tile l="Тоннаж 30д"
         v={fmtNum2(summary.volume30) + ' кг' + (summary.volumeTrendPct == null ? '' :
           ' · ' + (summary.volumeTrendPct >= 0 ? '↑' : '↓') + Math.abs(summary.volumeTrendPct) + '%')}
-        color={summary.volumeTrendPct == null ? undefined : (summary.volumeTrendPct >= 0 ? 'var(--green)' : 'var(--red)')} />
-      <Tile l="Баллов выдано" v={summary.pointsIssued} color="var(--acc)" />
-      <Tile l="Баллов потрачено" v={summary.pointsSpent} />
-      <Tile l="Наград выдано" v={summary.redemptions} />
-      <Tile l="Новые" v={summary.fresh} />
+        color={summary.volumeTrendPct == null ? undefined : (summary.volumeTrendPct >= 0 ? 'var(--green)' : 'var(--red)')}
+        hint="Суммарный поднятый объём (кг) за 30 дней. Стрелка — рост или падение к предыдущим 30 дням." />
+      <Tile l="Баллов выдано" v={summary.pointsIssued} color="var(--acc)" hint="Баллов лояльности начислено спортсменам (за всё время)." />
+      <Tile l="Баллов потрачено" v={summary.pointsSpent} hint="Баллов потрачено на награды (за всё время)." />
+      <Tile l="Наград выдано" v={summary.redemptions} hint="Наград выдано спортсменам (без учёта отклонённых заявок)." />
+      <Tile l="Новые" v={summary.fresh} hint="Зарегистрировались, но ещё ни разу не тренировались. Главное — помочь сделать первую тренировку." />
     </div>}
 
     <div className="seg" style={{ marginBottom: 12, '--n': canManage ? 3 : 2, '--i': ['athletes', 'retention', 'leaderboard'].indexOf(tab) }}>
