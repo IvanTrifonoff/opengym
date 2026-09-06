@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
@@ -23,7 +23,7 @@ const daySlots = (avail, wd) => {
   return out.sort()
 }
 
-export default function TrainerBookings({ admin }) {
+export default function TrainerBookings({ admin, focusBookingId }) {
   const [availability, setAvailability] = useState([])
   const [bookings, setBookings] = useState([])
   const [roster, setRoster] = useState([])
@@ -41,6 +41,17 @@ export default function TrainerBookings({ admin }) {
 
   const days = []
   for (let i = 0; i < 14; i++) { const d = new Date(); d.setDate(d.getDate() + i); days.push(iso(d)) }
+
+  // Подсветка заявки, на которую пришли из уведомления: плавный скролл + акцент.
+  const focusRef = useRef(null)
+  useEffect(() => {
+    if (!focusBookingId) return
+    const t = setTimeout(() => {
+      const el = document.getElementById('booking-' + focusBookingId)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 250)
+    return () => clearTimeout(t)
+  }, [focusBookingId])
 
   const load = () => Promise.all([
     api('/api/admin/trainer/availability').then(d => {
@@ -214,9 +225,10 @@ export default function TrainerBookings({ admin }) {
 
     {pending.length > 0 && <div className="card" style={{ marginBottom: 12 }}>
       <h3 style={{ marginTop: 0 }}>Заявки на подтверждение</h3>
-      {pending.map(b => <div className="item" key={b.id}>
+      {pending.map(b => <div className="item" key={b.id} id={'booking-' + b.id}
+        style={b.id === focusBookingId ? { borderColor: 'var(--acc)', background: 'color-mix(in srgb, var(--acc) 10%, transparent)' } : undefined}>
         <div className="grow">
-          <div className="tt">{b.athleteName || 'Спортсмен'}</div>
+          <div className="tt">{b.athleteName || 'Спортсмен'}{b.id === focusBookingId && <span className="tag" style={{ marginLeft: 6, color: 'var(--acc)', borderColor: 'var(--acc)55' }}>новая</span>}</div>
           <div className="ss">{fmt(b.date)} · {b.time}{b.note ? ' · «' + b.note + '»' : ''}</div>
         </div>
         <div className="row" style={{ gap: 6 }}>

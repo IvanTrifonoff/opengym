@@ -1001,10 +1001,17 @@ export async function dispatchOutbox({ send, batch = 25 } = {}) {
 export async function listNotifications(userId, limit = 50) {
   await ready();
   const r = await pool.query(
-    `SELECT id, title, body, created_at, read_at FROM app_notifications
+    `SELECT id, title, body, created_at, read_at, payload FROM app_notifications
      WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`, [userId, limit]
   );
-  return r.rows.map(x => ({ id: x.id, title: x.title, body: x.body, created_at: x.created_at, read: !!x.read_at }));
+  // payload (kind + booking_id/goal_id…) нужен фронту, чтобы из уведомления можно было
+  // провалиться в конкретную заявку/объект. Хранится как JSON-строка — разбираем здесь.
+  return r.rows.map(x => {
+    // payload — JSONB: pg отдаёт уже распарсенный объект (не строку). Если вдруг строка — парсим.
+    let payload = null;
+    try { payload = typeof x.payload === 'string' ? JSON.parse(x.payload) : (x.payload || null); } catch { payload = null; }
+    return { id: x.id, title: x.title, body: x.body, created_at: x.created_at, read: !!x.read_at, payload };
+  });
 }
 
 export async function markNotificationsRead(userId, id) {

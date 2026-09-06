@@ -13,6 +13,7 @@ import { MOBILE, shareExport, syncReminder } from '../lib/mobile.js'
 import { loadStarterPlan, confirmSheet, importFromApp } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
 import { loyaltyInfoSheet } from '../components/LoyaltyInfo.jsx'
+import { athleteHelpSheet } from '../components/AthleteHelp.jsx'
 import { refreshBadge, markBadgeSeen } from '../lib/badge.js'
 import { Section, Row, SelectRow, Switch, Segmented, Button, TextField } from '../components/ui.jsx'
 
@@ -100,6 +101,12 @@ export default function Settings() {
     </Section>
     {!user && !DEMO && !MOBILE && <p className="sect-f" style={{ marginTop: -18, marginBottom: 22 }}>{t('Guest mode — data lives only in this browser.')}</p>}
     {user && <LoyaltyCard toast={toast} />}
+
+    {/* ---------- help: how the app is organised ---------- */}
+    <Section title={t('Help')}>
+      <Row icon="info" iconTint="var(--acc)" title={t('How the app works')} subtitle={t('A short tour of the sections')} accessory="chevron" onClick={athleteHelpSheet} />
+      {user && <Row icon="crown" iconTint="var(--acc)" title={t('Points & rewards')} subtitle={t('What points are and how to spend them')} accessory="chevron" onClick={loyaltyInfoSheet} />}
+    </Section>
 
     {/* ---------- general ---------- */}
     <Section title={t('General')} footer={t('Note: switching units only changes the label — logged numbers are not converted.')}>

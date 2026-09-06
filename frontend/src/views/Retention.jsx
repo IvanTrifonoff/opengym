@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api.js'
 import { fmtDate } from '../lib/format.js'
 import Icon from '../components/Icon.jsx'
+import { retentionHelpSheet } from '../components/RetentionHelp.jsx'
 
 const DAY = 86400000
 const daysAgo = t => {
@@ -46,8 +47,11 @@ export default function Retention({ admin }) {
   const FILTERS = [['all', 'Все'], ['active', 'Активен'], ['at_risk', 'В зоне риска'], ['gone', 'Ушёл'], ['new', 'Новый']]
 
   return <div style={{ paddingBottom: 40 }}>
-    <div className="small dim" style={{ marginBottom: 8 }}>
-      Снимок от {generatedLabel} · пересчитывается ночью · обновление без нагрузки на БД
+    <div className="row between" style={{ marginBottom: 8, alignItems: 'flex-start' }}>
+      <div className="small dim">
+        Снимок от {generatedLabel} · пересчитывается ночью · обновление без нагрузки на БД
+      </div>
+      <button className="btn xs plain" onClick={retentionHelpSheet}><Icon name="info" style={{ fontSize: 13, verticalAlign: '-2px', marginRight: 4 }} />Инструкция</button>
     </div>
 
     <div className="tiles">
