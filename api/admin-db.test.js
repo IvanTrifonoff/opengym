@@ -31,6 +31,11 @@ const {
   listExpiredDemoSessions, deleteDemoSession, purgeDemoTokens, countActiveDemoSessions,
   countAllActiveDemoSessions
 } = db;
+const {
+  listClubs, getClub, setClubStatus, updateClubPlan, listExpiredTrials, createTrialOwnerInvite,
+  trialEmailBudgetUsed, trialEmailBudgetIncrement, trialEmailBudgetReset,
+  countTrialRequestsSince, addTrialRequest, purgeOldTrialRequests
+} = db;
 import { scopeAdmins, scopeBranches, scopeOwnerRows, scopeUsers } from './demo-scope.js';
 
 const T = (Date.now() % 1e6).toString(36) + Math.random().toString(36).slice(2, 6);
@@ -207,6 +212,64 @@ test('уведомления: saveNotification идемпотентен по id 
   }
 });
 
+
+/* ---- Multi-tenant v1.4.x: жизненный цикл клуба (kill-switch, trial) ---- */
+test('клуб: пагинация listClubs, kill-switch setClubStatus, trial-функции', async (t) => {
+  if (!needDb(t)) return;
+  const clubId = 'tcl-' + T, clubId2 = 'tcl2-' + T;
+  const ip = '10.' + (T.charCodeAt(0) % 200) + '.' + (T.charCodeAt(1) % 200) + '.9';
+  try {
+    // Создаём два trial-клуба напрямую (как spawnTrialClub) — для проверки БД-функций.
+    await pool.query(
+      `INSERT INTO clubs (id, name, owner_email, status, plan, trial_until) VALUES
+         ($1, 'Trial A', 'a@example.com', 'active', 'trial', now() + interval '2 days'),
+         ($2, 'Trial B', 'b@example.com', 'active', 'trial', now() - interval '1 hour')
+       ON CONFLICT (id) DO NOTHING`, [clubId, clubId2]
+    );
+
+    // listClubs: keyset-пагинация возвращает новые клубы и hasMore-контракт.
+    const clubs = await listClubs({ limit: 50 });
+    assert.ok(clubs.some(c => c.id === clubId && c.status === 'active' && c.plan === 'trial'), 'клуб в списке с новыми полями');
+    assert.ok(clubs.every(c => c.owner_email !== undefined), 'owner_email в SELECT');
+
+    // listExpiredTrials: просроченный виден, активный (2 дня впереди) — нет.
+    const expired = await listExpiredTrials(new Date());
+    assert.ok(expired.some(c => c.id === clubId2), 'просроченный trial найден');
+    assert.ok(!expired.some(c => c.id === clubId), 'непросроченный не тронут');
+
+    // Kill-switch: frozen возвращается getClub, активный остаётся.
+    await setClubStatus(clubId2, 'frozen');
+    const frozen = await getClub(clubId2);
+    assert.equal(frozen.status, 'frozen', 'клуб заморожен');
+
+    // updateClubPlan: апгрейд trial → start (снятие TTL).
+    const upgraded = await updateClubPlan(clubId, { plan: 'start', trialUntil: null });
+    assert.equal(upgraded.plan, 'start', 'план обновлён');
+
+    // Owner magic-link инвайт (роль owner разрешена ТОЛЬКО через этот путь).
+    const inv = await createTrialOwnerInvite({ name: 'Владелец', createdBy: 'sys', clubId });
+    assert.equal(inv.role, 'owner');
+    assert.equal(inv.club_id, clubId);
+
+    // Rate-limit по IP в БД + месячный бюджет писем.
+    assert.equal(await countTrialRequestsSince(ip, new Date(Date.now() - 3600e3)), 0);
+    await addTrialRequest(ip); await addTrialRequest(ip);
+    assert.equal(await countTrialRequestsSince(ip, new Date(Date.now() - 3600e3)), 2, 'две записи по IP');
+    await purgeOldTrialRequests(0);   // чистим всё старше now
+    assert.equal(await countTrialRequestsSince(ip, new Date(0)), 0, 'хвост вычищен');
+
+    const b0 = await trialEmailBudgetUsed();
+    await trialEmailBudgetIncrement(1);
+    assert.equal(await trialEmailBudgetUsed(), b0 + 1, 'бюджет вырос');
+    await trialEmailBudgetReset();
+    assert.equal(await trialEmailBudgetUsed(), 0, 'бюджет сброшен');
+  } finally {
+    // Полная зачистка — никаких trial-клубов после прогона.
+    await pool.query('DELETE FROM admin_invites WHERE club_id IN ($1,$2)', [clubId, clubId2]).catch(() => {});
+    await pool.query('DELETE FROM clubs WHERE id IN ($1,$2)', [clubId, clubId2]).catch(() => {});
+    await pool.query('DELETE FROM trial_requests WHERE ip = $1', [ip]).catch(() => {});
+  }
+});
 
 /* ---- промо-заявки с сайта (тарифы / КП) ---- */
 test('промо-заявки: insertLead + findOwnerId + уведомление владельцу идемпотентно', async (t) => {

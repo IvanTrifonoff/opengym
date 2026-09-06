@@ -26,7 +26,9 @@ export function createAdminRoutes(deps) {
     putChallenge, takeChallenge,
     analyticsScope, requireProgramAccess, bookingNotification,
     adminDbReady, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
-    listAdmins, listClubs, registerAdmin, updateAdmin, updateAdminCounter, createAdminInvite,
+    listAdmins, listClubs, getClub, setClubStatus, updateClubPlan, listExpiredTrials, listFrozenExpiredGrace,
+    trialEmailBudgetReset, invalidateClubCache,
+    registerAdmin, updateAdmin, updateAdminCounter, createAdminInvite,
     softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
     listPrivateCodes, createPrivateCode, revokePrivateCode,
     setTrainerAssignment, listTrainerAssignments,
@@ -230,14 +232,37 @@ export function createAdminRoutes(deps) {
     } catch (error) { json(res, 400, { error: error.message }); }
   } },
   /* ---------- branches (филиалы/залы) ---------- */
-  // Клубы платформы (супер-админ; владелец клуба видит только свой контекст).
+  // Клубы: пагинированный список (superadmin — все, cursor limit/before;
+  // owner — только свой клуб). Пагинация нужна, когда триалов станет 500+.
   { method: 'GET', path: '/api/admin/clubs', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res, ['superadmin', 'owner']); if (!admin) return;
     try {
-      const clubs = await listClubs();
-      // владелец клуба — только свой клуб; superadmin — все живые.
-      json(res, 200, { clubs: admin.role === 'superadmin' ? clubs : clubs.filter(c => c.id === admin.club_id) });
+      const u = new URL(req.url, 'http://x');
+      const limit = Math.max(1, Math.min(200, +(u.searchParams.get('limit') || 50)));
+      const before = u.searchParams.get('before') || null;
+      let clubs = await listClubs({ limit, before });
+      if (admin.role !== 'superadmin') clubs = clubs.filter(c => c.id === admin.club_id);
+      const hasMore = clubs.length > limit;
+      json(res, 200, { clubs: hasMore ? clubs.slice(0, limit) : clubs, has_more: hasMore });
     } catch (error) { console.error('clubs list failed:', error.message); json(res, 503, { error: 'unavailable' }); }
+  } },
+  // Kill-switch (superadmin-only): заморозить/разморозить клуб. Инвалидирует
+  // кэш статуса НЕМЕДЛЕННО — у замороженного владельца нет ни секунды доступа.
+  { method: 'POST', path: '/api/admin/clubs/status', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['superadmin']); if (!admin) return;
+    const body = await readBody(req);
+    try {
+      const club = await setClubStatus(String(body.id || ''), String(body.status || ''), String(body.note || '').slice(0, 200));
+      invalidateClubCache(club.id);   // мгновенная инвалидация — следующий запрос персонала уже 403
+      json(res, 200, { ok: true, club });
+    } catch (error) { json(res, 400, { error: error.message }); }
+  } },
+  // Ручной сброс месячного бюджета писем триалов (superadmin) — страховка от
+  // «прод встал, потому что упёрлись в хардкод».
+  { method: 'POST', path: '/api/admin/trial/budget/reset', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['superadmin']); if (!admin) return;
+    try { await trialEmailBudgetReset(); json(res, 200, { ok: true }); }
+    catch (error) { json(res, 400, { error: error.message }); }
   } },
   { method: 'GET', path: '/api/admin/branches', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;

@@ -12,6 +12,7 @@ import Trainer from './Trainer.jsx'
 import TrainerNotifications from './TrainerNotifications.jsx'
 import AdminHelp from './AdminHelp.jsx'
 import AdminLeads from './AdminLeads.jsx'
+import Clubs from './Clubs.jsx'
 import Modals from '../components/Modals.jsx'
 import Toast from '../components/Toast.jsx'
 
@@ -301,7 +302,8 @@ function AdminDashboard({ admin, onLogout }) {
           { key: 'invites', icon: 'link', label: 'Приглашения', onClick: () => go('invites') },
           { key: 'leads', icon: 'clipboard', label: 'Заявки', onClick: () => go('leads') }
         ] : []),
-        ...(isOwner(admin.role) && !isDemo ? [{ key: 'private', icon: 'lock', label: 'Приватный', onClick: () => go('private') }] : [])
+        ...(isOwner(admin.role) && !isDemo ? [{ key: 'private', icon: 'lock', label: 'Приватный', onClick: () => go('private') }] : []),
+        ...(admin.role === 'superadmin' ? [{ key: 'clubs', icon: 'grid', label: 'Клубы', onClick: () => go('clubs') }] : [])
       ]}
     />
     {tab === 'overview' && <><div className="tiles"><div className="tile"><div className="l">Сотрудники</div><div className="v">{staff.length || '—'}</div></div><div className="tile"><div className="l">Правила</div><div className="v">{rules.length || '—'}</div></div><div className="tile"><div className="l">Пуши</div><div className="v" style={{ fontSize: '1rem', color: push?.degraded ? 'var(--red)' : 'var(--green)' }}>{pushTile}</div></div><div className="tile"><div className="l">Роль</div><div className="v" style={{ fontSize: '1rem' }}>{roleLabel(admin.role)}</div></div><div className="tile"><div className="l">База</div><div className="v" style={{ fontSize: '1rem', color: 'var(--green)' }}>online</div></div></div>{push?.degraded && <div className="card" style={{ borderColor: 'var(--red)', marginBottom: 12, background: 'color-mix(in srgb,var(--red) 7%,var(--bg-el))' }}><div className="row between" style={{ gap: 10 }}><div className="grow"><div style={{ fontWeight: 600, color: 'var(--red)' }}>Сбои доставки push-уведомлений</div><div className="small dim" style={{ marginTop: 3 }}>не отправлено {push.stats?.failed || 0} шт. за 24 ч{lastPushFail ? ' · последний: ' + lastPushFail.host + (lastPushFail.status ? ' · ' + lastPushFail.status : '') + (lastPushFail.error ? ' · ' + lastPushFail.error : '') : ''}{push.webhookConfigured ? '' : ' · вебхук-алерт не настроен'}</div></div>{canEdit && <Button size="sm" variant="ghost" onClick={resetPush}>Сбросить</Button>}</div></div>}<div className="card"><h2 style={{ marginTop: 0 }}>Быстрый старт</h2><p className="dim">Создайте правило «Посещение» и выдайте сотруднику invite-код. События СКУД начнут начислять баллы после привязки member_key к профилю спортсмена.</p><Button variant="primary" onClick={() => go('loyalty')}>Настроить loyalty</Button></div></>}
@@ -312,6 +314,7 @@ function AdminDashboard({ admin, onLogout }) {
     {tab === 'invites' && <Invites admin={admin} />}
     {tab === 'private' && !isDemo && <PrivateCodes admin={admin} />}
     {tab === 'leads' && <AdminLeads onViewed={n => setLeadUnread(n)} focusLead={loc.state && loc.state.focusLead} />}
+    {tab === 'clubs' && admin.role === 'superadmin' && <Clubs />}
   </div>
 }
 

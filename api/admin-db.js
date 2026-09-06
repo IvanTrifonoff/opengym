@@ -332,6 +332,43 @@ ALTER TABLE admin_users ADD CONSTRAINT admin_users_club_required_check
 ALTER TABLE admin_invites ADD COLUMN IF NOT EXISTS club_id TEXT;
 `;
 
+// v1.4.x (Шаг 4-5, дизайн docs/design-step4-5.md): жизненный цикл клуба.
+// status — рубильник (kill-switch) «заморозить клуб»: замороженный клуб не
+// удаляется (данные целы для возврата клиента), но requireAdminAccount
+// отдаёт 403 всему персоналу. trial_until/plan — Trial-клубы (Шаг 5):
+// GC-воркер переводит просроченный trial в frozen, grace-период — в deleted.
+const CLUB_LIFECYCLE_MIGRATION = `
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'
+  CHECK (status IN ('active','frozen','deleted'));
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS trial_until TIMESTAMPTZ;
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'trial'
+  CHECK (plan IN ('trial','start','network','selfhosted'));
+-- Email владельца trial-клуба (собран на промо-форме) — на него шлём
+-- magic-link регистрации и уведомление об истечении триала. У платных клубов
+-- может быть пустым (владелец известен по passkey).
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS owner_email TEXT;
+CREATE INDEX IF NOT EXISTS clubs_status_trial_idx ON clubs (status, trial_until);
+-- is_seed: записи, созданные спавнером демо/trial-клуба (фейковые тренеры и
+-- атлеты). Отличает «тестового Василия» от реального клиента владельца —
+-- purge-seed удаляет ровно is_seed=true, аналитика может исключать их.
+ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS is_seed BOOLEAN NOT NULL DEFAULT false;
+-- Rate-limit публичного trial-эндпоинта по IP в БД (не in-memory — переживает
+-- рестарты и несколько инстансов). Записи живут сутки, чистит воркер.
+CREATE TABLE IF NOT EXISTS trial_requests (
+  ip TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS trial_requests_ip_created_idx ON trial_requests (ip, created_at);
+`;
+
+// Отдельный идемпотентный шаг: owner_email добавили после первого выката
+// lifecycle-миграции — отдельной ADD COLUMN IF NOT EXISTS, чтобы БД, где
+// CLUB_LIFECYCLE_MIGRATION уже выполнен (prod/демо/test-pg), тоже получили
+// колонку без пересоздания.
+const CLUB_OWNER_EMAIL_MIGRATION = `
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS owner_email TEXT;
+`;
+
 export const adminDbReady = (async () => {
   await integrationDbReady;
   if (!pool) return;
@@ -346,6 +383,8 @@ export const adminDbReady = (async () => {
     await pool.query(OUTBOX_MIGRATION);
     await pool.query(DEMO_MIGRATION);
     await pool.query(MULTITENANT_MIGRATION);
+    await pool.query(CLUB_LIFECYCLE_MIGRATION);
+    await pool.query(CLUB_OWNER_EMAIL_MIGRATION);
   } catch (error) {
     initError = error;
     console.error('admin database init failed:', error.message);
@@ -435,6 +474,23 @@ export async function createAdminInvite({ name, role, createdBy, clubId = null }
   return result.rows[0];
 }
 
+// Trial magic-link (Шаг 5): инвайт для владельца НОВОГО trial-клуба. Штатный
+// createAdminInvite запрещает роль owner (сотрудники не могут плодить
+// владельцев) — здесь роль owner разрешена, потому что код создаёт системный
+// процесс (не сотрудник) строго для club_id свежесозданного trial-клуба.
+// Повышение привилегий невозможно: по этому коду регистрируется ровно роль
+// owner и ровно этого club_id.
+export async function createTrialOwnerInvite({ name, createdBy, clubId }) {
+  await ready();
+  const code = crypto.randomBytes(12).toString('hex').toUpperCase();
+  const result = await pool.query(
+    `INSERT INTO admin_invites (code, name, role, created_by, club_id) VALUES ($1, $2, 'owner', $3, $4)
+     RETURNING code, name, role, club_id, created_at`,
+    [code, String(name || 'Владелец клуба').trim().slice(0, 80), createdBy || 'system', clubId]
+  );
+  return result.rows[0];
+}
+
 export async function getAdminInvite(code) {
   await ready();
   const result = await pool.query(
@@ -517,12 +573,122 @@ export async function restoreAdmin(id) {
 }
 
 /* ---------- branches (филиалы/залы) ---------- */
-export async function listClubs() {
+export async function listClubs({ limit = 50, before = null } = {}) {
   await ready();
+  const lim = Math.max(1, Math.min(200, +limit || 50));
+  // Keyset-пагинация: сортировка по id DESC (id — случайные hex/base64, курсор
+  // стабилен при вставках). LIMIT lim+1 → has_more считает вызывающий.
   const result = await pool.query(
-    'SELECT id, name, owner_admin_id, created_at FROM clubs WHERE deleted_at IS NULL ORDER BY created_at'
+    `SELECT id, name, owner_admin_id, owner_email, status, plan, trial_until, created_at
+     FROM clubs
+     WHERE deleted_at IS NULL AND ($2::text IS NULL OR id < $2)
+     ORDER BY id DESC LIMIT $1`,
+    [lim + 1, before]
   );
   return result.rows;
+}
+
+export async function getClub(id) {
+  await ready();
+  const result = await pool.query(
+    `SELECT id, name, owner_admin_id, owner_email, status, plan, trial_until, created_at
+     FROM clubs WHERE id = $1 AND deleted_at IS NULL`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+// Kill-switch: статус клуба. frozen блокирует доступ всему персоналу (403 в
+// requireAdminAccount). deleted — финальное удаление (после grace-периода).
+export async function setClubStatus(id, status, note = '') {
+  await ready();
+  if (!['active', 'frozen', 'deleted'].includes(status)) throw new Error('invalid club status');
+  const result = await pool.query(
+    `UPDATE clubs SET status = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id, name, status`,
+    [id, status]
+  );
+  if (!result.rows[0]) throw new Error('club not found');
+  return result.rows[0];
+}
+
+// Обновить план/trial (апгрейд триала до тарифа, продление TTL).
+export async function updateClubPlan(id, { plan, trialUntil = null } = {}) {
+  await ready();
+  const result = await pool.query(
+    `UPDATE clubs SET plan = COALESCE($2, plan), trial_until = $3
+     WHERE id = $1 AND deleted_at IS NULL RETURNING id, name, plan, status, trial_until`,
+    [id, plan || null, trialUntil]
+  );
+  return result.rows[0] || null;
+}
+
+// Просроченные trial-клубы (для GC-воркера Шага 5).
+export async function listExpiredTrials(now = new Date()) {
+  await ready();
+  const result = await pool.query(
+    `SELECT id, name, owner_admin_id, plan, status, trial_until FROM clubs
+     WHERE deleted_at IS NULL AND plan = 'trial' AND trial_until IS NOT NULL
+       AND trial_until < $1 AND status = 'active'`,
+    [now]
+  );
+  return result.rows;
+}
+
+// Замороженные клубы, чей grace-период истёк (кандидаты на полное удаление).
+export async function listFrozenExpiredGrace(graceMs, now = new Date()) {
+  await ready();
+  // Сравниваем trial_until с готовым timestamp (cutoff), а НЕ вычитаем интервал
+  // из параметра в SQL: `$1 - $2::interval` падает с «operator does not exist:
+  // timestamp with time zone < interval» (unknown-тип параметра в этом месте).
+  const cutoff = new Date(now.getTime() - Math.max(0, graceMs));
+  const result = await pool.query(
+    `SELECT id, name FROM clubs
+     WHERE deleted_at IS NULL AND status = 'frozen'
+       AND (trial_until IS NOT NULL AND trial_until < $1)
+     LIMIT 50`,
+    [cutoff]
+  );
+  return result.rows;
+}
+
+// --- Rate-limit по IP для публичного trial-эндпоинта (в БД, не in-memory) ---
+export async function countTrialRequestsSince(ip, since) {
+  await ready();
+  const result = await pool.query(
+    `SELECT count(*)::int AS n FROM trial_requests WHERE ip = $1 AND created_at > $2`,
+    [ip, since]
+  );
+  return result.rows[0] ? result.rows[0].n : 0;
+}
+
+export async function addTrialRequest(ip) {
+  await ready();
+  await pool.query('INSERT INTO trial_requests (ip) VALUES ($1)', [ip]);
+}
+
+export async function purgeOldTrialRequests(hoursAgo = 24) {
+  await ready();
+  await pool.query(`DELETE FROM trial_requests WHERE created_at < now() - ($1::int || ' hours')::interval`, [hoursAgo]);
+}
+
+// --- Глобальный месячный бюджет писем (Resend) с авто-сбросом по месяцу ---
+// Хранится в app_settings (getSetting/setSetting уже есть) ключом
+// `resend_budget_YYYY-MM` — каждый месяц новый ключ, «обнуление» наступает
+// само; супер-админ может удалить ключ = ручной сброс.
+export async function trialEmailBudgetUsed() {
+  const v = await getSetting('trial_email_' + new Date().toISOString().slice(0, 7));
+  return v ? +v || 0 : 0;
+}
+
+export async function trialEmailBudgetIncrement(by = 1) {
+  const key = 'trial_email_' + new Date().toISOString().slice(0, 7);
+  const used = await trialEmailBudgetUsed();
+  await setSetting(key, String(used + by));
+}
+
+// Ручной сброс бюджета (супер-админ): deleteSetting ключа месяца.
+export async function trialEmailBudgetReset() {
+  await deleteSetting('trial_email_' + new Date().toISOString().slice(0, 7));
 }
 
 export async function listBranches() {
