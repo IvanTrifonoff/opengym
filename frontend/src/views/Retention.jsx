@@ -3,6 +3,7 @@ import { api } from '../lib/api.js'
 import { fmtDate } from '../lib/format.js'
 import Icon from '../components/Icon.jsx'
 import { retentionHelpSheet } from '../components/RetentionHelp.jsx'
+import InfoTip from '../components/InfoTip.jsx'
 
 const DAY = 86400000
 const daysAgo = t => {
@@ -14,8 +15,8 @@ const daysAgo = t => {
 const LEVEL_COLORS = { active: 'var(--green)', at_risk: 'var(--yellow)', gone: 'var(--red)', new: 'var(--blue)' }
 const LEVEL_LABELS = { active: 'Активен', at_risk: 'В зоне риска', gone: 'Ушёл', new: 'Новый' }
 
-function Tile({ l, v, color }) {
-  return <div className="tile"><div className="l">{l}</div><div className="v" style={color ? { color } : undefined}>{v}</div></div>
+function Tile({ l, v, color, hint }) {
+  return <div className="tile"><div className="l">{l}{hint && <InfoTip text={hint} />}</div><div className="v" style={color ? { color } : undefined}>{v}</div></div>
 }
 
 function Bar({ pct, color }) {
@@ -70,23 +71,23 @@ export default function Retention({ admin, focusAthlete }) {
     </div>
 
     <div className="tiles">
-      <Tile l="Всего" v={summary.total} />
-      <Tile l="Активны" v={summary.active} color="var(--green)" />
-      <Tile l="В зоне риска" v={summary.atRisk} color="var(--yellow)" />
-      <Tile l="Ушли" v={summary.gone} color="var(--red)" />
-      <Tile l="Новые" v={summary.fresh || 0} color="var(--blue)" />
-      <Tile l="Средний перерыв" v={summary.avgGap ? summary.avgGap + ' дн' : '—'} />
-      <Tile l="Риск, %" v={summary.atRiskPct + '%'} color="var(--yellow)" />
+      <Tile l="Всего" v={summary.total} hint="Все спортсмены в вашей зоне видимости, включая новых." />
+      <Tile l="Активны" v={summary.active} color="var(--green)" hint="Тренировались менее 14 дней назад — всё в порядке." />
+      <Tile l="В зоне риска" v={summary.atRisk} color="var(--yellow)" hint="Без активности 14–30 дней или активность снизилась. Стоит написать и предложить тренировку." />
+      <Tile l="Ушли" v={summary.gone} color="var(--red)" hint="Нет активности больше 30 дней. Клиента можно попробовать вернуть акцией или предложением." />
+      <Tile l="Новые" v={summary.fresh || 0} color="var(--blue)" hint="Зарегистрировались, но ни разу не тренировались." />
+      <Tile l="Средний перерыв" v={summary.avgGap ? summary.avgGap + ' дн' : '—'} hint="Среднее число дней с последней тренировки у тех, кто когда-либо тренировался." />
+      <Tile l="Риск, %" v={summary.atRiskPct + '%'} color="var(--yellow)" hint="Доля «в зоне риска» и «ушли» среди начавших тренироваться (без новичков)." />
     </div>
 
     <div className="card">
       <h2 style={{ marginTop: 0 }}>Воронка удержания</h2>
       {[
-        ['Тренировались', funnel.trained, 'var(--acc)'],
-        ['Держатся ≥ 4 недель', funnel.week4, 'var(--acc)'],
-        ['Держатся ≥ 8 недель', funnel.week8, 'var(--acc)']
-      ].map(([label, val, color]) => <div className="mrow" key={label}>
-        <span className="nm">{label}</span>
+        ['Тренировались', funnel.trained, 'var(--acc)', 'Спортсмены хотя бы с одной тренировкой — база воронки (100%).'],
+        ['Держатся ≥ 4 недель', funnel.week4, 'var(--acc)', 'Те, кто дотянул от первой тренировки до ~4 недель занятий.'],
+        ['Держатся ≥ 8 недель', funnel.week8, 'var(--acc)', 'Те, кто дошёл от первой тренировки до ~2 месяцев.']
+      ].map(([label, val, color, hint]) => <div className="mrow" key={label}>
+        <span className="nm">{label}{hint && <InfoTip text={hint} />}</span>
         <Bar pct={val / base * 100} color={color} />
         <span className="v">{val} · <b style={{ color }}>{surv(val)}</b></span>
       </div>)}

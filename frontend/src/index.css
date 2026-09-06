@@ -353,6 +353,24 @@ h4.sec{
 }
 .helpbtn:active{color:var(--label)}
 
+/* --- «i»-подсказка у метрики (InfoTip) --- */
+/* Кнопка компактная (вписывается в строку .l у плитки), тултип — поверх контента,
+   position:fixed, поэтому не ломает высоту/сетку соседних ячеек. */
+.itip-wrap{display:inline-flex;align-items:center;margin:0 0 0 2px;flex:none;vertical-align:middle}
+.itip{
+  display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;
+  border-radius:50%;color:var(--label-3);background:none;padding:0;flex:none;cursor:pointer;
+}
+.itip .icn{font-size:12px;--icon-stroke:2}
+.itip:active{color:var(--acc)}
+.itip-bub{
+  position:fixed;z-index:400;max-width:230px;
+  background:var(--surface-2);color:var(--label);
+  border:1px solid var(--sep);border-radius:10px;
+  padding:9px 11px;font-size:13px;line-height:1.45;letter-spacing:.0em;
+  box-shadow:0 8px 28px rgba(0,0,0,.35);pointer-events:none;text-align:left;
+}
+
 /* -------------------------------------------------------------- buttons -- */
 .btn{
   display:inline-flex;align-items:center;justify-content:center;gap:7px;width:100%;
