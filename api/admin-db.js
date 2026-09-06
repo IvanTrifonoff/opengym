@@ -318,6 +318,9 @@ CREATE INDEX IF NOT EXISTS admin_users_club_id_idx ON admin_users (club_id);
 -- CHECK пересоздаётся: без NOT NULL — metadata-only, прод не блокирует.
 ALTER TABLE admin_users DROP CONSTRAINT IF EXISTS admin_users_role_check;
 ALTER TABLE admin_users ADD CONSTRAINT admin_users_role_check CHECK (role IN ('superadmin','owner','manager','trainer','operator'));
+-- Инвайты сотрудников несут club_id приглашающего: зарегистрированный
+-- сотрудник сразу попадает в клуб (иначе strict-mode за 403 его бы отрезал).
+ALTER TABLE admin_invites ADD COLUMN IF NOT EXISTS club_id TEXT;
 `;
 
 export const adminDbReady = (async () => {
@@ -361,7 +364,7 @@ export async function syncAdminOwners(users, credentials, ownerIds) {
       if (!user) continue;
       await pool.query(
         `INSERT INTO admin_users (id, name, role)
-         VALUES ($1, $2, 'owner') ON CONFLICT (id) DO NOTHING`,
+         VALUES ($1, $2, 'superadmin') ON CONFLICT (id) DO NOTHING`,
         [user.id, user.name]
       );
       for (const credential of credentials.filter(item => item.userId === user.id)) {
@@ -380,7 +383,7 @@ export async function syncAdminOwners(users, credentials, ownerIds) {
 export async function getAdmin(id) {
   await ready();
   const result = await pool.query(
-    `SELECT id, name, role, branch_key, demo_session, disabled, created_at, updated_at FROM admin_users WHERE id = $1`, [id]
+    `SELECT id, name, role, branch_key, club_id, demo_session, disabled, created_at, updated_at FROM admin_users WHERE id = $1`, [id]
   );
   return result.rows[0] || null;
 }
@@ -388,7 +391,7 @@ export async function getAdmin(id) {
 export async function getAdminCredential(credentialId) {
   await ready();
   const result = await pool.query(
-    `SELECT c.id, c.admin_id, c.public_key, c.counter, c.transports, a.name, a.role, a.disabled
+    `SELECT c.id, c.admin_id, c.public_key, c.counter, c.transports, a.name, a.role, a.club_id, a.disabled
      FROM admin_credentials c JOIN admin_users a ON a.id = c.admin_id WHERE c.id = $1`, [credentialId]
   );
   return result.rows[0] || null;
@@ -402,7 +405,7 @@ export async function updateAdminCounter(credentialId, counter) {
 export async function listAdmins() {
   await ready();
   const result = await pool.query(
-    `SELECT a.id, a.name, a.role, a.branch_key, a.demo_session, a.disabled, a.deleted_at, a.created_at, a.updated_at,
+    `SELECT a.id, a.name, a.role, a.branch_key, a.club_id, a.demo_session, a.disabled, a.deleted_at, a.created_at, a.updated_at,
             count(c.id)::int AS passkeys
      FROM admin_users a LEFT JOIN admin_credentials c ON c.admin_id = a.id
      WHERE a.deleted_at IS NULL
@@ -411,14 +414,14 @@ export async function listAdmins() {
   return result.rows;
 }
 
-export async function createAdminInvite({ name, role, createdBy }) {
+export async function createAdminInvite({ name, role, createdBy, clubId = null }) {
   await ready();
   if (!ROLES.has(role) || role === 'owner') throw new Error('invalid staff role');
   const code = crypto.randomBytes(12).toString('hex').toUpperCase();
   const result = await pool.query(
-    `INSERT INTO admin_invites (code, name, role, created_by) VALUES ($1, $2, $3, $4)
-     RETURNING code, name, role, created_at`,
-    [code, String(name).trim().slice(0, 80), role, createdBy]
+    `INSERT INTO admin_invites (code, name, role, created_by, club_id) VALUES ($1, $2, $3, $4, $5)
+     RETURNING code, name, role, club_id, created_at`,
+    [code, String(name).trim().slice(0, 80), role, createdBy, clubId]
   );
   return result.rows[0];
 }
@@ -426,7 +429,7 @@ export async function createAdminInvite({ name, role, createdBy }) {
 export async function getAdminInvite(code) {
   await ready();
   const result = await pool.query(
-    `SELECT code, name, role, created_by, created_at FROM admin_invites WHERE code = $1 AND used_at IS NULL`, [code]
+    `SELECT code, name, role, club_id, created_by, created_at FROM admin_invites WHERE code = $1 AND used_at IS NULL`, [code]
   );
   return result.rows[0] || null;
 }
@@ -445,13 +448,13 @@ export async function registerAdmin({ id, name, role, credentialId, publicKey, c
   try {
     await client.query('BEGIN');
     const invite = await client.query(
-      `SELECT code, name, role FROM admin_invites WHERE code = $1 AND used_at IS NULL FOR UPDATE`, [inviteCode]
+      `SELECT code, name, role, club_id FROM admin_invites WHERE code = $1 AND used_at IS NULL FOR UPDATE`, [inviteCode]
     );
     if (!invite.rowCount) throw new Error('invite expired or already used');
     const data = invite.rows[0];
     await client.query(
-      `INSERT INTO admin_users (id, name, role) VALUES ($1, $2, $3)`,
-      [id, name || data.name, role || data.role]
+      `INSERT INTO admin_users (id, name, role, club_id) VALUES ($1, $2, $3, $4)`,
+      [id, name || data.name, role || data.role, data.club_id || null]
     );
     await client.query(
       `INSERT INTO admin_credentials (id, admin_id, public_key, counter, transports)
@@ -505,24 +508,32 @@ export async function restoreAdmin(id) {
 }
 
 /* ---------- branches (филиалы/залы) ---------- */
-export async function listBranches() {
+export async function listClubs() {
   await ready();
   const result = await pool.query(
-    'SELECT id, name, deleted_at, created_at FROM branches WHERE deleted_at IS NULL ORDER BY name'
+    'SELECT id, name, owner_admin_id, created_at FROM clubs WHERE deleted_at IS NULL ORDER BY created_at'
   );
   return result.rows;
 }
 
-export async function saveBranch({ id, name }) {
+export async function listBranches() {
+  await ready();
+  const result = await pool.query(
+    'SELECT id, name, club_id, deleted_at, created_at FROM branches WHERE deleted_at IS NULL ORDER BY name'
+  );
+  return result.rows;
+}
+
+export async function saveBranch({ id, name, clubId = null }) {
   await ready();
   const bid = String(id || '').trim() || crypto.randomBytes(8).toString('hex');
   const bname = String(name || '').trim().slice(0, 80);
   if (!bname) throw new Error('branch name is required');
   const result = await pool.query(
-    `INSERT INTO branches (id, name) VALUES ($1, $2)
-     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
-     RETURNING id, name, created_at`,
-    [bid, bname]
+    `INSERT INTO branches (id, name, club_id) VALUES ($1, $2, $3)
+     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, club_id = COALESCE(EXCLUDED.club_id, branches.club_id)
+     RETURNING id, name, club_id, created_at`,
+    [bid, bname, clubId]
   );
   return result.rows[0];
 }
@@ -1359,8 +1370,12 @@ export async function insertLead({ id, name, contact, gym = '', message = '', pl
 // о новых заявках с промо-страницы (админка trfnv).
 export async function findOwnerId() {
   await ready();
+  // Multi-tenant (v1.3.x): заявки с сайта уходят владельцу ПЛАТФОРМЫ (superadmin),
+  // а если его нет — первому владельцу клуба (owner).
   const r = await pool.query(
-    `SELECT id FROM admin_users WHERE role = 'owner' ORDER BY created_at LIMIT 1`
+    `SELECT id FROM admin_users
+     WHERE role IN ('superadmin', 'owner') AND disabled = false
+     ORDER BY (role = 'superadmin') DESC, created_at LIMIT 1`
   );
   return r.rows[0] ? r.rows[0].id : null;
 }

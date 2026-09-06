@@ -7,7 +7,7 @@
 //   - админ: управление наградами/редемпшнами/правилами (requireAdminAccount)
 // Демо-скоуп (DEMO_MODE=1): админ-списки правил/наград фильтруются по
 // demo_session (созданы демо-владельцем сессии) — см. demo-scope.js.
-import { scopeOwnerRows } from '../demo-scope.js';
+import { scopeOwnerRows, scopeAdmins } from '../demo-scope.js';
 export function createLoyaltyRoutes(deps) {
   const {
     json, readBody, readSession, requireAdminAccount,
@@ -68,7 +68,10 @@ export function createLoyaltyRoutes(deps) {
       path: '/api/admin/loyalty/rewards',
       handler: async (req, res) => {
         const admin = await requireAdminAccount(req, res); if (!admin) return;
-        json(res, 200, { rewards: scopeOwnerRows(admin, await listRewards(false)) });
+        // Multi-tenant (v1.3.x): награды видны только созданные сотрудниками
+        // своего клуба (staffIds из scopeAdmins по listAdmins).
+        const staffIds = new Set(scopeAdmins(admin, await listAdmins()).map(a => a.id));
+        json(res, 200, { rewards: scopeOwnerRows(admin, await listRewards(false), staffIds) });
       }
     },
 
@@ -127,7 +130,8 @@ export function createLoyaltyRoutes(deps) {
       path: '/api/admin/loyalty/rules',
       handler: async (req, res) => {
         const admin = await requireAdminAccount(req, res); if (!admin) return;
-        json(res, 200, { rules: scopeOwnerRows(admin, await listLoyaltyRules()) });
+        const staffIds = new Set(scopeAdmins(admin, await listAdmins()).map(a => a.id));
+        json(res, 200, { rules: scopeOwnerRows(admin, await listLoyaltyRules(), staffIds) });
       }
     },
 

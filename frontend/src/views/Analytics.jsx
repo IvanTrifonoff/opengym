@@ -227,10 +227,13 @@ export default function Analytics({ admin }) {
   const canManage = isOwner(admin.role) || admin.role === 'manager'
   const canDrill = admin.role !== 'operator'
   const impersonate = a => api('/api/admin/impersonate', { method: 'POST', body: JSON.stringify({ kind: 'athlete', id: a.id }) }).then(d => { location.href = d.redirect }).catch(e => setImpErr(e.message))
-  const scopeLabel = isOwner(admin.role) ? 'вся сеть'
-    : admin.role === 'manager' ? (admin.branch_key ? 'филиал ' + admin.branch_key : 'сеть (все филиалы)')
+  // Multi-tenant (v1.3.x): superadmin видит всю платформу; owner — свой клуб;
+  // manager — свой филиал (или клуб, если филиал не назначен); тренер/оператор — своё.
+  const scopeLabel = admin.role === 'superadmin' ? 'вся платформа'
+    : admin.role === 'owner' ? (admin.club_id ? 'клуб' : 'клуб не назначен')
+    : admin.role === 'manager' ? (admin.branch_key ? 'филиал' : 'клуб')
     : admin.role === 'trainer' ? 'свои спортсмены'
-    : 'только статусы'
+    : 'только просмотр'
 
   useEffect(() => {
     api('/api/admin/analytics/overview').then(d => setSummary(d.summary)).catch(() => {})

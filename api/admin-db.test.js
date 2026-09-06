@@ -24,13 +24,14 @@ const {
   getAdminInvite, acceptLoyaltyEvent, getWallet, roleAllowed, recurHorizonDays,
   setTrainerAssignment, listTrainerAssignments, saveNotification,
   insertLead, findOwnerId, getSetting, setSetting, deleteSetting,
-  listLeads, markLeadsViewed, countUnreadLeads, listAdmins,
+  listLeads, markLeadsViewed, countUnreadLeads, listAdmins, listLoyaltyRules,
   softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
   createDemoToken, countDemoTokensSince, takeDemoToken,
   getDemoSession, createDemoSession, touchDemoSession,
   listExpiredDemoSessions, deleteDemoSession, purgeDemoTokens, countActiveDemoSessions,
   countAllActiveDemoSessions
 } = db;
+import { scopeAdmins, scopeBranches, scopeOwnerRows, scopeUsers } from './demo-scope.js';
 
 const T = (Date.now() % 1e6).toString(36) + Math.random().toString(36).slice(2, 6);
 const trainer = 'tr_' + T;
@@ -335,6 +336,89 @@ test('сотрудники: softDeleteAdmin скрывает и блокируе
     // Подчистка в finally: даже при падении ассерта не оставляем «Тест-тренера»
     // в БД (именно они выглядели как «боты-тренеры» 2026-09-02).
     await pool.query('DELETE FROM admin_users WHERE id = $1', [id]);
+  }
+});
+
+/* ---- Multi-tenant (v1.3.x Шаг 3): стены между клубами непроницаемы ---- */
+test('strict: владелец клуба A НЕ видит сотрудников/филиалы/правила клуба B (на уровне БД)', async (t) => {
+  if (!needDb(t)) return;
+  const clubA = 'club-A-' + T, clubB = 'club-B-' + T;
+  const ownerA = 'ownA_' + T, ownerB = 'ownB_' + T;
+  const manA = 'manA_' + T, trB = 'trB_' + T;
+  const brA = 'brA_' + T, brB = 'brB_' + T;
+  const ruleA = 'ruleA_' + T, ruleB = 'ruleB_' + T;
+  try {
+    // Два реальных клуба со своими сотрудниками, филиалами и правилами.
+    await pool.query(
+      `INSERT INTO admin_users (id, name, role, club_id, branch_key) VALUES
+         ($1, 'Владелец A', 'owner', $2, NULL),
+         ($3, 'Менеджер A', 'manager', $2, $4),
+         ($5, 'Владелец B', 'owner', $6, NULL),
+         ($7, 'Тренер B', 'trainer', $6, NULL)
+       ON CONFLICT (id) DO NOTHING`,
+      [ownerA, clubA, manA, brA, ownerB, clubB, trB]
+    );
+    await pool.query(
+      `INSERT INTO branches (id, name, club_id) VALUES ($1, 'Зал A-1', $2), ($3, 'Зал B-1', $4)
+       ON CONFLICT (id) DO NOTHING`,
+      [brA, clubA, brB, clubB]
+    );
+    await pool.query(
+      `INSERT INTO loyalty_rules (id, name, event_type, created_by) VALUES
+         ($1, 'Правило A', 'checkin', $2), ($3, 'Правило B', 'checkin', $4)
+       ON CONFLICT (id) DO NOTHING`,
+      [ruleA, ownerA, ruleB, ownerB]
+    );
+
+    const adminA = { role: 'owner', club_id: clubA, demo_session: null };
+    const adminB = { role: 'owner', club_id: clubB, demo_session: null };
+
+    // Сотрудники: owner A видит только клуб A, НЕ видит ownerB/тренера B.
+    const allAdmins = await listAdmins();
+    const adminsA = scopeAdmins(adminA, allAdmins).map(a => a.id);
+    const adminsB = scopeAdmins(adminB, allAdmins).map(a => a.id);
+    assert.ok(adminsA.includes(ownerA) && adminsA.includes(manA), 'A видит своих');
+    assert.ok(!adminsA.includes(ownerB) && !adminsA.includes(trB), 'A НЕ видит клуб B (сотрудники)');
+    assert.ok(adminsB.includes(ownerB) && adminsB.includes(trB), 'B видит своих');
+    assert.ok(!adminsB.includes(ownerA), 'B НЕ видит клуб A');
+
+    // Филиалы: только своего клуба.
+    const allBranches = await listBranches();
+    const brsA = scopeBranches(adminA, allBranches).map(b => b.id);
+    const brsB = scopeBranches(adminB, allBranches).map(b => b.id);
+    assert.ok(brsA.includes(brA) && !brsA.includes(brB), 'A видит только свой филиал');
+    assert.ok(brsB.includes(brB) && !brsB.includes(brA), 'B видит только свой филиал');
+
+    // Правила лояльности (staffIds клуба — Set админ-id из scopeAdmins).
+    const allRules = await listLoyaltyRules();
+    const staffA = new Set(adminsA);
+    const staffB = new Set(adminsB);
+    const rulesA = scopeOwnerRows(adminA, allRules, staffA).map(r => r.id);
+    const rulesB = scopeOwnerRows(adminB, allRules, staffB).map(r => r.id);
+    assert.ok(rulesA.includes(ruleA) && !rulesA.includes(ruleB), 'A НЕ видит правила клуба B');
+    assert.ok(rulesB.includes(ruleB) && !rulesB.includes(ruleA), 'B НЕ видит правила клуба A');
+
+    // Атлеты (users, JSON-аналоги в памяти): cross-club не протекает.
+    const users = [
+      { id: 'uA_1', club_id: clubA, branch_key: brA },
+      { id: 'uB_1', club_id: clubB, branch_key: brB },
+      { id: 'uNoClub', club_id: null }
+    ];
+    const usersA = scopeUsers(adminA, users).map(u => u.id);
+    assert.deepEqual(usersA, ['uA_1'], 'A видит только своих атлетов (без чужого клуба и без-null)');
+
+    // STRICT: менеджер видит ТОЛЬКО свой филиал, а без club_id вообще пусто.
+    const manAdmin = { role: 'manager', club_id: clubA, branch_key: brA, demo_session: null };
+    assert.deepEqual(scopeBranches(manAdmin, allBranches).map(b => b.id), [brA]);
+    const noClub = { role: 'owner', club_id: null, demo_session: null };
+    assert.deepEqual(scopeAdmins(noClub, allAdmins), [], 'owner без club_id — пусто (403-эквивалент)');
+    assert.deepEqual(scopeBranches(noClub, allBranches), []);
+    assert.deepEqual(scopeUsers(noClub, users), []);
+  } finally {
+    // Полная зачистка — никаких «ботов» в БД после прогона.
+    await pool.query('DELETE FROM loyalty_rules WHERE id IN ($1, $2)', [ruleA, ruleB]).catch(() => {});
+    await pool.query('DELETE FROM branches WHERE id IN ($1, $2)', [brA, brB]).catch(() => {});
+    await pool.query('DELETE FROM admin_users WHERE id = ANY($1)', [[ownerA, manA, ownerB, trB]]).catch(() => {});
   }
 });
 
