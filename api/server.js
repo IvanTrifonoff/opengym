@@ -879,7 +879,7 @@ const routeModules = [
     json, readBody, readSession, requireAdminAccount,
     getWallet, listRewards, redeemReward,
     saveReward, deleteReward, listRedemptions, updateRedemption,
-    listLoyaltyRules, saveLoyaltyRule, deleteLoyaltyRule, listAdmins
+    listLoyaltyRules, saveLoyaltyRule, deleteLoyaltyRule, listAdmins, getClub
   }),
   ...createAdminRoutes({
     json, readBody,

@@ -25,6 +25,7 @@ const {
   setTrainerAssignment, listTrainerAssignments, saveNotification,
   insertLead, findOwnerId, getSetting, setSetting, deleteSetting,
   listLeads, markLeadsViewed, countUnreadLeads, listAdmins, listLoyaltyRules,
+  saveLoyaltyRule, saveReward, listRewards,
   softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
   createDemoToken, countDemoTokensSince, takeDemoToken,
   getDemoSession, createDemoSession, touchDemoSession,
@@ -507,6 +508,83 @@ test('strict: владелец клуба A НЕ видит сотруднико
     await pool.query('DELETE FROM loyalty_rules WHERE id IN ($1, $2)', [ruleA, ruleB]).catch(() => {});
     await pool.query('DELETE FROM branches WHERE id IN ($1, $2)', [brA, brB]).catch(() => {});
     await pool.query('DELETE FROM admin_users WHERE id = ANY($1)', [[ownerA, manA, ownerB, trB]]).catch(() => {});
+  }
+});
+
+/* ---- v1.4.3: правило/награда привязаны к клубу (club_id), а не к автору ---- */
+test('v1.4.3: правило клуба, созданное суперадмином, видно персоналу КЛУБА (и не видно чужому)', async (t) => {
+  if (!needDb(t)) return;
+  const clubA = 'clubX-A-' + T, clubB = 'clubX-B-' + T;
+  const sa = 'saX_' + T;         // суперадмин платформы (без клуба)
+  const ownA = 'oxA_' + T, ownB = 'oxB_' + T;
+  const ruleId = 'ruleX_' + T, rewId = 'rewX_' + T;
+  try {
+    await pool.query(
+      `INSERT INTO admin_users (id, name, role, club_id) VALUES
+         ($1, 'Суперадмин X', 'superadmin', NULL),
+         ($2, 'Владелец XA', 'owner', $3),
+         ($4, 'Владелец XB', 'owner', $5)
+       ON CONFLICT (id) DO NOTHING`,
+      [sa, ownA, clubA, ownB, clubB]
+    );
+
+    // Правило создаёт суперадмин (у него нет клуба), НО явно привязывает к clubA.
+    const rule = await saveLoyaltyRule({
+      id: ruleId, name: 'Правило для клуба A', eventType: 'visit', enabled: true,
+      conditions: {}, actions: [{ type: 'points', amount: 10 }], limits: {},
+      createdBy: sa, clubId: clubA
+    });
+    assert.equal(rule.club_id, clubA, 'saveLoyaltyRule сохраняет club_id');
+
+    // Награда — то же самое через saveReward.
+    const rew = await saveReward({
+      id: rewId, name: 'Награда клуба A', description: '', kind: 'merch',
+      cost: 100, deliveryMode: 'staff', active: true, createdBy: sa, clubId: clubA
+    });
+    assert.equal(rew.club_id, clubA, 'saveReward сохраняет club_id');
+
+    // Из БД строки приходят с club_id (SELECT в list* это отдаёт).
+    const allRules = await listLoyaltyRules();
+    const allRewards = await listRewards(false);
+    assert.equal(allRules.find(r => r.id === ruleId)?.club_id, clubA, 'listLoyaltyRules отдаёт club_id');
+    assert.equal(allRewards.find(r => r.id === rewId)?.club_id, clubA, 'listRewards отдаёт club_id');
+
+    // Скоуп: персонал клуба A видит правило (привязка к клубу, не к автору),
+    // персонал клуба B — не видит (стены между клубами непроницаемы).
+    const adminA = { role: 'owner', club_id: clubA, demo_session: null };
+    const adminB = { role: 'owner', club_id: clubB, demo_session: null };
+    const staffA = new Set([ownA]);
+    const staffB = new Set([ownB]);
+    const rulesA = scopeOwnerRows(adminA, allRules, staffA).map(r => r.id);
+    const rulesB = scopeOwnerRows(adminB, allRules, staffB).map(r => r.id);
+    assert.ok(rulesA.includes(ruleId), 'клуб A видит своё правило (создано суперадмином)');
+    assert.ok(!rulesB.includes(ruleId), 'клуб B НЕ видит правило клуба A');
+    const rewA = scopeOwnerRows(adminA, allRewards, staffA).map(r => r.id);
+    const rewB = scopeOwnerRows(adminB, allRewards, staffB).map(r => r.id);
+    assert.ok(rewA.includes(rewId), 'клуб A видит свою награду');
+    assert.ok(!rewB.includes(rewId), 'клуб B НЕ видит награду клуба A');
+
+    // Суперадмин (владелец платформы) видит все строки — для управления сетью.
+    const allAdmin = { role: 'superadmin', club_id: null, demo_session: null };
+    assert.ok(scopeOwnerRows(allAdmin, allRules).map(r => r.id).includes(ruleId), 'superadmin видит правило');
+
+    // legacy-строка без club_id (создана сотрудником клуба) по-прежнему видна
+    // только своему клубу через staffIds — старый путь не сломан.
+    const legacyId = 'leg_' + T;
+    await pool.query(
+      `INSERT INTO loyalty_rules (id, name, event_type, created_by) VALUES ($1, 'Legacy A', 'visit', $2)
+       ON CONFLICT (id) DO NOTHING`,
+      [legacyId, ownA]
+    );
+    const rulesA2 = scopeOwnerRows(adminA, await listLoyaltyRules(), staffA).map(r => r.id);
+    const rulesB2 = scopeOwnerRows(adminB, await listLoyaltyRules(), staffB).map(r => r.id);
+    assert.ok(rulesA2.includes(legacyId), 'legacy-правило своего сотрудника видно клубу A');
+    assert.ok(!rulesB2.includes(legacyId), 'legacy-правило не протекает в клуб B');
+    await pool.query('DELETE FROM loyalty_rules WHERE id = $1', [legacyId]).catch(() => {});
+  } finally {
+    await pool.query('DELETE FROM loyalty_rewards WHERE id = $1', [rewId]).catch(() => {});
+    await pool.query('DELETE FROM loyalty_rules WHERE id = $1', [ruleId]).catch(() => {});
+    await pool.query('DELETE FROM admin_users WHERE id = ANY($1)', [[sa, ownA, ownB]]).catch(() => {});
   }
 });
 

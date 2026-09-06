@@ -33,7 +33,7 @@ const eventTypes = [
 const emptyRule = () => ({
   id: null, name: '', event_type: 'visit', enabled: true,
   branch_key: '', points: 10, achievement: '', reward: '', notification: '',
-  limit_period: 'day', limit_max: 1
+  limit_period: 'day', limit_max: 1, club_id: ''
 })
 
 function ErrorLine({ error }) { return error ? <div className="small" style={{ color: 'var(--red)', marginTop: 8 }}>{error}</div> : null }
@@ -80,7 +80,7 @@ function AdminRegister() {
   </div>
 }
 
-function RuleEditor({ value, onSave, onCancel, canEdit }) {
+function RuleEditor({ value, onSave, onCancel, canEdit, admin, clubs }) {
   const [form, setForm] = useState(() => value ? ruleToForm(value) : emptyRule())
   const set = (key, next) => setForm(prev => ({ ...prev, [key]: next }))
   const template = type => {
@@ -100,7 +100,8 @@ function RuleEditor({ value, onSave, onCancel, canEdit }) {
     if (form.notification.trim()) actions.push({ type: 'notification', message: form.notification.trim() })
     onSave({ id: form.id, name: form.name, event_type: form.event_type, enabled: form.enabled,
       conditions: form.branch_key ? { branch_key: form.branch_key.trim() } : {}, actions,
-      limits: form.limit_max > 0 ? { period: form.limit_period, max_per_period: +form.limit_max } : {} })
+      limits: form.limit_max > 0 ? { period: form.limit_period, max_per_period: +form.limit_max } : {},
+      club_id: form.club_id || null })
   }
   return <div className="card" style={{ borderColor: 'var(--acc)' }}>
     <div className="row between"><h2 style={{ margin: 0 }}>{form.id ? 'Изменить правило' : 'Новое правило'}</h2><button className="iconbtn" onClick={onCancel}><Icon name="xmark" /></button></div>
@@ -111,6 +112,7 @@ function RuleEditor({ value, onSave, onCancel, canEdit }) {
     <label className="small dim">Название<input className="field" value={form.name} onChange={e => set('name', e.target.value)} placeholder="Например: баллы за первое посещение" /></label>
     <label className="small dim">Событие<select className="field" value={form.event_type} onChange={e => set('event_type', e.target.value)}>{eventTypes.map(([v, label]) => <option key={v} value={v}>{label}</option>)}</select></label>
     <label className="small dim">Филиал (пусто — все филиалы)<input className="field" value={form.branch_key} onChange={e => set('branch_key', e.target.value)} placeholder="branch-1" /></label>
+    {admin?.role === 'superadmin' && <label className="small dim">Клуб — владельцу платформы правило нужно привязать к клубу (увидят его сотрудники)<select className="field" value={form.club_id || ''} onChange={e => set('club_id', e.target.value)}><option value="">— выберите клуб —</option>{(clubs || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}
     <div className="row" style={{ gap: 10 }}>
       <label className="small dim" style={{ flex: 1 }}>Баллы<input className="field" type="number" min="0" value={form.points} onChange={e => set('points', e.target.value)} /></label>
       <label className="small dim" style={{ flex: 1 }}>Лимит<select className="field" value={form.limit_period} onChange={e => set('limit_period', e.target.value)}><option value="day">в день</option><option value="week">в неделю</option><option value="month">в месяц</option></select></label>
@@ -131,22 +133,31 @@ function ruleToForm(rule) {
     branch_key: rule.conditions?.branch_key || '', points: points?.amount || 0,
     achievement: actions.find(a => a.type === 'achievement')?.key || '', reward: actions.find(a => a.type === 'reward')?.key || '',
     notification: actions.find(a => a.type === 'notification')?.message || '',
-    limit_period: rule.limits?.period || 'day', limit_max: rule.limits?.max_per_period || 0 }
+    limit_period: rule.limits?.period || 'day', limit_max: rule.limits?.max_per_period || 0,
+    club_id: rule.club_id || '' }
 }
 
-function Loyalty({ canEdit }) {
+function Loyalty({ canEdit, admin }) {
   const [rules, setRules] = useState([]); const [editing, setEditing] = useState(null); const [error, setError] = useState('')
+  // v1.4.3: суперадмин видит, какому клубу принадлежит правило (club_id), и может
+  // фильтровать по клубу. Персонал клуба видит только свои правила — без селектора.
+  const isSuper = admin?.role === 'superadmin'
+  const [clubs, setClubs] = useState([]); const [clubFilter, setClubFilter] = useState('')
   const load = () => api('/api/admin/loyalty/rules').then(d => setRules(d.rules || [])).catch(e => setError(e.message))
   useEffect(() => { load(); }, [])
+  useEffect(() => { if (isSuper) api('/api/admin/clubs?limit=200').then(d => setClubs(d.clubs || [])).catch(() => {}) }, [])
+  const clubName = id => (clubs.find(c => c.id === id) || {}).name || id
   const save = data => api('/api/admin/loyalty/rules/save', { method: 'POST', body: JSON.stringify(data) }).then(() => { setEditing(null); load() }).catch(e => setError(e.message))
   const remove = id => api('/api/admin/loyalty/rules/delete', { method: 'POST', body: JSON.stringify({ id }) }).then(load).catch(e => setError(e.message))
+  const shown = clubFilter === '__none__' ? rules.filter(r => !r.club_id) : clubFilter ? rules.filter(r => r.club_id === clubFilter) : rules
   return <>
     <div className="row between" style={{ marginBottom: 10 }}><div><h2 style={{ margin: 0 }}>Программа лояльности</h2><div className="sub">Правила применяются к событиям без изменения кода</div></div><div className="row" style={{ gap: 6 }}><button className="btn xs plain" onClick={loyaltyHelpSheet}><Icon name="info" style={{ fontSize: 13, verticalAlign: '-2px', marginRight: 4 }} />Инструкция</button>{canEdit && <Button variant="primary" size="sm" icon="plus" onClick={() => setEditing({})}>Правило</Button>}</div></div>
-    {editing && <RuleEditor value={editing.id ? editing : null} onSave={save} onCancel={() => setEditing(null)} canEdit={canEdit} />}
+    {editing && <RuleEditor value={editing.id ? editing : null} onSave={save} onCancel={() => setEditing(null)} canEdit={canEdit} admin={admin} clubs={clubs} />}
     <ErrorLine error={error} />
+    {isSuper && <div className="row" style={{ gap: 8, marginBottom: 10 }}><Icon name="crown" style={{ color: 'var(--acc)' }} /><select className="field" style={{ maxWidth: 320 }} value={clubFilter} onChange={e => setClubFilter(e.target.value)} title="Фильтр по клубу"><option value="">Все клубы</option>{clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value="__none__">Без клуба (платформа)</option></select><span className="small dim">Правило привязано к клубу — его видят только сотрудники этого клуба</span></div>}
     {!rules.length && !editing && <div className="card empty">Правил пока нет. Создайте первое из шаблона «Посещение».</div>}
-    <div className="list">{rules.map(rule => <div className="item" key={rule.id}>
-      <div className="grow"><div className="tt">{rule.name} {!rule.enabled && <span className="tag" style={{ marginLeft: 5 }}>off</span>}</div>
+    <div className="list">{shown.map(rule => <div className="item" key={rule.id}>
+      <div className="grow"><div className="tt">{rule.name} {!rule.enabled && <span className="tag" style={{ marginLeft: 5 }}>off</span>}{isSuper && <span className="tag acc" style={{ marginLeft: 6 }}>{rule.club_id ? clubName(rule.club_id) : 'платформа'}</span>}</div>
         <div className="ss">{eventTypes.find(([v]) => v === rule.event_type)?.[1] || rule.event_type} · {(rule.actions || []).map(a => a.type === 'points' ? '+' + a.amount + ' баллов' : a.type).join(', ') || 'без действий'}</div></div>
       {canEdit && <><button className="btn xs plain" onClick={() => setEditing(rule)}>Изменить</button><button className="iconbtn" onClick={() => remove(rule.id)} aria-label="Удалить"><Icon name="trash" /></button></>}
     </div>)}</div>
@@ -154,21 +165,28 @@ function Loyalty({ canEdit }) {
 }
 
 const rewardKinds = [['discount', 'Скидка'], ['training', 'Тренировка'], ['merch', 'Товар/мерч'], ['guest_pass', 'Гостевой пропуск'], ['custom', 'Произвольная']]
-const blankReward = () => ({ id: null, name: '', description: '', kind: 'custom', cost: 100, delivery_mode: 'staff', active: true, stock: '' })
+const blankReward = () => ({ id: null, name: '', description: '', kind: 'custom', cost: 100, delivery_mode: 'staff', active: true, stock: '', club_id: '' })
 
-function Rewards({ canEdit }) {
+function Rewards({ canEdit, admin }) {
   const [rewards, setRewards] = useState([]); const [redemptions, setRedemptions] = useState([]); const [form, setForm] = useState(null); const [error, setError] = useState('')
+  // v1.4.3: как в Loyalty — видимость клуба и фильтр для суперадмина.
+  const isSuper = admin?.role === 'superadmin'
+  const [clubs, setClubs] = useState([]); const [clubFilter, setClubFilter] = useState('')
   const load = () => Promise.all([api('/api/admin/loyalty/rewards'), api('/api/admin/loyalty/redemptions')]).then(([r, d]) => { setRewards(r.rewards || []); setRedemptions(d.redemptions || []) }).catch(e => setError(e.message))
   useEffect(() => { load(); }, [])
+  useEffect(() => { if (isSuper) api('/api/admin/clubs?limit=200').then(d => setClubs(d.clubs || [])).catch(() => {}) }, [])
+  const clubName = id => (clubs.find(c => c.id === id) || {}).name || id
   const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }))
   const save = () => api('/api/admin/loyalty/rewards/save', { method: 'POST', body: JSON.stringify(form) }).then(() => { setForm(null); load() }).catch(e => setError(e.message))
   const remove = id => api('/api/admin/loyalty/rewards/delete', { method: 'POST', body: JSON.stringify({ id }) }).then(load).catch(e => setError(e.message))
   const closeRequest = (id, status) => api('/api/admin/loyalty/redemptions/update', { method: 'POST', body: JSON.stringify({ id, status }) }).then(load).catch(e => setError(e.message))
+  const shown = clubFilter === '__none__' ? rewards.filter(r => !r.club_id) : clubFilter ? rewards.filter(r => r.club_id === clubFilter) : rewards
   return <>
     <div className="row between" style={{ marginBottom: 10 }}><div><h2 style={{ margin: 0 }}>Награды</h2><div className="sub">Каталог, стоимость и способ выдачи</div></div><div className="row" style={{ gap: 6 }}><button className="btn xs plain" onClick={loyaltyHelpSheet}><Icon name="info" style={{ fontSize: 13, verticalAlign: '-2px', marginRight: 4 }} />Инструкция</button>{canEdit && <Button variant="primary" size="sm" icon="plus" onClick={() => setForm(blankReward())}>Награда</Button>}</div></div>
-    {form && <div className="card" style={{ borderColor: 'var(--acc)' }}><div className="row between"><h3 style={{ marginTop: 0 }}>{form.id ? 'Изменить награду' : 'Новая награда'}</h3><button className="iconbtn" onClick={() => setForm(null)}><Icon name="xmark" /></button></div><input className="field" placeholder="Название" value={form.name} onChange={e => set('name', e.target.value)} /><textarea className="field area" placeholder="Описание и инструкция сотруднику" value={form.description} onChange={e => set('description', e.target.value)} /><div className="row" style={{ gap: 8 }}><select className="field" value={form.kind} onChange={e => set('kind', e.target.value)}>{rewardKinds.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select><input className="field" type="number" min="1" value={form.cost} onChange={e => set('cost', e.target.value)} placeholder="Баллы" /><input className="field" type="number" min="0" value={form.stock} onChange={e => set('stock', e.target.value)} placeholder="Запас (пусто = безлимит)" /></div><select className="field" value={form.delivery_mode} onChange={e => set('delivery_mode', e.target.value)}><option value="staff">Подтверждение сотрудником</option><option value="auto_code">Автоматический одноразовый код</option></select><div className="row" style={{ gap: 8, marginTop: 10 }}><Button variant="primary" onClick={save} disabled={!form.name.trim()}>Сохранить</Button><Button variant="ghost" onClick={() => setForm(null)}>Отмена</Button></div></div>}
+    {form && <div className="card" style={{ borderColor: 'var(--acc)' }}><div className="row between"><h3 style={{ marginTop: 0 }}>{form.id ? 'Изменить награду' : 'Новая награда'}</h3><button className="iconbtn" onClick={() => setForm(null)}><Icon name="xmark" /></button></div>{isSuper && <label className="small dim" style={{ marginBottom: 10 }}>Клуб — владельцу платформы награду нужно привязать к клубу (увидят её сотрудники)<select className="field" value={form.club_id || ''} onChange={e => set('club_id', e.target.value)}><option value="">— выберите клуб —</option>{clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}<input className="field" placeholder="Название" value={form.name} onChange={e => set('name', e.target.value)} /><textarea className="field area" placeholder="Описание и инструкция сотруднику" value={form.description} onChange={e => set('description', e.target.value)} /><div className="row" style={{ gap: 8 }}><select className="field" value={form.kind} onChange={e => set('kind', e.target.value)}>{rewardKinds.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select><input className="field" type="number" min="1" value={form.cost} onChange={e => set('cost', e.target.value)} placeholder="Баллы" /><input className="field" type="number" min="0" value={form.stock} onChange={e => set('stock', e.target.value)} placeholder="Запас (пусто = безлимит)" /></div><select className="field" value={form.delivery_mode} onChange={e => set('delivery_mode', e.target.value)}><option value="staff">Подтверждение сотрудником</option><option value="auto_code">Автоматический одноразовый код</option></select><div className="row" style={{ gap: 8, marginTop: 10 }}><Button variant="primary" onClick={save} disabled={!form.name.trim()}>Сохранить</Button><Button variant="ghost" onClick={() => setForm(null)}>Отмена</Button></div></div>}
     <ErrorLine error={error} />
-    <div className="list">{rewards.map(reward => <div className="item" key={reward.id} style={!reward.active ? { opacity: .5 } : null}><div className="grow"><div className="tt">{reward.name} {!reward.active && <span className="tag">off</span>}</div><div className="ss">{reward.cost} pts · {reward.delivery_mode === 'auto_code' ? 'auto-code' : 'staff'} · {reward.stock == null ? 'безлимит' : 'остаток ' + reward.stock}</div></div>{canEdit && <><button className="btn xs plain" onClick={() => setForm(reward)}>Изменить</button><button className="iconbtn" onClick={() => remove(reward.id)}><Icon name="trash" /></button></>}</div>)}</div>
+    {isSuper && <div className="row" style={{ gap: 8, marginBottom: 10 }}><Icon name="medal" style={{ color: 'var(--acc)' }} /><select className="field" style={{ maxWidth: 320 }} value={clubFilter} onChange={e => setClubFilter(e.target.value)} title="Фильтр по клубу"><option value="">Все клубы</option>{clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value="__none__">Без клуба (платформа)</option></select></div>}
+    <div className="list">{shown.map(reward => <div className="item" key={reward.id} style={!reward.active ? { opacity: .5 } : null}><div className="grow"><div className="tt">{reward.name} {!reward.active && <span className="tag">off</span>}{isSuper && <span className="tag acc" style={{ marginLeft: 6 }}>{reward.club_id ? clubName(reward.club_id) : 'платформа'}</span>}</div><div className="ss">{reward.cost} pts · {reward.delivery_mode === 'auto_code' ? 'auto-code' : 'staff'} · {reward.stock == null ? 'безлимит' : 'остаток ' + reward.stock}</div></div>{canEdit && <><button className="btn xs plain" onClick={() => setForm(reward)}>Изменить</button><button className="iconbtn" onClick={() => remove(reward.id)}><Icon name="trash" /></button></>}</div>)}</div>
     <h3 className="sec">Заявки на выдачу</h3>
     {!redemptions.length && <div className="card empty">Заявок пока нет.</div>}
     <div className="list">{redemptions.map(item => <div className="item" key={item.id}><div className="grow"><div className="tt">{item.reward_name}</div><div className="ss">user {item.user_id} · -{item.cost} pts · {item.status}</div></div>{item.status === 'pending' && <div className="row" style={{ gap: 4 }}><button className="btn xs primary" onClick={() => closeRequest(item.id, 'fulfilled')}>Выдать</button><button className="btn xs danger" onClick={() => closeRequest(item.id, 'rejected')}>Отклонить</button></div>}{item.code && <span className="tag acc">{item.code}</span>}</div>)}</div>
@@ -311,8 +329,8 @@ function AdminDashboard({ admin, onLogout }) {
       ]}
     />
     {tab === 'overview' && <>{canEdit && hasSeed && !isDemo && <div className="card" style={{ borderColor: 'var(--acc-line)', marginBottom: 14, background: 'color-mix(in srgb,var(--acc) 6%,var(--bg-el))' }}><div className="row between" style={{ gap: 10 }}><div className="grow"><div style={{ fontWeight: 600 }}>В клубе есть демо-данные</div><div className="small dim" style={{ marginTop: 3 }}>При создании trial-клуба мы добавили примеры: тренера и спортсменов с историей, чтобы вы сразу увидели систему изнутри. Реальные клиенты не затрагиваются — удалятся только демо-профили.</div></div><Button size="sm" variant="ghost" onClick={() => confirmSheet({ title: 'Очистить демо-данные?', message: 'Будут удалены демо-тренер и демо-спортсмены (is_seed) с их статистикой и историей. Ваши настоящие клиенты, филиалы, правила и награды останутся.', confirmText: 'Очистить', danger: true, onConfirm: () => api('/api/admin/club/purge-seed', { method: 'POST', body: '{}' }).then(() => { setHasSeed(false); api('/api/admin/staff').then(d => setStaff(d.admins || [])) }).catch(e => alert(e.message)) })}>Очистить демо-данные</Button></div></div>}<div className="tiles"><div className="tile"><div className="l">Сотрудники</div><div className="v">{staff.length || '—'}</div></div><div className="tile"><div className="l">Правила</div><div className="v">{rules.length || '—'}</div></div><div className="tile"><div className="l">Пуши</div><div className="v" style={{ fontSize: '1rem', color: push?.degraded ? 'var(--red)' : 'var(--green)' }}>{pushTile}</div></div><div className="tile"><div className="l">Роль</div><div className="v" style={{ fontSize: '1rem' }}>{roleLabel(admin.role)}</div></div><div className="tile"><div className="l">База</div><div className="v" style={{ fontSize: '1rem', color: 'var(--green)' }}>online</div></div></div>{push?.degraded && <div className="card" style={{ borderColor: 'var(--red)', marginBottom: 12, background: 'color-mix(in srgb,var(--red) 7%,var(--bg-el))' }}><div className="row between" style={{ gap: 10 }}><div className="grow"><div style={{ fontWeight: 600, color: 'var(--red)' }}>Сбои доставки push-уведомлений</div><div className="small dim" style={{ marginTop: 3 }}>не отправлено {push.stats?.failed || 0} шт. за 24 ч{lastPushFail ? ' · последний: ' + lastPushFail.host + (lastPushFail.status ? ' · ' + lastPushFail.status : '') + (lastPushFail.error ? ' · ' + lastPushFail.error : '') : ''}{push.webhookConfigured ? '' : ' · вебхук-алерт не настроен'}</div></div>{canEdit && <Button size="sm" variant="ghost" onClick={resetPush}>Сбросить</Button>}</div></div>}<div className="card"><h2 style={{ marginTop: 0 }}>Быстрый старт</h2><p className="dim">Создайте правило «Посещение» и выдайте сотруднику invite-код. События СКУД начнут начислять баллы после привязки member_key к профилю спортсмена.</p><Button variant="primary" onClick={() => go('loyalty')}>Настроить loyalty</Button></div></>}
-    {tab === 'loyalty' && <Loyalty canEdit={canEdit} />}
-    {tab === 'rewards' && <Rewards canEdit={canEdit} />}
+    {tab === 'loyalty' && <Loyalty canEdit={canEdit} admin={admin} />}
+    {tab === 'rewards' && <Rewards canEdit={canEdit} admin={admin} />}
     {tab === 'staff' && <Staff admin={admin} />}
     {tab === 'branches' && <Branches admin={admin} />}
     {tab === 'invites' && <Invites admin={admin} />}

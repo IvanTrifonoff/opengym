@@ -316,11 +316,11 @@ export async function spawnTrialClub({ email, gymName = 'Мой клуб', db, s
     await saveLoyaltyRule({
       id: clubId + '-' + r.eventType, name: r.name, eventType: r.eventType, enabled: true,
       conditions: { branch_key: branchId }, actions: [{ type: 'points', amount: r.points }],
-      limits: r.limits, createdBy: seedOwnerId
+      limits: r.limits, createdBy: seedOwnerId, clubId
     });
   }
-  await saveReward({ id: clubId + '-bottle', name: 'Фирменная бутылка', description: 'Мерч клуба за баллы', kind: 'merch', cost: 400, deliveryMode: 'staff', active: true, createdBy: seedOwnerId });
-  await saveReward({ id: clubId + '-pt', name: 'Персональная тренировка', description: '1 занятие с тренером', kind: 'training', cost: 1500, deliveryMode: 'staff', active: true, createdBy: seedOwnerId });
+  await saveReward({ id: clubId + '-bottle', name: 'Фирменная бутылка', description: 'Мерч клуба за баллы', kind: 'merch', cost: 400, deliveryMode: 'staff', active: true, createdBy: seedOwnerId, clubId });
+  await saveReward({ id: clubId + '-pt', name: 'Персональная тренировка', description: '1 занятие с тренером', kind: 'training', cost: 1500, deliveryMode: 'staff', active: true, createdBy: seedOwnerId, clubId });
 
   // 5) Seed-атлеты: users + state-файлы + метрики + привязка к тренеру + лояльность.
   let eventNo = 0;

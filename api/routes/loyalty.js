@@ -14,7 +14,7 @@ export function createLoyaltyRoutes(deps) {
     getWallet, listRewards, redeemReward,
     saveReward, deleteReward, listRedemptions, updateRedemption,
     listLoyaltyRules, saveLoyaltyRule, deleteLoyaltyRule,
-    listAdmins
+    listAdmins, getClub
   } = deps;
 
   return [
@@ -76,16 +76,25 @@ export function createLoyaltyRoutes(deps) {
       }
     },
 
-    // Админ (owner/manager): создать/обновить награду.
+    // Админ (owner/manager/superadmin): создать/обновить награду.
+    // v1.4.3: награда привязана к клубу. У owner/manager клуб — свой;
+    // у суперадмина платформы — явный выбор (body.club_id), иначе 400.
     {
       method: 'POST',
       path: '/api/admin/loyalty/rewards/save',
       handler: async (req, res) => {
         const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
         const body = await readBody(req);
+        let clubId = admin.club_id || null;
+        if (admin.role === 'superadmin') {
+          const sel = String(body.club_id || '').trim();
+          if (!sel) return json(res, 400, { error: 'club_id is required for platform-level rewards' });
+          if (!(await getClub(sel))) return json(res, 400, { error: 'club not found' });
+          clubId = sel;
+        }
         try {
           const reward = await saveReward({ id: body.id, name: body.name, description: body.description, kind: body.kind,
-            cost: body.cost, deliveryMode: body.delivery_mode, active: body.active, stock: body.stock, createdBy: admin.id });
+            cost: body.cost, deliveryMode: body.delivery_mode, active: body.active, stock: body.stock, createdBy: admin.id, clubId });
           json(res, 200, { ok: true, reward });
         } catch (error) { json(res, 400, { error: error.message }); }
       }
@@ -136,15 +145,24 @@ export function createLoyaltyRoutes(deps) {
       }
     },
 
-    // Админ (owner/manager): создать/обновить правило.
+    // Админ (owner/manager/superadmin): создать/обновить правило.
+    // v1.4.3: правило привязано к клубу. У owner/manager клуб — свой;
+    // у суперадмина платформы — явный выбор (body.club_id), иначе 400.
     {
       method: 'POST',
       path: '/api/admin/loyalty/rules/save',
       handler: async (req, res) => {
         const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
         const body = await readBody(req);
+        let clubId = admin.club_id || null;
+        if (admin.role === 'superadmin') {
+          const sel = String(body.club_id || '').trim();
+          if (!sel) return json(res, 400, { error: 'club_id is required for platform-level rules' });
+          if (!(await getClub(sel))) return json(res, 400, { error: 'club not found' });
+          clubId = sel;
+        }
         try {
-          const rule = await saveLoyaltyRule({ id: body.id, name: body.name, eventType: body.event_type, enabled: body.enabled, conditions: body.conditions, actions: body.actions, limits: body.limits, createdBy: admin.id });
+          const rule = await saveLoyaltyRule({ id: body.id, name: body.name, eventType: body.event_type, enabled: body.enabled, conditions: body.conditions, actions: body.actions, limits: body.limits, createdBy: admin.id, clubId });
           json(res, 200, { ok: true, rule });
         } catch (error) { json(res, 400, { error: error.message }); }
       }

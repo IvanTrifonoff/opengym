@@ -39,16 +39,20 @@ export const scopeBranches = (admin, rows) => {
   return prod.filter(r => r.club_id === admin.club_id);
 };
 // Правила/награды: демо-владелец — свои (created_by); супер-админ — все;
-// owner/manager/тренер/оператор — только строки, созданные сотрудниками
-// СВОЕГО клуба. Список сотрудников клуба передаётся staffIds (Set админ-id),
-// чтобы не делать лишний запрос: вызывающий считает его через scopeAdmins.
+// owner/manager/тренер/оператор — строки СВОЕГО клуба. v1.4.3: правило несёт
+// club_id явно — персонал клуба видит правила, привязанные к клубу, даже если
+// автор — суперадмин платформы (создал «для клуба»). Для старых строк без
+// club_id — прежний путь: видимы только созданные сотрудниками клуба
+// (staffIds — Set админ-id клуба, считается вызывающим через scopeAdmins).
 export const scopeOwnerRows = (admin, rows, staffIds) => {
   if (isDemoAdmin(admin)) return rows.filter(r => r.created_by === demoOwnerOf(admin.demo_session));
   const prod = rows.filter(r => !String(r.created_by || '').startsWith('demo-owner-'));
   if (admin.role === 'superadmin') return prod;
   if (!admin.club_id) return [];   // strict: нет клуба — пусто
-  if (staffIds) return prod.filter(r => staffIds.has(r.created_by));
-  return prod;
+  return prod.filter(r =>
+    (r.club_id && r.club_id === admin.club_id) ||          // привязка к клубу (v1.4.3)
+    (!r.club_id && staffIds && staffIds.has(r.created_by)) // legacy: создатель — сотрудник клуба
+  );
 };
 // Атлеты (db.users): демо — своей сессии; супер-админ — все;
 // owner/manager/тренер/оператор — только атлетов своего клуба (club_id),

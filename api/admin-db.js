@@ -370,6 +370,33 @@ const CLUB_OWNER_EMAIL_MIGRATION = `
 ALTER TABLE clubs ADD COLUMN IF NOT EXISTS owner_email TEXT;
 `;
 
+// v1.4.3: правила и награды явно привязаны к клубу (club_id), а не только к
+// автору через created_by. До этого «сиротские» строки суперадмина (без клуба)
+// были невидимы персоналу клуба, а в списке нельзя было понять, чей это клуб.
+// Бэкфилл: клуб проставляется от создателя (admin_users.club_id), где он есть.
+const RULE_CLUB_MIGRATION = `
+ALTER TABLE loyalty_rules ADD COLUMN IF NOT EXISTS club_id TEXT;
+ALTER TABLE loyalty_rewards ADD COLUMN IF NOT EXISTS club_id TEXT;
+CREATE INDEX IF NOT EXISTS loyalty_rules_club_idx ON loyalty_rules (club_id);
+CREATE INDEX IF NOT EXISTS loyalty_rewards_club_idx ON loyalty_rewards (club_id);
+-- Правила/награды, созданные сотрудником клуба: клуб = клуб создателя.
+UPDATE loyalty_rules r SET club_id = a.club_id
+  FROM admin_users a WHERE a.id = r.created_by AND r.club_id IS NULL AND a.club_id IS NOT NULL;
+UPDATE loyalty_rewards r SET club_id = a.club_id
+  FROM admin_users a WHERE a.id = r.created_by AND r.club_id IS NULL AND a.club_id IS NOT NULL;
+-- Сироты суперадмина (создатель без клуба): исторический контент платформы
+-- принадлежит основному (первому активному) клубу. Дальше UI передаёт club_id
+-- явно, поэтому повторно такие строки не появляются.
+UPDATE loyalty_rules r SET club_id = c.id
+  FROM admin_users a,
+       (SELECT id FROM clubs WHERE status = 'active' AND deleted_at IS NULL ORDER BY created_at LIMIT 1) c
+  WHERE a.id = r.created_by AND a.role = 'superadmin' AND r.club_id IS NULL AND c.id IS NOT NULL;
+UPDATE loyalty_rewards r SET club_id = c.id
+  FROM admin_users a,
+       (SELECT id FROM clubs WHERE status = 'active' AND deleted_at IS NULL ORDER BY created_at LIMIT 1) c
+  WHERE a.id = r.created_by AND a.role = 'superadmin' AND r.club_id IS NULL AND c.id IS NOT NULL;
+`;
+
 export const adminDbReady = (async () => {
   await integrationDbReady;
   if (!pool) return;
@@ -386,6 +413,7 @@ export const adminDbReady = (async () => {
     await pool.query(MULTITENANT_MIGRATION);
     await pool.query(CLUB_LIFECYCLE_MIGRATION);
     await pool.query(CLUB_OWNER_EMAIL_MIGRATION);
+    await pool.query(RULE_CLUB_MIGRATION);
   } catch (error) {
     initError = error;
     console.error('admin database init failed:', error.message);
@@ -880,27 +908,27 @@ export async function listLoyaltyRules() {
 
   await ready();
   const result = await pool.query(
-    `SELECT id, name, event_type, enabled, conditions, actions, limits, created_by, created_at, updated_at
+    `SELECT id, name, event_type, enabled, conditions, actions, limits, created_by, club_id, created_at, updated_at
      FROM loyalty_rules ORDER BY updated_at DESC`
   );
   return result.rows;
 }
 
-export async function saveLoyaltyRule({ id, name, eventType, enabled, conditions, actions, limits, createdBy }) {
+export async function saveLoyaltyRule({ id, name, eventType, enabled, conditions, actions, limits, createdBy, clubId = null }) {
   await ready();
   if (!EVENT_TYPES.has(eventType)) throw new Error('invalid event type');
   if (!String(name || '').trim()) throw new Error('rule name is required');
   const ruleId = id || crypto.randomBytes(12).toString('hex');
   const result = await pool.query(
-    `INSERT INTO loyalty_rules (id, name, event_type, enabled, conditions, actions, limits, created_by)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8)
+    `INSERT INTO loyalty_rules (id, name, event_type, enabled, conditions, actions, limits, created_by, club_id)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9)
      ON CONFLICT (id) DO UPDATE SET
        name = EXCLUDED.name, event_type = EXCLUDED.event_type, enabled = EXCLUDED.enabled,
        conditions = EXCLUDED.conditions, actions = EXCLUDED.actions, limits = EXCLUDED.limits,
-       updated_at = now()
-     RETURNING id, name, event_type, enabled, conditions, actions, limits, created_by, created_at, updated_at`,
+       club_id = EXCLUDED.club_id, updated_at = now()
+     RETURNING id, name, event_type, enabled, conditions, actions, limits, created_by, club_id, created_at, updated_at`,
     [ruleId, String(name).trim().slice(0, 120), eventType, enabled !== false,
-      JSON.stringify(conditions || {}), JSON.stringify(actions || []), JSON.stringify(limits || {}), createdBy]
+      JSON.stringify(conditions || {}), JSON.stringify(actions || []), JSON.stringify(limits || {}), createdBy, clubId || null]
   );
   return result.rows[0];
 }
@@ -954,13 +982,13 @@ export async function markBadgeSeen(userId) {
 export async function listRewards(activeOnly = false) {
   await ready();
   const result = await pool.query(
-    `SELECT id, name, description, kind, cost, delivery_mode, active, stock, created_by, created_at, updated_at
+    `SELECT id, name, description, kind, cost, delivery_mode, active, stock, created_by, club_id, created_at, updated_at
      FROM loyalty_rewards ${activeOnly ? 'WHERE active = true AND (stock IS NULL OR stock > 0)' : ''} ORDER BY updated_at DESC`
   );
   return result.rows;
 }
 
-export async function saveReward({ id, name, description, kind, cost, deliveryMode, active, stock, createdBy }) {
+export async function saveReward({ id, name, description, kind, cost, deliveryMode, active, stock, createdBy, clubId = null }) {
   await ready();
   const rewardId = id || crypto.randomBytes(12).toString('hex');
   const amount = Math.max(1, Math.min(100000000, Math.round(Number(cost) || 0)));
@@ -969,13 +997,14 @@ export async function saveReward({ id, name, description, kind, cost, deliveryMo
   if (!['staff', 'auto_code'].includes(deliveryMode)) throw new Error('invalid delivery mode');
   const stockValue = stock === null || stock === undefined || stock === '' ? null : Math.max(0, Math.round(Number(stock) || 0));
   const result = await pool.query(
-    `INSERT INTO loyalty_rewards (id, name, description, kind, cost, delivery_mode, active, stock, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO loyalty_rewards (id, name, description, kind, cost, delivery_mode, active, stock, created_by, club_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description,
        kind = EXCLUDED.kind, cost = EXCLUDED.cost, delivery_mode = EXCLUDED.delivery_mode,
-       active = EXCLUDED.active, stock = EXCLUDED.stock, updated_at = now()
-     RETURNING id, name, description, kind, cost, delivery_mode, active, stock, created_by, created_at, updated_at`,
-    [rewardId, String(name).trim().slice(0, 120), String(description || '').slice(0, 500), kind, amount, deliveryMode, active !== false, stockValue, createdBy]
+       active = EXCLUDED.active, stock = EXCLUDED.stock, club_id = EXCLUDED.club_id,
+       updated_at = now()
+     RETURNING id, name, description, kind, cost, delivery_mode, active, stock, created_by, club_id, created_at, updated_at`,
+    [rewardId, String(name).trim().slice(0, 120), String(description || '').slice(0, 500), kind, amount, deliveryMode, active !== false, stockValue, createdBy, clubId || null]
   );
   return result.rows[0];
 }
