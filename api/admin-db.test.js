@@ -21,7 +21,7 @@ const db = await import('./admin-db.js');
 const {
   adminDbReady, setTrainerAvailability, getTrainerAvailability, createBooking,
   findBookingConflict, updateBookingStatus, getBooking, createAdminInvite,
-  getAdminInvite, acceptLoyaltyEvent, getWallet, roleAllowed, recurHorizonDays,
+  getAdminInvite, registerAdmin, getAdmin, acceptLoyaltyEvent, getWallet, roleAllowed, recurHorizonDays,
   setTrainerAssignment, listTrainerAssignments, saveNotification,
   insertLead, findOwnerId, getSetting, setSetting, deleteSetting,
   listLeads, markLeadsViewed, countUnreadLeads, listAdmins, listLoyaltyRules,
@@ -37,6 +37,7 @@ const {
   countTrialRequestsSince, addTrialRequest, purgeOldTrialRequests
 } = db;
 import { scopeAdmins, scopeBranches, scopeOwnerRows, scopeUsers } from './demo-scope.js';
+import { purgeSeedData } from './trial-club.js';
 
 const T = (Date.now() % 1e6).toString(36) + Math.random().toString(36).slice(2, 6);
 const trainer = 'tr_' + T;
@@ -580,3 +581,74 @@ test('демо-сессии: лимиты одновременных (по IP и
   }
 });
 
+
+
+// v1.4.1: инвайт сотрудника несёт branch_key (селектор «Филиал» в форме).
+test('v1.4.1: staff-инвайт с филиалом — branch_key доезжает до admin_users', async (t) => {
+  if (!needDb(t)) return;
+  const clubId = 'c41-' + T, branchId = 'c41-b-' + T;
+  const uid = 'adm41-' + T;
+  try {
+    await pool.query(`INSERT INTO clubs (id, name, status, plan) VALUES ($1, 'Club41', 'active', 'start') ON CONFLICT (id) DO NOTHING`, [clubId]);
+    await pool.query(`INSERT INTO branches (id, name, club_id) VALUES ($1, 'Branch41', $2) ON CONFLICT (id) DO NOTHING`, [branchId, clubId]);
+    const inv = await createAdminInvite({ name: 'Тренер 41', role: 'trainer', createdBy: 'owner-' + T, clubId, branchKey: branchId });
+    assert.equal(inv.branch_key, branchId, 'инвайт хранит branch_key');
+    const fetched = await getAdminInvite(inv.code);
+    assert.equal(fetched.branch_key, branchId, 'getAdminInvite возвращает branch_key');
+    // Регистрация по коду: созданный admin_users наследует клуб И филиал.
+    const cred = 'cred-' + uid;
+    const reg = await registerAdmin({ id: uid, name: 'Тренер 41', role: null, credentialId: cred, publicKey: 'x', counter: 0, transports: [], inviteCode: inv.code });
+    assert.equal(reg.role, 'trainer');
+    const admin = await getAdmin(uid);
+    assert.equal(admin.club_id, clubId, 'клуб унаследован');
+    assert.equal(admin.branch_key, branchId, 'филиал унаследован (главное требование Шага 4)');
+    assert.equal(admin.branch_name, 'Branch41', 'getAdmin отдаёт имя филиала для шапки');
+    assert.equal(admin.club_name, 'Club41', 'getAdmin отдаёт имя клуба для шапки');
+  } finally {
+    await pool.query('DELETE FROM admin_credentials WHERE admin_id = $1', [uid]).catch(() => {});
+    await pool.query('DELETE FROM admin_users WHERE id = $1 OR club_id = $2', [uid, clubId]).catch(() => {});
+    await pool.query('DELETE FROM admin_invites WHERE club_id = $1', [clubId]).catch(() => {});
+    await pool.query('DELETE FROM branches WHERE id = $1', [branchId]).catch(() => {});
+    await pool.query('DELETE FROM clubs WHERE id = $1', [clubId]).catch(() => {});
+  }
+});
+
+// v1.4.1: purge-seed удаляет is_seed-атлетов/тренера, сохраняя владельца.
+test('v1.4.1: purgeSeedData удаляет ровно is_seed, реальный владелец цел', async (t) => {
+  if (!needDb(t)) return;
+  const clubId = 'cp41-' + T;
+  const ownerUid = clubId + '-o', seedAth = clubId + '-a1', realAth = clubId + '-real';
+  try {
+    await pool.query(`INSERT INTO clubs (id, name, status, plan) VALUES ($1, 'Purge41', 'active', 'trial') ON CONFLICT (id) DO NOTHING`, [clubId]);
+    // Владелец: is_seed=true, НО с passkey (зарегистрировался по magic-link).
+    await pool.query(
+      `INSERT INTO admin_users (id, name, role, club_id, is_seed) VALUES ($1, 'Owner41', 'owner', $2, true) ON CONFLICT (id) DO NOTHING`, [ownerUid, clubId]);
+    await pool.query(
+      `INSERT INTO admin_credentials (id, admin_id, public_key, counter) VALUES ($1, $2, 'k', 0) ON CONFLICT (id) DO NOTHING`, ['ck-' + ownerUid, ownerUid]);
+    // Seed-тренер (без passkey) + seed-атлет + реальный атлет (is_seed=false).
+    await pool.query(
+      `INSERT INTO admin_users (id, name, role, club_id, is_seed) VALUES ($1, 'Trainer41', 'trainer', $2, true) ON CONFLICT (id) DO NOTHING`, [clubId + '-tr', clubId]);
+    const db = { users: [
+      { id: seedAth, name: 'Seed Athlete', club_id: clubId, is_seed: true },
+      { id: realAth, name: 'Real Athlete', club_id: clubId, is_seed: false }
+    ], creds: [{ userId: seedAth, c: 1 }], subs: [{ userId: seedAth, e: 'x' }, { userId: realAth, e: 'y' }] };
+    let saved = 0;
+    const res = await purgeSeedData({ clubId, db, saveDb: () => { saved++; }, dataDir: '/tmp' });
+    assert.equal(res.athletes, 1, 'seed-атлет удалён из db.json');
+    assert.equal(res.staff, 1, 'seed-тренер (без passkey) удалён из БД');
+    assert.ok(!db.users.some(u => u.id === seedAth), 'seed-атлета нет в users');
+    assert.ok(db.users.some(u => u.id === realAth), 'реальный атлет сохранён');
+    assert.ok(!db.subs.some(x => x.userId === seedAth), 'подписка seed удалена');
+    assert.ok(db.subs.some(x => x.userId === realAth), 'подписка реального сохранена');
+    assert.ok(saved > 0, 'saveDb вызван');
+    // Владелец жив: у него passkey → NOT EXISTS исключил его из выборки.
+    const still = await pool.query('SELECT id FROM admin_users WHERE id = $1', [ownerUid]);
+    assert.ok(still.rowCount === 1, 'владелец (с passkey) не удалён');
+    const tr = await pool.query('SELECT id FROM admin_users WHERE id = $1', [clubId + '-tr']);
+    assert.ok(tr.rowCount === 0, 'seed-тренер удалён');
+  } finally {
+    await pool.query('DELETE FROM admin_credentials WHERE admin_id LIKE $1', [clubId + '%']).catch(() => {});
+    await pool.query('DELETE FROM admin_users WHERE club_id = $1 OR id = $2', [clubId, ownerUid]).catch(() => {});
+    await pool.query('DELETE FROM clubs WHERE id = $1', [clubId]).catch(() => {});
+  }
+});

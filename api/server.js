@@ -61,7 +61,7 @@ import { createLeadsRoutes } from './routes/leads.js';
 import { clientIpOf } from './routes/demo.js';
 import { createDemoRoutes } from './routes/demo.js';
 import { spawnDemoClub, destroyDemoClub, startDemoCleaner } from './demo-club.js';
-import { startTrialCleaner } from './trial-club.js';
+import { startTrialCleaner, purgeSeedData } from './trial-club.js';
 import { replaceAthleteMetrics, backfillAthleteMetrics } from './metrics.js';
 
 import {
@@ -895,6 +895,7 @@ const routeModules = [
     adminDbReady, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
     listAdmins, listClubs, getClub, setClubStatus, updateClubPlan, listExpiredTrials, listFrozenExpiredGrace,
     trialEmailBudgetReset, invalidateClubCache,
+    purgeSeedData,
     registerAdmin, updateAdmin, updateAdminCounter, createAdminInvite,
     softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
     listPrivateCodes, createPrivateCode, revokePrivateCode,

@@ -330,6 +330,7 @@ ALTER TABLE admin_users ADD CONSTRAINT admin_users_club_required_check
 -- Инвайты сотрудников несут club_id приглашающего: зарегистрированный
 -- сотрудник сразу попадает в клуб (иначе strict-mode за 403 его бы отрезал).
 ALTER TABLE admin_invites ADD COLUMN IF NOT EXISTS club_id TEXT;
+ALTER TABLE admin_invites ADD COLUMN IF NOT EXISTS branch_key TEXT;
 `;
 
 // v1.4.x (Шаг 4-5, дизайн docs/design-step4-5.md): жизненный цикл клуба.
@@ -430,8 +431,15 @@ export async function syncAdminOwners(users, credentials, ownerIds) {
 
 export async function getAdmin(id) {
   await ready();
+  // LEFT JOIN: club_name/branch_name нужны шапке админки («Клуб · Филиал»).
+  // Для demo-сессий и супер-админа имён нет — JOIN вернёт null, UI покажет роль.
   const result = await pool.query(
-    `SELECT id, name, role, branch_key, club_id, demo_session, disabled, created_at, updated_at FROM admin_users WHERE id = $1`, [id]
+    `SELECT a.id, a.name, a.role, a.branch_key, a.club_id, a.demo_session, a.disabled,
+            a.created_at, a.updated_at, c.name AS club_name, b.name AS branch_name
+     FROM admin_users a
+     LEFT JOIN clubs c ON c.id = a.club_id
+     LEFT JOIN branches b ON b.id = a.branch_key
+     WHERE a.id = $1`, [id]
   );
   return result.rows[0] || null;
 }
@@ -453,7 +461,7 @@ export async function updateAdminCounter(credentialId, counter) {
 export async function listAdmins() {
   await ready();
   const result = await pool.query(
-    `SELECT a.id, a.name, a.role, a.branch_key, a.club_id, a.demo_session, a.disabled, a.deleted_at, a.created_at, a.updated_at,
+    `SELECT a.id, a.name, a.role, a.branch_key, a.club_id, a.demo_session, a.is_seed, a.disabled, a.deleted_at, a.created_at, a.updated_at,
             count(c.id)::int AS passkeys
      FROM admin_users a LEFT JOIN admin_credentials c ON c.admin_id = a.id
      WHERE a.deleted_at IS NULL
@@ -462,14 +470,14 @@ export async function listAdmins() {
   return result.rows;
 }
 
-export async function createAdminInvite({ name, role, createdBy, clubId = null }) {
+export async function createAdminInvite({ name, role, createdBy, clubId = null, branchKey = null }) {
   await ready();
   if (!ROLES.has(role) || role === 'owner') throw new Error('invalid staff role');
   const code = crypto.randomBytes(12).toString('hex').toUpperCase();
   const result = await pool.query(
-    `INSERT INTO admin_invites (code, name, role, created_by, club_id) VALUES ($1, $2, $3, $4, $5)
-     RETURNING code, name, role, club_id, created_at`,
-    [code, String(name).trim().slice(0, 80), role, createdBy, clubId]
+    `INSERT INTO admin_invites (code, name, role, created_by, club_id, branch_key) VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING code, name, role, club_id, branch_key, created_at`,
+    [code, String(name).trim().slice(0, 80), role, createdBy, clubId, branchKey]
   );
   return result.rows[0];
 }
@@ -494,7 +502,7 @@ export async function createTrialOwnerInvite({ name, createdBy, clubId }) {
 export async function getAdminInvite(code) {
   await ready();
   const result = await pool.query(
-    `SELECT code, name, role, club_id, created_by, created_at FROM admin_invites WHERE code = $1 AND used_at IS NULL`, [code]
+    `SELECT code, name, role, club_id, branch_key, created_by, created_at FROM admin_invites WHERE code = $1 AND used_at IS NULL`, [code]
   );
   return result.rows[0] || null;
 }
@@ -513,13 +521,13 @@ export async function registerAdmin({ id, name, role, credentialId, publicKey, c
   try {
     await client.query('BEGIN');
     const invite = await client.query(
-      `SELECT code, name, role, club_id FROM admin_invites WHERE code = $1 AND used_at IS NULL FOR UPDATE`, [inviteCode]
+      `SELECT code, name, role, club_id, branch_key FROM admin_invites WHERE code = $1 AND used_at IS NULL FOR UPDATE`, [inviteCode]
     );
     if (!invite.rowCount) throw new Error('invite expired or already used');
     const data = invite.rows[0];
     await client.query(
-      `INSERT INTO admin_users (id, name, role, club_id) VALUES ($1, $2, $3, $4)`,
-      [id, name || data.name, role || data.role, data.club_id || null]
+      `INSERT INTO admin_users (id, name, role, club_id, branch_key) VALUES ($1, $2, $3, $4, $5)`,
+      [id, name || data.name, role || data.role, data.club_id || null, data.branch_key || null]
     );
     await client.query(
       `INSERT INTO admin_credentials (id, admin_id, public_key, counter, transports)

@@ -16,6 +16,28 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# ---------------------------------------------------------------------------
+# Защита от человеческого фактора (v1.4.1): демо-стек обязан разворачиваться
+# ТОЛЬКО из /opt/opengym-demo. В /opt/opengym (прод) лежит такой же чекаут
+# demo-ветки, и запуск этого скрипта оттуда пересоздал бы контейнеры
+# demo-стека с ПРОД-окружением — .env читается из текущего каталога!
+# ---------------------------------------------------------------------------
+EXPECT_DIR="/opt/opengym-demo"
+if [ "$(pwd)" != "$EXPECT_DIR" ]; then
+  echo "ОШИБКА: deploy-demo.sh запущен из $(pwd)." >&2
+  echo "        Демо-стек живёт ТОЛЬКО в ${EXPECT_DIR}: cd ${EXPECT_DIR} && ./deploy-demo.sh" >&2
+  exit 1
+fi
+if ! grep -q '^DEMO_MODE=1' .env 2>/dev/null; then
+  echo "ОШИБКА: в $(pwd)/.env нет DEMO_MODE=1 — это не демо-окружение. Прервано." >&2
+  exit 1
+fi
+BRANCH_GUARD="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo not-a-repo)"
+if [ "$BRANCH_GUARD" != "demo" ]; then
+  echo "ОШИБКА: ожидалась ветка demo, сейчас: $BRANCH_GUARD. Прервано." >&2
+  exit 1
+fi
+
 COMPOSE_FILE="docker-compose.demo.yml"
 # Локальные правки в рабочем дереве, которые нельзя терять при pull
 KEEP=(".env" "data" "media")

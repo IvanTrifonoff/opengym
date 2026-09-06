@@ -81,6 +81,20 @@ export async function destroyClub({ clubId, db, saveDb, dataDir, now = new Date(
   // Удаляем и пользователей (включая админ-записи, если они есть в db.json).
   db.users = (db.users || []).filter(u => u.club_id !== clubId);
   db.creds = (db.creds || []).filter(c => !athleteIds.includes(c.userId));
+  db.subs = (db.subs || []).filter(sub => !athleteIds.includes(sub.userId));
+  // Подстраховка: если db.json разошёлся с диском (клуб создан до ребута,
+  // пользователи добавлены напрямую и т.п.) — вычищаем state-файлы клуба
+  // ПРЕФИКСОМ. Для trial-клубов uid = `<clubId>-<key>`, поэтому сканирование
+  // каталога добирает осиротевшие файлы, которых нет в db.users.
+  let prefixStates = 0;
+  try {
+    for (const f of fs.readdirSync(dataDir)) {
+      if (f.startsWith('state-' + clubId + '-') && f.endsWith('.json')) {
+        try { fs.unlinkSync(path.join(dataDir, f)); prefixStates++; } catch { /* гонка — файл уже удалён */ }
+      }
+    }
+  } catch { /* dataDir недоступен — пропускаем */ }
+  if (prefixStates) console.log('[trial-gc] destroy: убрано осиротевших state-файлов:', prefixStates);
   if (saveDb) saveDb();
 
   const allUserIds = [...new Set([...allAdminIds, ...athleteIds])];
@@ -97,7 +111,8 @@ export async function destroyClub({ clubId, db, saveDb, dataDir, now = new Date(
     if (allUserIds.length) {
       await client.query(`DELETE FROM coach_bookings WHERE athlete_id IN (${uidList})`, uidArgs);
       await client.query(`DELETE FROM recurring_bookings WHERE athlete_id IN (${uidList})`, uidArgs);
-      await client.query(`DELETE FROM recurring_skips WHERE athlete_id IN (${uidList})`, uidArgs);
+      // recurring_skips ключуется series_id (см. coach_bookings.series_id), колонки
+      // athlete_id в ней нет — пропуски серий уходят вместе с самими сериями выше.
       await client.query(`DELETE FROM trainer_assignments WHERE user_id IN (${uidList})`, uidArgs);
     }
     // Всё, созданное владельцем/сотрудниками клуба (правила, награды, брони).
@@ -128,6 +143,80 @@ export async function destroyClub({ clubId, db, saveDb, dataDir, now = new Date(
     client.release();
   }
   return { removed: true, athletes: athleteIds.length, staff: allAdminIds.length };
+}
+
+// Очистка демо-данных клуба («Clear demo data», кнопка у владельца trial-клуба).
+// Удаляет ровно is_seed=true строки, созданные spawnTrialClub: seed-тренера +
+// seed-атлетов, их state-файлы, db.json-записи (users/creds), подписки на пуши
+// и все строки БД (метрики, лояльность, брони, уведомления, аватарки-креды).
+// НЕ трогает:
+//   · владельца — реальный аккаунт, вошедший по magic-link (у него есть passkey,
+//     поэтому запись admin_users не попадает в выборку ниже);
+//   · филиалы, правила лояльности и награды — витрина клуба, владелец
+//     редактирует их как свои (созданы его seed-owner'ом = им самим);
+//   · реальных клиентов, заведённых владельцем за время триала (is_seed=false).
+// Возвращает { athletes, staff, states } — сколько удалено по каждому типу.
+export async function purgeSeedData({ clubId, db, saveDb, dataDir }) {
+  await adminDbReady;
+  if (!pool) throw new Error('no database');
+  if (!clubId) throw new Error('clubId is required');
+
+  // 1) db.json: seed-атлеты клуба (is_seed=true) — их state-файлы + записи.
+  const seedUsers = (db.users || []).filter(u => u.club_id === clubId && u.is_seed === true);
+  const athleteIds = seedUsers.map(u => u.id);
+  let states = 0;
+  for (const uid of athleteIds) {
+    try { fs.unlinkSync(path.join(dataDir, 'state-' + uid.replace(/[^a-zA-Z0-9_-]/g, '') + '.json')); states++; } catch { /* уже нет */ }
+  }
+  if (athleteIds.length) {
+    db.users = (db.users || []).filter(u => !(u.club_id === clubId && u.is_seed === true));
+    db.creds = (db.creds || []).filter(c => !athleteIds.includes(c.userId));
+    db.subs = (db.subs || []).filter(sub => !athleteIds.includes(sub.userId));
+    if (saveDb) saveDb();
+  }
+
+  // 2) БД: is_seed админ-записи клуба БЕЗ passkey (у владельца после входа по
+  //    magic-link passkey есть — его строка автоматически исключается).
+  const seeded = await pool.query(
+    `SELECT a.id, a.role FROM admin_users a
+     WHERE a.club_id = $1 AND a.is_seed = true AND a.deleted_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM admin_credentials c WHERE c.admin_id = a.id)`,
+    [clubId]
+  );
+  const staffIds = seeded.rows.filter(r => r.role !== 'owner').map(r => r.id);
+  const allIds = [...new Set([...athleteIds, ...staffIds])];
+  const client = await pool.connect();
+  try {
+    if (allIds.length) {
+      const list = allIds.map((_, i) => '$' + (i + 1)).join(',');
+      const args = allIds;
+      for (const table of ['loyalty_outbox', 'loyalty_ledger', 'loyalty_accounts', 'loyalty_events',
+        'loyalty_achievements', 'loyalty_unlocks', 'loyalty_redemptions', 'app_notifications', 'athlete_metrics']) {
+        await client.query(`DELETE FROM ${table} WHERE user_id IN (${list})`, args);
+      }
+      await client.query(`DELETE FROM coach_bookings WHERE athlete_id IN (${list})`, args);
+      await client.query(`DELETE FROM recurring_bookings WHERE athlete_id IN (${list})`, args);
+      // recurring_skips НЕ имеет колонки athlete_id (ключ — series_id, см.
+      // coach_bookings.series_id) — привязанные пропуски удаляются вместе с
+      // самой серией через recurring_bookings/coach_bookings выше.
+      await client.query(`DELETE FROM trainer_assignments WHERE user_id IN (${list})`, args);
+      // Строки, созданные seed-тренером (правила/награды он не создавал — их
+      // создал seed-owner; но на всякий случай чистим, если что-то осталось).
+      await client.query(`DELETE FROM loyalty_rules WHERE created_by IN (${list})`, args);
+      await client.query(`DELETE FROM loyalty_rewards WHERE created_by IN (${list})`, args);
+    }
+    if (staffIds.length) {
+      const aList = staffIds.map((_, i) => '$' + (i + 1)).join(',');
+      await client.query(`DELETE FROM coach_bookings WHERE trainer_id IN (${aList})`, staffIds);
+      await client.query(`DELETE FROM trainer_availability WHERE trainer_id IN (${aList})`, staffIds);
+      await client.query(`DELETE FROM trainer_assignments WHERE trainer_id IN (${aList})`, staffIds);
+      await client.query(`DELETE FROM admin_credentials WHERE admin_id IN (${aList})`, staffIds);
+      await client.query(`DELETE FROM admin_users WHERE id IN (${aList})`, staffIds);
+    }
+  } finally {
+    client.release();
+  }
+  return { athletes: athleteIds.length, staff: staffIds.length, states };
 }
 
 // Удалить frozen-триалы, чей grace-период истёк.

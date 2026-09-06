@@ -28,6 +28,7 @@ export function createAdminRoutes(deps) {
     adminDbReady, getAdmin, getAdminCredential, getAdminInvite, findUsedAdminInvite,
     listAdmins, listClubs, getClub, setClubStatus, updateClubPlan, listExpiredTrials, listFrozenExpiredGrace,
     trialEmailBudgetReset, invalidateClubCache,
+    purgeSeedData,
     registerAdmin, updateAdmin, updateAdminCounter, createAdminInvite,
     softDeleteAdmin, restoreAdmin, listBranches, saveBranch, softDeleteBranch,
     listPrivateCodes, createPrivateCode, revokePrivateCode,
@@ -180,14 +181,26 @@ export function createAdminRoutes(deps) {
     const admin = await requireAdminAccount(req, res, ['owner', 'manager']); if (!admin) return;
     const body = await readBody(req);
     try {
-      const invite = await createAdminInvite({ name: body.name, role: body.role, createdBy: admin.id, clubId: admin.club_id || null });
+      // Филиал выбирается в форме (Шаг 4). Проверка scope: филиал обязан
+      // принадлежать клубу админа — чужой branch_key (руками в запросе) не пройдёт.
+      let branchKey = String(body.branch_key || '').trim() || null;
+      if (branchKey) {
+        const mine = scopeBranches(admin, await listBranches());
+        if (!mine.some(b => b.id === branchKey)) return json(res, 400, { error: 'branch not in your club' });
+      }
+      const invite = await createAdminInvite({ name: body.name, role: body.role, createdBy: admin.id, clubId: admin.club_id || null, branchKey });
       json(res, 200, { ok: true, invite });
     } catch (error) { json(res, 400, { error: error.message }); }
   } },
   // Список сотрудников (админ-аккаунты с ролями owner/manager/trainer/operator).
   { method: 'GET', path: '/api/admin/staff', handler: async (req, res) => {
     const admin = await requireAdminAccount(req, res); if (!admin) return;
-    json(res, 200, { admins: scopeAdmins(admin, await listAdmins()) });
+    const all = await listAdmins();
+    // hasSeed: в клубе есть демо-данные (is_seed=true) — владельцу покажем
+    // кнопку «Очистить демо-данные» (purge-seed). Считается по всему клубу,
+    // не только по видимому скоупу, чтобы супер-админ/владелец видел точно.
+    const clubRows = all.filter(a => admin.role === 'superadmin' ? true : a.club_id === admin.club_id);
+    json(res, 200, { admins: scopeAdmins(admin, all), hasSeed: clubRows.some(a => a.is_seed === true) });
   } },
   // Owner: сменить роль / отключить сотрудника (нельзя отключить самого себя).
   { method: 'POST', path: '/api/admin/staff/update', handler: async (req, res) => {
@@ -245,6 +258,22 @@ export function createAdminRoutes(deps) {
       const hasMore = clubs.length > limit;
       json(res, 200, { clubs: hasMore ? clubs.slice(0, limit) : clubs, has_more: hasMore });
     } catch (error) { console.error('clubs list failed:', error.message); json(res, 503, { error: 'unavailable' }); }
+  } },
+  // Очистка демо-данных trial-клуба (Шаг 5): удаляет ровно is_seed=true
+  // (спавнутые тренер + спортсмены + их state-файлы и строки БД), сохраняя
+  // владельца, филиалы, правила лояльности и наград — реальных клиентов,
+  // заведённых владельцем за время триала (is_seed=false), не трогает.
+  // Owner — только своего клуба; superadmin — любого.
+  { method: 'POST', path: '/api/admin/club/purge-seed', handler: async (req, res) => {
+    const admin = await requireAdminAccount(req, res, ['owner', 'superadmin']); if (!admin) return;
+    const body = await readBody(req);
+    let clubId = admin.club_id;
+    if (admin.role === 'superadmin') clubId = String(body.club_id || '') || clubId;
+    if (!clubId) return json(res, 400, { error: 'no club assigned' });
+    try {
+      const removed = await purgeSeedData({ clubId, db, saveDb, dataDir });
+      json(res, 200, { ok: true, removed });
+    } catch (error) { json(res, 400, { error: error.message }); }
   } },
   // Kill-switch (superadmin-only): заморозить/разморозить клуб. Инвалидирует
   // кэш статуса НЕМЕДЛЕННО — у замороженного владельца нет ни секунды доступа.
@@ -334,7 +363,7 @@ export function createAdminRoutes(deps) {
       userName: invite.name, userDisplayName: invite.name, attestationType: 'none',
       authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' }, excludeCredentials: []
     });
-    const cid = putChallenge({ challenge: options.challenge, adminRegister: true, adminId: id, inviteCode: invite.code, name: invite.name, role: invite.role });
+    const cid = putChallenge({ challenge: options.challenge, adminRegister: true, adminId: id, inviteCode: invite.code, name: invite.name, role: invite.role, branchKey: invite.branch_key || null });
     json(res, 200, { cid, options });
   } },
   // Завершение регистрации: погашение кода, создание passkey-аккаунта, авто-вход.

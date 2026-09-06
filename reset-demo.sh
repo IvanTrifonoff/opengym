@@ -21,6 +21,25 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# ── Защита от человеческого фактора (v1.4.1) ──
+# reset-demo.sh ТРОГАЕТ данные (TRUNCATE + удаление state-файлов). Он обязан
+# запускаться из /opt/opengym-demo — из прод-чекаута /opt/opengym он
+# остановил бы и почистил бы ПРОД-стек.
+EXPECT_DIR="/opt/opengym-demo"
+if [ "$(pwd)" != "$EXPECT_DIR" ]; then
+  echo "ОШИБКА: reset-demo.sh запущен из $(pwd). Демо-каталог: ${EXPECT_DIR}. Прервано." >&2
+  exit 1
+fi
+if ! grep -q '^DEMO_MODE=1' .env 2>/dev/null; then
+  echo "ОШИБКА: в $(pwd)/.env нет DEMO_MODE=1 — это не демо-окружение. Прервано." >&2
+  exit 1
+fi
+BRANCH_GUARD="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo not-a-repo)"
+if [ "$BRANCH_GUARD" != "demo" ]; then
+  echo "ОШИБКА: ожидалась ветка demo, сейчас: $BRANCH_GUARD. Прервано." >&2
+  exit 1
+fi
+
 echo "── [1/5] Остановка api + web (БД/redis остаются) ──"
 docker compose -f docker-compose.demo.yml stop api web
 
